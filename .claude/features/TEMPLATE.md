@@ -6,7 +6,8 @@ Status: draft | ready | in-progress | done
 
 - Feature spec (if provided externally): <path or pasted content>
 - Wireframes / planning specs: `Screen_<Name>` (wireframe.py), `Planning_<n>_<FlowName>` (planning.py)
-- PLANNING.md sections: §
+- `tasks/<work-code>.md` section (primary, if it exists): §
+- PLANNING.md sections (legacy fallback): §
 - SERVICE.md sections (if access-policy relevant): §
 
 ## Scope
@@ -23,7 +24,7 @@ Status: draft | ready | in-progress | done
 
 ## Decisions & Deviations
 
-- <decision> — <why this was chosen, and what it overrides/clarifies in PLANNING.md/SERVICE.md/wireframes>
+- <decision> — <why this was chosen, and what it overrides/clarifies in tasks/<work-code>.md (or legacy PLANNING.md)/SERVICE.md/wireframes>
 
 ## Acceptance Criteria
 

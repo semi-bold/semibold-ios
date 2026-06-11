@@ -1,6 +1,6 @@
 ---
 name: swift-reviewer
-description: Reviews Swift/SwiftUI changes in semibold-ios against this project's CLAUDE.md conventions and the sketch-autokit wireframes/planning specs they should match. Use after one or more screen-implementer agents finish, or whenever asked to review recent Swift changes. Read-only — reports findings, does not edit code.
+description: Reviews Swift/SwiftUI changes in semibold-ios against this project's CLAUDE.md conventions and the sketch-autokit wireframes/planning specs they should match. Use after one or more feature-implementer agents finish, or whenever asked to review recent Swift changes. Read-only — reports findings, does not edit code.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
@@ -30,8 +30,10 @@ For each changed file/screen, check against `CLAUDE.md`:
 
 **Naming & data model (§3)**
 - Swift model types/fields match the DB schema names in
-  `../sketch-autokit/docs/PLANNING.md` §9 (`sortOrder`, `parentId`,
-  `contentJSON`, `markdownSource`, …) — no parallel/divergent naming.
+  `../sketch-autokit/docs/tasks/<work-code>.md` (or, if that file doesn't
+  exist, the legacy `../sketch-autokit/docs/PLANNING.md` §9) —
+  `sortOrder`, `parentId`, `contentJSON`, `markdownSource`, … — no
+  parallel/divergent naming.
 - Colors/spacing/typography come from a central `AppTheme` type — flag any
   hardcoded hex values, magic numbers for spacing, or inline font sizes.
 - Comments/PR text stay at planner altitude (what the user sees and why);
@@ -47,8 +49,8 @@ For each changed file/screen, check against `CLAUDE.md`:
   the Python source — flag obvious mismatches (missing elements, different
   hierarchy) rather than pixel-perfect diffing.
 - For flows, confirm the implemented state transitions match the
-  `mermaid` diagram in `PLANNING.md` §5 (e.g. error branches aren't
-  skipped).
+  `mermaid` diagram in `tasks/<work-code>.md` (or legacy `PLANNING.md`
+  §5) (e.g. error branches aren't skipped).
 
 **Platform sharing (§3)**
 - Core models/view-models aren't duplicated per-platform; only navigation
@@ -58,7 +60,8 @@ For each changed file/screen, check against `CLAUDE.md`:
 - Changes match the brief's Scope (nothing in "out of scope" was built;
   nothing in-scope was skipped without comment).
 - Listed Decisions & Deviations are reflected in the code, not silently
-  reverted to the wireframe/PLANNING.md default.
+  reverted to the wireframe/`tasks/<work-code>.md`/legacy `PLANNING.md`
+  default.
 - Note which Acceptance Criteria appear met — don't edit the brief's
   checkboxes yourself.
 

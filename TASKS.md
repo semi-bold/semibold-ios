@@ -9,7 +9,7 @@ items off, add new ones under the relevant phase. Phase numbers refer to
 - [x] `CLAUDE.md` — source-of-truth pointers, wireframe/planning-spec
       mapping, tech stack, coding conventions, README constraints
 - [x] `README.md` — build/setup instructions
-- [x] `.claude/agents/screen-implementer.md` — per-screen/flow
+- [x] `.claude/agents/feature-implementer.md` — per-Acceptance-Criteria-item
       implementation agent (parallelizable)
 - [x] `.claude/agents/swift-reviewer.md` — read-only convention/design
       review agent
@@ -19,7 +19,7 @@ items off, add new ones under the relevant phase. Phase numbers refer to
       builds and runs on iOS Simulator
 - [x] `.claude/features/` convention — `TEMPLATE.md` for per-feature
       briefs (scope, decisions/deviations, acceptance criteria), referenced
-      by `CLAUDE.md` §0 and read first by `screen-implementer`/
+      by `CLAUDE.md` §0 and read first by `feature-implementer`/
       `swift-reviewer` so work is reproducible across machines/sessions
 
 ## Next
@@ -44,6 +44,9 @@ criteria — read the brief before starting that phase.
 - [ ] **06 — Quality pass — Phase 5** — macOS shortcuts, slash command,
       drag & drop, empty/error states, markdown export →
       `.claude/features/06-quality-phase5.md`
-- [ ] **07 — Tooling** — `swift-lsp` install, `/start-feature` workflow
-      (blocked, can run anytime/in parallel) →
-      `.claude/features/07-tooling.md`
+
+## Follow-ups (not part of the phase chain — anytime/in parallel)
+
+- [ ] Install `swift-lsp` plugin (diagnostics on edit, go-to-definition)
+- [ ] Adapt `/release` skill to `project.yml` `MARKETING_VERSION` +
+      `xcodegen generate` (currently a stub ported from another project)
