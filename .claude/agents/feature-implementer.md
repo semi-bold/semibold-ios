@@ -30,15 +30,16 @@ exactly one item per invocation — do not branch out into unrelated work.
        (`Planning_<n>_<FlowName>`) in
        `../sketch-autokit/screens/planning.py` — read its numbered
        callouts and the corresponding `mermaid` diagram in
-       `../sketch-autokit/docs/PLANNING.md` §5.
-     - Read the relevant `PLANNING.md` / `SERVICE.md` sections listed in
-       the brief's Source section.
+       `../sketch-autokit/docs/tasks/<work-code>.md` (or, if that file
+       doesn't exist, the legacy `../sketch-autokit/docs/PLANNING.md` §5).
+     - Read the relevant `tasks/<work-code>.md` (or legacy `PLANNING.md`)
+       / `SERVICE.md` sections listed in the brief's Source section.
    - **If it doesn't** (e.g. `AppTheme` design tokens, GRDB
      schema/migrations, repository layer, tooling setup): there's no
      wireframe to match — implement per CLAUDE.md's conventions and the
-     `PLANNING.md` / `SERVICE.md` sections and source files (e.g.
-     `../sketch-autokit/sketch/tokens.py`) listed in the brief's Source
-     section.
+     `tasks/<work-code>.md` (or legacy `PLANNING.md`) / `SERVICE.md`
+     sections and source files (e.g. `../sketch-autokit/sketch/tokens.py`)
+     listed in the brief's Source section.
 4. If the item clearly implies a UI element/flow but no matching
    `Screen_*` / `Planning_N_*Flow` exists anywhere in `sketch-autokit`,
    stop and report that gap instead of inventing a layout.
@@ -47,8 +48,9 @@ exactly one item per invocation — do not branch out into unrelated work.
 
 - All persistence goes through GRDB — no raw `sqlite3` calls, schema
   changes only via a versioned `DatabaseMigrator` migration.
-- Name Swift model types/fields after the DB schema in `PLANNING.md` §9
-  (`sortOrder`, `parentId`, `contentJSON`, `markdownSource`, …).
+- Name Swift model types/fields after the DB schema in
+  `tasks/<work-code>.md` (or legacy `PLANNING.md` §9) (`sortOrder`,
+  `parentId`, `contentJSON`, `markdownSource`, …).
 - Centralize colors/spacing/typography in the project's `AppTheme`
   design-tokens type — don't hardcode hex values, magic numbers, or
   inline font sizes in views.
@@ -73,7 +75,8 @@ For items that map to a `Screen_*` / `Planning_N_*Flow`, additionally:
 Report back concisely:
 - Which Acceptance Criteria item from `.claude/features/<slug>.md` you
   implemented, and which `Screen_*` / `Planning_N_*Flow` /
-  `PLANNING.md` sections (if any) it maps to
+  `tasks/<work-code>.md` (or legacy `PLANNING.md`) sections (if any) it
+  maps to
 - Files created/changed
 - Any deviations from the brief/wireframe/spec and why
 - Any gaps (missing design reference, ambiguous requirement) that need
