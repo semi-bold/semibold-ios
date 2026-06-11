@@ -18,21 +18,31 @@ semi-bold/
  ├─ semibold-ios/        ← this repo (Swift app)
  └─ sketch-autokit/      ← planning docs + Sketch wireframe generator
      ├─ docs/
-     │   ├─ PLANNING.md  ← feature scope, screens, flows, DB schema
+     │   ├─ tasks/<work-code>.md ← per-work-code task spec (primary —
+     │   │             read first for the work code `/work` assigned)
+     │   ├─ PLANNING.md  ← legacy: feature scope, screens, flows, DB
+     │   │                  schema (fallback for anything tasks/* doesn't
+     │   │                  cover)
      │   └─ SERVICE.md   ← Private/Secret/Public structure, access policy
      └─ semi-bold.sketch ← generated wireframes & planning specs
          (screens/wireframe.py → Screen_*, screens/planning.py → Planning_N_*Flow)
 ```
 
-Relative to this repo: `../sketch-autokit/docs/PLANNING.md` and
+Relative to this repo: `../sketch-autokit/docs/tasks/<work-code>.md`,
+`../sketch-autokit/docs/PLANNING.md`, and
 `../sketch-autokit/docs/SERVICE.md`.
 
 Before implementing or changing a screen/flow/model:
 
-1. Read the relevant section of `PLANNING.md` (screen structure, user
-   flows, feature requirements, block/markdown model, DB schema) and
-   `SERVICE.md` (Private/Secret/Public scope and access policy) for
-   current, authoritative details — don't rely on a cached summary.
+1. Read `../sketch-autokit/docs/tasks/<work-code>.md` for the work code
+   `/work` assigned to this batch of `.claude/features/` briefs (see
+   `.claude/skills/work/SKILL.md`), if it exists — it's the primary,
+   current spec. Fall back to the relevant section of `PLANNING.md`
+   (legacy — screen structure, user flows, feature requirements,
+   block/markdown model, DB schema) for anything `tasks/*` doesn't cover.
+   Always read `SERVICE.md` (Private/Secret/Public scope and access
+   policy) for current, authoritative details — don't rely on a cached
+   summary.
 2. Check whether a matching wireframe or planning spec already exists in
    `sketch-autokit` (see §1) and build to match it rather than inventing
    a different layout or flow.
@@ -42,18 +52,22 @@ Before implementing or changing a screen/flow/model:
 **Feature briefs (`.claude/features/`).** Before starting non-trivial work
 on a feature, write a brief to `.claude/features/<slug>.md` (copy
 `.claude/features/TEMPLATE.md`) that records: which `Screen_*` /
-`Planning_N_*Flow` / PLANNING.md sections it maps to, scope/out-of-scope,
-any decisions or deviations from the docs, and acceptance criteria. This
-is the persistent record of choices made during planning — anyone (or any
-agent, on any machine) picking up the implementation should read this
-brief first, then PLANNING.md/SERVICE.md/wireframes for design and data
-details it doesn't restate.
+`Planning_N_*Flow` / `tasks/<work-code>.md` (or legacy `PLANNING.md`)
+sections it maps to, scope/out-of-scope, any decisions or deviations from
+the docs, and acceptance criteria. This is the working record for the
+current batch of work — anyone (or any agent, on any machine) picking up
+the implementation should read this brief first, then
+`tasks/<work-code>.md`/`PLANNING.md`/`SERVICE.md`/wireframes for design
+and data details it doesn't restate. Briefs are deleted once the whole
+batch is `done` (see `.claude/skills/work/SKILL.md` Completion) — git
+history retains their content for reference.
 
 If a brief has prerequisites (must come after another brief), prefix its
-filename with a two-digit order number (`01-`, `02-`, …) matching
-`PLANNING.md` §18's phase order, so the build order is clear from the
-directory listing alone. Briefs without ordering dependencies (e.g.
-tooling work) don't need a prefix.
+filename with a two-digit order number (`01-`, `02-`, …) matching the
+phase order in `tasks/<work-code>.md` (or, for legacy phases,
+`PLANNING.md` §18), so the build order is clear from the directory
+listing alone. Briefs without ordering dependencies (e.g. tooling work)
+don't need a prefix.
 
 ---
 
@@ -64,7 +78,8 @@ and the implementation should trace back to them 1:1 by name:
 
 ```
 Wireframe artboard "Screen_<Name>"            → SwiftUI view "<Name>View"
-Planning doc "Planning_<n>_<FlowName>"        → flow described in PLANNING.md §5,
+Planning doc "Planning_<n>_<FlowName>"        → flow described in tasks/<work-code>.md
+                                                 (or legacy PLANNING.md §5),
                                                  numbered to match its callouts
 ```
 
@@ -76,7 +91,8 @@ Planning doc "Planning_<n>_<FlowName>"        → flow described in PLANNING.md 
   description list and a `mermaid` flow diagram. Treat each callout as a
   concrete UI element/state to produce in order, and the diagram as the
   state machine your view/view-model implements. They deliberately omit
-  storage details — get the data model from `PLANNING.md` §6/§9 instead.
+  storage details — get the data model from `tasks/<work-code>.md` (or
+  legacy `PLANNING.md` §6/§9) instead.
 
 Keep SwiftUI view/type names aligned with these artifact names so anyone
 can jump between the Sketch file and the codebase.
@@ -124,9 +140,10 @@ automatically on the next `generate`.
 - **GRDB** owns all SQLite access. Don't bypass it with raw
   `sqlite3` C calls. Migrations go in a versioned `DatabaseMigrator`
   block — never alter the schema outside of migrations.
-- Name Swift model types/fields after the DB schema in `PLANNING.md` §9
-  (`sortOrder`, `parentId`, `contentJSON`, `markdownSource`, …) so the
-  data layer maps directly onto it — don't invent parallel naming.
+- Name Swift model types/fields after the DB schema in
+  `tasks/<work-code>.md` (or legacy `PLANNING.md` §9) (`sortOrder`,
+  `parentId`, `contentJSON`, `markdownSource`, …) so the data layer maps
+  directly onto it — don't invent parallel naming.
 - Centralize colors/spacing/typography in one `AppTheme` type rather than
   hardcoding values in views — mirrors the `sketch/tokens.py` rule on the
   design side, and keeps both in sync when the palette changes.
@@ -171,7 +188,8 @@ Items that belong in CLAUDE.md (like the constraints above), not README.
 
 ## Reference
 
-- Planning & data model: `../sketch-autokit/docs/PLANNING.md`
+- Per-work-code task spec (primary): `../sketch-autokit/docs/tasks/<work-code>.md`
+- Planning & data model (legacy fallback): `../sketch-autokit/docs/PLANNING.md`
 - Service / access-policy structure: `../sketch-autokit/docs/SERVICE.md`
 - Wireframes & planning specs: `../sketch-autokit/semi-bold.sketch`
   (`screens/wireframe.py`, `screens/planning.py`)

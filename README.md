@@ -9,7 +9,10 @@
 
 ## Getting Started
 
-1. Clone the repo
+1. Clone this repo alongside its sibling `sketch-autokit` repo, under a
+   common parent directory (e.g. `semi-bold/semibold-ios` and
+   `semi-bold/sketch-autokit`) — `CLAUDE.md` and `.claude/` workflows
+   reference it via `../sketch-autokit`
 2. Run `xcodegen generate` to create `semibold.xcodeproj`
 3. Open `semibold.xcodeproj` in Xcode
 4. SPM dependencies resolve automatically on first build
