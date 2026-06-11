@@ -1,155 +1,107 @@
 ---
 name: work
-description: Start a new work session — takes Feature ID, reads Obsidian spec, creates base branch and auto-generates task files
+description: Start a semi:bold iOS feature — pick (or draft) a `.claude/features/` brief, create its feature branch, then hand off to /harness
 ---
 
-You are the work session initializer for Partnerble development.
+You are the work session initializer for semi:bold iOS development.
 
-When the user runs `/work`, you:
-1. Ask for the Feature ID
-2. Read the work specification from Google Drive (`$PROJECT_DRIVE_PATH/$PROJECT_WORKS_DIR/[feature-id].md`)
-3. Create the base feature branch
-4. Analyze the specification and split it into task units, generating `.claude/tasks/phase-N-*.md` files
-5. Commit the task files to the base branch
-6. Guide the user to run `/harness`
-
----
+When the user runs `/work`, you pick a feature brief from
+`.claude/features/`, make sure it's ready to implement, create its
+feature branch, and hand off to `/harness`.
 
 ## Workflow
 
-### Step 1 — Feature ID 요청
+### Step 0 — Sibling repo check
 
-AskUserQuestion 툴로 Feature ID를 입력받는다.
-
-```
-작업 관리 도구(Notion, Jira 등)에서 이번 작업 카드를 생성하고, Feature ID를 알려주세요.
-(예: ABC-123)
-```
-
-### Step 2 — Google Drive 문서 탐색
-
-`PROJECT_DRIVE_PATH`와 `PROJECT_WORKS_DIR` 환경변수가 설정되어 있는지 확인한다.
+`CLAUDE.md` and these briefs assume `../sketch-autokit` exists as a
+sibling repo (`semi-bold/semibold-ios` + `semi-bold/sketch-autokit`).
+Check it before anything else:
 
 ```bash
-echo $PROJECT_DRIVE_PATH
-echo $PROJECT_WORKS_DIR
+ls ../sketch-autokit/docs
 ```
 
-**환경변수가 없는 경우:**
-사용자에게 `/setting` 실행을 안내하고 종료한다:
+If it doesn't exist, stop and tell the user:
 
 ```
-PROJECT_DRIVE_PATH 또는 PROJECT_WORKS_DIR가 설정되지 않았습니다.
-/setting 을 먼저 실행해 Google Drive 경로를 설정해 주세요.
+../sketch-autokit를 찾을 수 없습니다. README.md의 "Getting Started"를
+참고해 semibold-ios와 같은 부모 디렉토리에 sketch-autokit을 clone한 뒤
+다시 실행해 주세요.
 ```
 
-**환경변수가 있는 경우:**
-Feature ID 파일 경로를 구성한 뒤 존재 여부를 확인한다:
+### Step 1 — List feature briefs
+
+- Glob `.claude/features/*.md`, excluding `TEMPLATE.md`.
+- For each, read its `Status:` line and (if present) a `**Depends on:**`
+  line.
+- Ask the user (AskUserQuestion) which brief to work on. If there's an
+  obvious next one — lowest-numbered brief that's `draft`/`ready` and
+  whose dependency brief is `done` — offer it as the recommended option.
+
+### Step 2 — New feature brief (only if the requested feature isn't in `.claude/features/`)
+
+- Copy `.claude/features/TEMPLATE.md` to a new file. Per CLAUDE.md's
+  numbering convention: prefix with the next `NN-` if it has an ordering
+  dependency on existing phases, otherwise no prefix.
+- Fill in Source/Scope/Screens & Flows from `../sketch-autokit/docs/`
+  (`PLANNING.md`, `SERVICE.md`, and any other notes there — e.g. an
+  Obsidian vault) plus the relevant `Screen_*`/`Planning_N_*Flow` and the
+  user's description of what changed.
+- Set `Status: draft` and show the user the draft for review — don't
+  proceed to Step 3 until they confirm it's `ready`.
+
+### Step 3 — Check readiness
+
+- If `Status: draft`, ask the user to confirm it's ready (or refine it
+  further) before creating a branch.
+- If the brief's `**Depends on:**` line names another brief that isn't
+  `Status: done`, warn the user but let them proceed if they choose to.
+
+### Step 4 — Create the feature branch
 
 ```bash
-WORKS_PATH="$PROJECT_DRIVE_PATH/$PROJECT_WORKS_DIR"
-ls "$WORKS_PATH/[feature-id].md"
+git checkout main
+git pull origin main
+git checkout -b feature/NN-slug
+git push -u origin feature/NN-slug
 ```
 
-파일이 없으면 사용자에게 알리고, 명세서를 직접 붙여넣을지 묻는다.
-파일이 있으면 Read 툴로 해당 파일을 읽는다.
+### Step 5 — Mark the brief in-progress
 
-### Step 3 — 베이스 브랜치 생성
-
-```bash
-git checkout dev
-git pull origin dev
-git checkout -b feature/[feature-id]/base
-git push -u origin feature/[feature-id]/base
-```
-
-### Step 4 — 명세서 분석 및 task 파일 자동 생성
-
-읽어온 문서를 분석해 작업을 독립적인 단위로 분리한다.
-
-**분리 기준:**
-- 하나의 task는 단일 관심사를 다룬다 (컴포넌트 1개, 기능 1개, 설정 1개 등)
-- task 간 의존성이 있으면 phase 번호로 순서를 표현한다
-- 너무 작은 변경(1~2줄)은 인접한 task에 합친다
-
-**파일명 규칙:** `phase-N-[task-slug].md` (kebab-case, 한글 허용)
-
-각 파일은 `.claude/tasks/TEMPLATE.md` 구조를 따라 작성한다.
-
-task 파일 생성 후 base 브랜치에 커밋한다:
+- Edit `.claude/features/NN-slug.md`: `Status: ready` → `Status:
+  in-progress`.
 
 ```bash
-git add .claude/tasks/
-git commit -m "chore: add task files for [feature-id]"
+git add .claude/features/NN-slug.md
+git commit -m "chore(NN-slug): start feature"
 git push
 ```
 
-### Step 5 — 완료 안내
+### Step 6 — Hand off
 
 ```
-✅ feature/[feature-id]/base 브랜치 생성 완료
-✅ task 파일 N개 생성:
-   - phase-1-[task].md
-   - phase-2-[task].md
-   ...
+✅ feature/NN-slug 브랜치 생성 + push 완료
+✅ .claude/features/NN-slug.md → in-progress
 
-/harness 를 실행하면 순서대로 작업이 진행됩니다.
+/harness 를 실행하면 Acceptance Criteria 항목 순서대로 구현이 진행됩니다.
 ```
 
 ---
 
 ## Tools You Can Use
 
-- **AskUserQuestion** - Feature ID 입력받기, 폴백 명세서 입력받기
-- **Bash** - 환경변수 확인, git 명령어, 파일 목록 확인
-- **Read** - Obsidian md 파일 읽기
-- **Write** - task md 파일 생성
-
----
-
-## Example Execution
-
-```
-User: /work
-
-[WORK] Feature ID를 알려주세요. → ABC-123
-
-echo $PROJECT_DRIVE_PATH
-→ /Users/neo/Library/CloudStorage/GoogleDrive-neo@partnerble.com/My Drive/Partnerble
-echo $PROJECT_WORKS_DIR
-→ dev/org/partnerble/partnerble-frontend/works
-
-WORKS_PATH="$PROJECT_DRIVE_PATH/$PROJECT_WORKS_DIR"
-ls "$WORKS_PATH/ABC-123.md"
-→ /Users/neo/Library/CloudStorage/.../Partnerble/dev/org/partnerble/partnerble-frontend/works/ABC-123.md
-
-[Read ABC-123.md]
-[명세서 분석 → 3개 task로 분리]
-
-git checkout main && git pull origin main
-git checkout -b feature/ABC-123/base
-git push -u origin feature/ABC-123/base
-
-.claude/tasks/phase-1-헤더_CTA_버튼.md 생성
-.claude/tasks/phase-2-모바일_플로팅_버튼.md 생성
-.claude/tasks/phase-3-business_리다이렉트.md 생성
-
-git add .claude/tasks/ && git commit -m "chore: add task files for ABC-123" && git push
-
-✅ feature/ABC-123/base 브랜치 생성 완료
-✅ task 파일 3개 생성 완료
-
-/harness 를 실행하면 순서대로 작업이 진행됩니다.
-```
+- **AskUserQuestion** — pick a brief / confirm new-brief details
+- **Read / Glob** — list and read `.claude/features/*.md`
+- **Write / Edit** — draft a new brief from `TEMPLATE.md`, update Status
+- **Bash** — git branch/push
 
 ---
 
 ## Important Notes
 
-- `PROJECT_DRIVE_PATH` / `PROJECT_WORKS_DIR`는 `.claude/settings.local.json`의 `env`에 설정 (gitignored)
-- 설정되지 않은 경우 `/setting` 실행을 안내하고 종료한다
-- 경로 탐색 기준: `$PROJECT_DRIVE_PATH/$PROJECT_WORKS_DIR/[feature-id].md` 단일 파일 (디렉터리 아님)
-- 문서가 없으면 AskUserQuestion으로 명세서를 직접 붙여넣는 폴백 제공
-- base 브랜치에 코드를 직접 커밋하지 않는다 — task 파일 커밋만 허용
-- `/work` 완료 후 반드시 `/harness` 로 이어진다
-- **⛔ 절대 금지**: 에이전트는 어떠한 경우에도 `main` 브랜치에 push하거나 머지할 수 없다. `main` 관련 작업은 관리자 전용이다.
+- One feature brief = one branch (`feature/NN-slug`) = one PR (created by
+  `/harness`).
+- Base is always `main` — there's no `dev` branch in this repo.
+- Don't skip Step 3 — an `in-progress` brief with unresolved dependencies
+  or ambiguity is the most common cause of `feature-implementer` gaps
+  later.

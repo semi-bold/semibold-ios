@@ -1,6 +1,6 @@
 ---
 name: swift-reviewer
-description: Reviews Swift/SwiftUI changes in semibold-ios against this project's CLAUDE.md conventions and the sketch-autokit wireframes/planning specs they should match. Use after one or more screen-implementer agents finish, or whenever asked to review recent Swift changes. Read-only — reports findings, does not edit code.
+description: Reviews Swift/SwiftUI changes in semibold-ios against this project's CLAUDE.md conventions and the sketch-autokit wireframes/planning specs they should match. Use after one or more feature-implementer agents finish, or whenever asked to review recent Swift changes. Read-only — reports findings, does not edit code.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
