@@ -38,11 +38,38 @@ CRUD) must exist before this can persist created items.
 
 ## Decisions & Deviations
 
-_None yet — fill in as decisions are made during implementation._
+- `Screen_Home` in `wireframe.py` (the "Example 1: Home screen" function,
+  ~line 699) is a generic placeholder ("Welcome card", "Recent",
+  "Categories") not specific to semi:bold's folder/document domain. The
+  `iOS_PrivateSpace` artboard (same file) is the actual semi:bold-specific
+  screen matching "folder/document list" — Private space badge, "+" add
+  button, a Folders section and a Documents section, each made of
+  60px-tall icon/title/subtitle/chevron rows. `HomeView` was built to
+  match `iOS_PrivateSpace`'s structure/sizing while keeping the
+  `Screen_Home` → `HomeView` name mapping from this brief.
+- Section header labels are "Folders"/"Documents" (English, uppercased by
+  the header style) rather than the wireframe's Korean "폴더"/"문서", to
+  match the existing English-language UI/comment convention in this repo
+  (e.g. `ContentView`, model doc comments).
+- Per-row Secret-Lock icons (`icon_lock` in `iOS_PrivateSpace`, shown on
+  some rows) are omitted — Secret Lock is a future per-item feature not
+  yet modeled, so no field exists yet to drive that icon's visibility.
+- `HomeView` is backed by a real `@Observable HomeViewModel` reading
+  root-level folders/documents via `FolderRepository`/`DocumentRepository`
+  (rather than mock data), since the repositories already exist from
+  `local-db-phase1` and this avoids rework for AC4. Folder "N items"
+  counts are stubbed at "0 items" (TODO) since computing child counts is
+  out of scope for this item.
+- Replaced the placeholder `ContentView` (brief 01) with `HomeView` as the
+  app's root view in `SemiboldApp`, and removed `ContentView.swift` — its
+  own doc comment said it would be replaced by the real home screen.
+- The nav-bar "+" button is rendered as a 40x40 circular tap target
+  (`primary.opacity(0.18)` background) rather than `iOS_PrivateSpace`'s
+  bare 24x24 glyph — a touch-target affordance, not a missed element.
 
 ## Acceptance Criteria
 
-- [ ] `HomeView` matches `Screen_Home` layout (folder/document list)
+- [x] `HomeView` matches `Screen_Home` layout (folder/document list)
 - [ ] New folder flow implements all callouts in
       `Planning_2_FolderCreateFlow` and the PLANNING §5.2 state diagram
 - [ ] New document flow implements all callouts in
