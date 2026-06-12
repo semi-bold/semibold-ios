@@ -40,7 +40,7 @@ N/A — shared infrastructure consumed by all subsequent screen work.
 
 - [x] `semibold/` split into `Models/`, `Views/`, `ViewModels/`, `Data/`
       groups
-- [ ] `AppTheme` type exists with colors/spacing/typography matching
+- [x] `AppTheme` type exists with colors/spacing/typography matching
       `sketch/tokens.py`
 - [ ] `ContentView` (placeholder root view) uses `AppTheme` rather than
       hardcoded values, as a smoke test of the new type
