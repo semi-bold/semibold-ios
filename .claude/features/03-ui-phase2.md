@@ -122,6 +122,22 @@ CRUD) must exist before this can persist created items.
   document's row gets the same `surface2` highlight after the list
   reloads. Same open-question as `selectedFolderId`: it isn't cleared, see
   Open Questions.
+- AC4 (persistence) was satisfied end-to-end by AC1–AC3's existing code —
+  `HomeViewModel.load()` reads root-level folders/documents via
+  `FolderRepository.children(of:)`/`DocumentRepository.documents(in:)`
+  against `DatabaseManager.shared`'s on-disk SQLite database, and
+  `NewFolderViewModel.createFolder()`/`NewDocumentViewModel.createDocument()`
+  write through `FolderRepository.create`/`DocumentRepository.create`,
+  after which `HomeViewModel.didCreateFolder`/`didCreateDocument` call
+  `load()` again. No mock/in-memory/stub data path remains for `HomeView`'s
+  lists. To make this verifiable (and resolve `local-db-phase1`'s "no unit
+  tests yet" follow-up), a `semiboldTests` unit-test target was added to
+  `project.yml` (XcodeGen `bundle.unit-test`, depends on `semibold` + GRDB,
+  `GENERATE_INFOPLIST_FILE: YES`) with
+  `semiboldTests/FolderDocumentPersistenceTests.swift` — Swift Testing
+  round-trip tests that create folders/documents via the repositories
+  against an `:memory:` `DatabaseManager` and read them back via the same
+  `children(of:)`/`documents(in:)` calls `HomeViewModel.load()` uses.
 
 ## Acceptance Criteria
 
@@ -130,7 +146,7 @@ CRUD) must exist before this can persist created items.
       `Planning_2_FolderCreateFlow` and the PLANNING §5.2 state diagram
 - [x] New document flow implements all callouts in
       `Planning_3_DocumentCreateFlow` and the PLANNING §5.3 state diagram
-- [ ] Created folders/documents persist via the `local-db-phase1`
+- [x] Created folders/documents persist via the `local-db-phase1`
       repository layer
 
 ## Open Questions / Follow-ups
