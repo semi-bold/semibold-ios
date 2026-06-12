@@ -34,7 +34,7 @@ CRUD) must exist before this can persist created items.
 |---|---|---|
 | Screen_Home | `HomeView` | folder/document list |
 | Planning_2_FolderCreateFlow | `NewFolderSheet` / `NewFolderViewModel` | new folder creation |
-| Planning_3_DocumentCreateFlow | TBD (sheet/VM name during implementation) | new document creation |
+| Planning_3_DocumentCreateFlow | `NewDocumentSheet` / `NewDocumentViewModel` | new document creation |
 
 ## Decisions & Deviations
 
@@ -91,20 +91,59 @@ CRUD) must exist before this can persist created items.
   Navigating *into* the folder isn't implemented yet — there's no folder
   detail/contents screen in this brief's scope — so "selected" is shown
   as a list highlight rather than a navigation push.
+- `Planning_3_DocumentCreateFlow`'s destination sequence is
+  `iOS_PrivateSpace → iOS_AddMenu → iOS_Editor` (callouts ①–⑤), unlike
+  `Planning_2_FolderCreateFlow` whose destination is just `iOS_AddMenu`.
+  `iOS_AddMenu` is shared between the two flows (same "새 폴더 만들기" /
+  "새 문서 만들기" sheet, callouts ④/⑤ in Planning_2 vs. ③ in Planning_3);
+  "새 문서 만들기" (callout ③) is the entry point for this flow, already
+  wired up in AC2 via the shared `confirmationDialog`. The `iOS_Editor`
+  destination (callouts ④/⑤ — title input area, first empty block) is out
+  of scope for this brief (`block-editor-phase3`), so this item stops at
+  "documents row 생성" → "문서 목록 갱신" → "선택 상태로 전환", the part of
+  PLANNING §5.3's diagram (A→B→C/D→E) that's actually buildable here.
+- §5.3 step B ("현재 선택된 폴더 있음?") has no "선택된 폴더" concept in
+  `HomeView` yet (no folder navigation/detail screen), so it always takes
+  the "없음" branch (D): new documents are created with `folderId: nil`
+  (root), matching `HomeViewModel.documents`'s root-level list.
+- §5.3 steps F–H ("빈 document editor 열기" → "제목 입력" → "자동 저장")
+  happen inside the Editor in the full flow, but the Editor is out of
+  scope here. `NewDocumentSheet` collects the title *before* creating the
+  `documents` row instead — a pre-creation substitute for the in-Editor
+  title field, analogous to how `NewFolderSheet` substitutes for §5.2's
+  "폴더 이름 입력" step (B), which also has no dedicated wireframe
+  artboard. Unlike folder names, an empty title is valid: leaving it blank
+  saves the document as "Untitled" (`Document`'s default, PLANNING §6.2
+  "제목이 없을 경우 Untitled 사용"), so there's no inline validation error
+  and the Create button is never disabled.
+- "문서 목록 갱신" → "선택 상태로 전환" (refresh the list, select the new
+  document) is implemented as `HomeViewModel.selectedDocumentId`,
+  generalizing AC2's `selectedFolderId` pattern to documents — the new
+  document's row gets the same `surface2` highlight after the list
+  reloads. Same open-question as `selectedFolderId`: it isn't cleared, see
+  Open Questions.
 
 ## Acceptance Criteria
 
 - [x] `HomeView` matches `Screen_Home` layout (folder/document list)
 - [x] New folder flow implements all callouts in
       `Planning_2_FolderCreateFlow` and the PLANNING §5.2 state diagram
-- [ ] New document flow implements all callouts in
+- [x] New document flow implements all callouts in
       `Planning_3_DocumentCreateFlow` and the PLANNING §5.3 state diagram
 - [ ] Created folders/documents persist via the `local-db-phase1`
       repository layer
 
 ## Open Questions / Follow-ups
 
-- `HomeViewModel.selectedFolderId` (new-folder highlight) is never
-  cleared, so it persists indefinitely rather than being a transient
-  "selected" state per PLANNING §5.2. Revisit once a folder-detail
-  screen exists (clear on navigation, or add a timeout/dismiss).
+- `HomeViewModel.selectedFolderId` / `selectedDocumentId` (new-item
+  highlights) are never cleared, so they persist indefinitely rather than
+  being a transient "selected" state per PLANNING §5.2/§5.3. Revisit once
+  a folder-detail/document-editor screen exists (clear on navigation, or
+  add a timeout/dismiss).
+- `Planning_3_DocumentCreateFlow`'s `iOS_Editor` destination (callouts
+  ④/⑤ — title input area focus, first empty block) and PLANNING §5.3
+  steps F–H (open empty editor → title input → autosave) are deferred to
+  `block-editor-phase3`. `NewDocumentSheet` covers title entry as a
+  pre-creation substitute (see Decisions above); revisit whether the
+  Editor should also support editing the title once it exists, or whether
+  this sheet remains the only title-entry point.

@@ -20,6 +20,10 @@ struct HomeView: View {
     /// (`Planning_2_FolderCreateFlow`, PLANNING §5.2).
     @State private var isNewFolderSheetPresented = false
 
+    /// Whether the new-document title-entry sheet is showing
+    /// (`Planning_3_DocumentCreateFlow`, PLANNING §5.3).
+    @State private var isNewDocumentSheetPresented = false
+
     var body: some View {
         VStack(spacing: 0) {
             navBar
@@ -40,8 +44,7 @@ struct HomeView: View {
                 isNewFolderSheetPresented = true
             }
             Button("New Document") {
-                // TODO: Planning_3_DocumentCreateFlow (PLANNING §5.3) —
-                // implemented as a separate acceptance-criteria item.
+                isNewDocumentSheetPresented = true
             }
             Button("Cancel", role: .cancel) {}
         }
@@ -50,13 +53,18 @@ struct HomeView: View {
                 viewModel.didCreateFolder(createdFolder)
             }
         }
+        .sheet(isPresented: $isNewDocumentSheetPresented) {
+            NewDocumentSheet { createdDocument in
+                viewModel.didCreateDocument(createdDocument)
+            }
+        }
     }
 
     // MARK: - Navigation bar
 
     /// Top bar: app name, "Private" space badge, and the add (+) button
-    /// that starts the new folder/document flows (Planning_2 / Planning_3,
-    /// implemented separately).
+    /// that starts the new folder/document flows (Planning_2 /
+    /// Planning_3).
     private var navBar: some View {
         VStack(spacing: 0) {
             HStack(spacing: AppTheme.Spacing.sm) {
@@ -137,7 +145,7 @@ struct HomeView: View {
                 emptyRow(text: "No documents yet")
             } else {
                 ForEach(viewModel.documents) { document in
-                    DocumentRow(document: document)
+                    DocumentRow(document: document, isSelected: document.id == viewModel.selectedDocumentId)
                 }
             }
         } header: {
@@ -210,6 +218,11 @@ private struct FolderRow: View {
 private struct DocumentRow: View {
     let document: Document
 
+    /// Whether this is the document just created from the "+" menu
+    /// (`Planning_3_DocumentCreateFlow`, PLANNING §5.3), highlighted so the
+    /// user can see where it landed in the list.
+    let isSelected: Bool
+
     var body: some View {
         HStack(spacing: AppTheme.Spacing.md) {
             Image(systemName: "doc.text")
@@ -233,7 +246,7 @@ private struct DocumentRow: View {
                 .foregroundStyle(AppTheme.Colors.text3)
         }
         .padding(.vertical, AppTheme.Spacing.sm)
-        .listRowBackground(AppTheme.Colors.background)
+        .listRowBackground(isSelected ? AppTheme.Colors.surface2 : AppTheme.Colors.background)
     }
 }
 
