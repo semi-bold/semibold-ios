@@ -11,6 +11,11 @@ final class HomeViewModel {
     private(set) var folders: [Folder] = []
     private(set) var documents: [Document] = []
 
+    /// The folder most recently created from the "+" menu, highlighted in
+    /// the list to confirm where it landed
+    /// (PLANNING §5.2: "생성된 폴더 선택 상태로 전환").
+    var selectedFolderId: String?
+
     private let folderRepository: FolderRepository
     private let documentRepository: DocumentRepository
 
@@ -36,5 +41,13 @@ final class HomeViewModel {
             folders = []
             documents = []
         }
+    }
+
+    /// Refreshes the list after a new folder is created and marks it as
+    /// selected, completing `Planning_2_FolderCreateFlow`'s final two
+    /// steps ("폴더 목록 갱신" → "생성된 폴더 선택 상태로 전환").
+    func didCreateFolder(_ folder: Folder) {
+        load()
+        selectedFolderId = folder.id
     }
 }

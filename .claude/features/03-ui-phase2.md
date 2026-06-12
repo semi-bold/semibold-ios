@@ -33,7 +33,7 @@ CRUD) must exist before this can persist created items.
 | Wireframe/Spec | SwiftUI target | Notes |
 |---|---|---|
 | Screen_Home | `HomeView` | folder/document list |
-| Planning_2_FolderCreateFlow | TBD (sheet/VM name during implementation) | new folder creation |
+| Planning_2_FolderCreateFlow | `NewFolderSheet` / `NewFolderViewModel` | new folder creation |
 | Planning_3_DocumentCreateFlow | TBD (sheet/VM name during implementation) | new document creation |
 
 ## Decisions & Deviations
@@ -66,11 +66,36 @@ CRUD) must exist before this can persist created items.
 - The nav-bar "+" button is rendered as a 40x40 circular tap target
   (`primary.opacity(0.18)` background) rather than `iOS_PrivateSpace`'s
   bare 24x24 glyph — a touch-target affordance, not a missed element.
+- `Planning_2_FolderCreateFlow`'s destination artboard is `iOS_AddMenu`
+  (the "+" action sheet with "새 폴더 만들기" / "새 문서 만들기" / "취소").
+  The "+" button now opens a `confirmationDialog` with "New Folder" /
+  "New Document" / "Cancel" matching that artboard's three options
+  (callouts ④/⑤). "New Folder" leads into the name-entry step; "New
+  Document" stays a TODO no-op pending `Planning_3_DocumentCreateFlow`
+  (AC3).
+- The mermaid diagram's "폴더 이름 입력" step (B) has no dedicated
+  wireframe artboard in `Planning_2_FolderCreateFlow` (only
+  `iOS_PrivateSpace` and `iOS_AddMenu` are shown), so `NewFolderSheet` is
+  a standard iOS form sheet (`NavigationStack` + `TextField` + Cancel/
+  Create toolbar buttons) built from `AppTheme` tokens rather than a
+  pixel match to a specific artboard.
+- Validation ("이름 유효?" / "에러 표시") is name-non-empty-after-trim:
+  an empty/whitespace-only name shows an inline error and keeps the sheet
+  open; the Create button is also disabled in that state as a redundant
+  guard. A repository-write failure shows a generic "couldn't save"
+  error and likewise keeps the sheet open, satisfying the diagram's
+  `D → B` loop for both validation and persistence failures.
+- "생성된 폴더 선택 상태로 전환" (select the newly created folder) is
+  implemented as `HomeViewModel.selectedFolderId`, which highlights the
+  new folder's row (`surface2` background) after the list reloads.
+  Navigating *into* the folder isn't implemented yet — there's no folder
+  detail/contents screen in this brief's scope — so "selected" is shown
+  as a list highlight rather than a navigation push.
 
 ## Acceptance Criteria
 
 - [x] `HomeView` matches `Screen_Home` layout (folder/document list)
-- [ ] New folder flow implements all callouts in
+- [x] New folder flow implements all callouts in
       `Planning_2_FolderCreateFlow` and the PLANNING §5.2 state diagram
 - [ ] New document flow implements all callouts in
       `Planning_3_DocumentCreateFlow` and the PLANNING §5.3 state diagram
@@ -79,4 +104,7 @@ CRUD) must exist before this can persist created items.
 
 ## Open Questions / Follow-ups
 
-- None yet
+- `HomeViewModel.selectedFolderId` (new-folder highlight) is never
+  cleared, so it persists indefinitely rather than being a transient
+  "selected" state per PLANNING §5.2. Revisit once a folder-detail
+  screen exists (clear on navigation, or add a timeout/dismiss).

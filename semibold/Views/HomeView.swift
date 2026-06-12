@@ -11,6 +11,15 @@ import SwiftUI
 struct HomeView: View {
     @State private var viewModel = HomeViewModel()
 
+    /// Whether the "+" menu (`iOS_AddMenu`) is showing, offering "New
+    /// Folder" / "New Document" / "Cancel" (callouts ④/⑤ of
+    /// `Planning_2_FolderCreateFlow` / `Planning_3_DocumentCreateFlow`).
+    @State private var isAddMenuPresented = false
+
+    /// Whether the new-folder name-entry sheet is showing
+    /// (`Planning_2_FolderCreateFlow`, PLANNING §5.2).
+    @State private var isNewFolderSheetPresented = false
+
     var body: some View {
         VStack(spacing: 0) {
             navBar
@@ -25,6 +34,21 @@ struct HomeView: View {
         .background(AppTheme.Colors.background)
         .onAppear {
             viewModel.load()
+        }
+        .confirmationDialog("Add", isPresented: $isAddMenuPresented, titleVisibility: .hidden) {
+            Button("New Folder") {
+                isNewFolderSheetPresented = true
+            }
+            Button("New Document") {
+                // TODO: Planning_3_DocumentCreateFlow (PLANNING §5.3) —
+                // implemented as a separate acceptance-criteria item.
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .sheet(isPresented: $isNewFolderSheetPresented) {
+            NewFolderSheet { createdFolder in
+                viewModel.didCreateFolder(createdFolder)
+            }
         }
     }
 
@@ -70,13 +94,13 @@ struct HomeView: View {
             )
     }
 
-    /// Entry point for the new-folder/new-document action sheet
-    /// (`Planning_2_FolderCreateFlow` / `Planning_3_DocumentCreateFlow`).
-    /// Wiring up the sheet is a separate acceptance-criteria item.
+    /// Entry point for the "new folder / new document" menu
+    /// (`Planning_2_FolderCreateFlow` / `Planning_3_DocumentCreateFlow`,
+    /// callout ① — "현재 보고 있는 위치를 기준으로 무언가를 새로 만들기
+    /// 시작하는 단일 진입점").
     private var addButton: some View {
         Button {
-            // TODO: present the "new folder / new document" action sheet
-            // (Planning_2_FolderCreateFlow / Planning_3_DocumentCreateFlow).
+            isAddMenuPresented = true
         } label: {
             Image(systemName: "plus")
                 .appTextStyle(AppTheme.Typography.title)
@@ -97,7 +121,7 @@ struct HomeView: View {
                 emptyRow(text: "No folders yet")
             } else {
                 ForEach(viewModel.folders) { folder in
-                    FolderRow(folder: folder)
+                    FolderRow(folder: folder, isSelected: folder.id == viewModel.selectedFolderId)
                 }
             }
         } header: {
@@ -148,6 +172,11 @@ struct HomeView: View {
 private struct FolderRow: View {
     let folder: Folder
 
+    /// Whether this is the folder just created from the "+" menu
+    /// (PLANNING §5.2: "생성된 폴더 선택 상태로 전환"), highlighted so the
+    /// user can see where it landed in the list.
+    let isSelected: Bool
+
     var body: some View {
         HStack(spacing: AppTheme.Spacing.md) {
             Image(systemName: "folder")
@@ -173,7 +202,7 @@ private struct FolderRow: View {
                 .foregroundStyle(AppTheme.Colors.text3)
         }
         .padding(.vertical, AppTheme.Spacing.sm)
-        .listRowBackground(AppTheme.Colors.background)
+        .listRowBackground(isSelected ? AppTheme.Colors.surface2 : AppTheme.Colors.background)
     }
 }
 
