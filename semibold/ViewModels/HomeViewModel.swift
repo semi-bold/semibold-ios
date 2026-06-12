@@ -16,6 +16,11 @@ final class HomeViewModel {
     /// (PLANNING §5.2: "생성된 폴더 선택 상태로 전환").
     var selectedFolderId: String?
 
+    /// The document most recently created from the "+" menu, highlighted
+    /// in the list to confirm where it landed (PLANNING §5.3, mirroring
+    /// the folder flow's "선택 상태로 전환" step).
+    var selectedDocumentId: String?
+
     private let folderRepository: FolderRepository
     private let documentRepository: DocumentRepository
 
@@ -49,5 +54,15 @@ final class HomeViewModel {
     func didCreateFolder(_ folder: Folder) {
         load()
         selectedFolderId = folder.id
+    }
+
+    /// Refreshes the list after a new document is created and marks it as
+    /// selected, so the user can see where it landed
+    /// (`Planning_3_DocumentCreateFlow`, PLANNING §5.3: "documents row
+    /// 생성" → "빈 document editor 열기"). Opening the document editor
+    /// itself is out of scope for this brief (`block-editor-phase3`).
+    func didCreateDocument(_ document: Document) {
+        load()
+        selectedDocumentId = document.id
     }
 }
