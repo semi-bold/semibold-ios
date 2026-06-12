@@ -37,11 +37,32 @@ CRUD) and `ui-phase2` (navigation into a document from `HomeView`).
 
 ## Decisions & Deviations
 
-_None yet — fill in as decisions are made during implementation._
+- `Screen_Detail` in `wireframe.py` (lines ~86-137, ~787-841) is a generic
+  "detail view" example artboard, unrelated to the document editor — same
+  situation as brief 03's `Screen_Home`. The real document-editor artboard
+  is `iOS_Editor` (`wireframe.py` lines ~296-422), which is also what
+  `Planning_4_BlockCreateFlow`'s callouts reference. `DetailView` was built
+  against `iOS_Editor`'s static layout (custom nav bar + back button,
+  title area with title/date, divider, block list), keeping the brief's
+  `DetailView` type name while citing `iOS_Editor` as the real reference.
+- `DetailView`'s nav bar omits `iOS_Editor`'s `DocLockBtn` (Secret-Lock
+  toggle) — out of scope per `Planning_4_BlockCreateFlow` callout ④.
+- Back button shows generic "< Back" rather than the wireframe's literal
+  "< 일상" (a specific folder name) — `HomeView` is a flat root-level list
+  with no folder-navigation context to source a folder name from.
+- `iOS_Editor`'s `KeyboardToolbar`/`KeyboardArea` (shown during text input)
+  are deferred to AC2 (paragraph input), not part of this static layout.
+- Tapping a document row in `HomeView` now navigates to `DetailView` via
+  `NavigationLink(value:)`/`navigationDestination(for: Document.self)`
+  (added `Hashable` to `Document`) — needed since `DetailView` has no
+  entry point otherwise. Block rows render read-only as plain
+  `markdownSource` text for now (`BlockRow`); type-specific styling is
+  `markdown-phase4`. A document with zero blocks shows a "Start
+  writing…" placeholder — creating the first empty block is AC2's scope.
 
 ## Acceptance Criteria
 
-- [ ] `DetailView` matches `Screen_Detail` layout
+- [x] `DetailView` matches `Screen_Detail` layout
 - [ ] Paragraph block input + Enter-to-create new block works
 - [ ] Autosave per PLANNING §11 (자동 저장 정책) basic policy
 - [ ] Block delete/merge and reorder implemented per

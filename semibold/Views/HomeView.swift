@@ -25,17 +25,20 @@ struct HomeView: View {
     @State private var isNewDocumentSheetPresented = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            navBar
+        NavigationStack {
+            VStack(spacing: 0) {
+                navBar
 
-            List {
-                folderSection
-                documentSection
+                List {
+                    folderSection
+                    documentSection
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
+            .background(AppTheme.Colors.background)
+            .toolbar(.hidden)
         }
-        .background(AppTheme.Colors.background)
         .onAppear {
             viewModel.load()
         }
@@ -145,11 +148,16 @@ struct HomeView: View {
                 emptyRow(text: "No documents yet")
             } else {
                 ForEach(viewModel.documents) { document in
-                    DocumentRow(document: document, isSelected: document.id == viewModel.selectedDocumentId)
+                    NavigationLink(value: document) {
+                        DocumentRow(document: document, isSelected: document.id == viewModel.selectedDocumentId)
+                    }
                 }
             }
         } header: {
             sectionHeader("Documents")
+        }
+        .navigationDestination(for: Document.self) { document in
+            DetailView(document: document)
         }
     }
 
@@ -240,10 +248,6 @@ private struct DocumentRow: View {
             }
 
             Spacer()
-
-            Image(systemName: "chevron.right")
-                .appTextStyle(AppTheme.Typography.caption)
-                .foregroundStyle(AppTheme.Colors.text3)
         }
         .padding(.vertical, AppTheme.Spacing.sm)
         .listRowBackground(isSelected ? AppTheme.Colors.surface2 : AppTheme.Colors.background)
