@@ -7,12 +7,15 @@ import SwiftUI
 /// bar, a title area showing the document's title and last-updated date,
 /// and a scrolling list of the document's blocks below a divider.
 ///
-/// This view currently renders the document read-only (static layout +
-/// existing blocks). Paragraph input, Enter-to-create, delete/merge, and
-/// reorder (`Planning_4_BlockCreateFlow` callouts ①–⑤, PLANNING §5.4/§6.3)
-/// land in a later acceptance criterion.
+/// Each block is an editable text input (callout ② "입력 중인 블록과
+/// 캐럿"). Pressing Enter/Return splits the current block's text at the
+/// cursor and creates a new paragraph block right below it, moving focus
+/// there (PLANNING §5.4/§13.1). Block-type conversions, delete/merge, and
+/// reorder (`Planning_4_BlockCreateFlow` callouts ①③⑤) land in later
+/// acceptance criteria — every block is a plain paragraph for now.
 struct DetailView: View {
     @State private var viewModel: DetailViewModel
+    @FocusState private var focusedBlockId: String?
     @Environment(\.dismiss) private var dismiss
 
     init(document: Document) {
@@ -34,6 +37,11 @@ struct DetailView: View {
         .navigationBarBackButtonHidden()
         .onAppear {
             viewModel.load()
+        }
+        .onChange(of: viewModel.focusedBlockId) { _, newValue in
+            guard let newValue else { return }
+            focusedBlockId = newValue
+            viewModel.focusHandled()
         }
     }
 
@@ -92,56 +100,72 @@ struct DetailView: View {
     // MARK: - Block list
 
     /// The document's blocks, matching the wireframe's stacked
-    /// `Block_*` rows. A document with no blocks yet shows a placeholder
-    /// hint instead — creating the first empty block to type into is
-    /// AC2's scope (Enter-to-create / first block on open).
+    /// `Block_*` rows — each one an editable paragraph input
+    /// (callout ②). `load()` guarantees at least one (empty) block exists,
+    /// so this list is never empty by the time it's shown.
     private var blockList: some View {
-        Group {
-            if viewModel.blocks.isEmpty {
-                emptyBlockPlaceholder
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(viewModel.blocks) { block in
-                            BlockRow(block: block)
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(viewModel.blocks) { block in
+                    BlockRow(
+                        block: block,
+                        focusedBlockId: $focusedBlockId,
+                        onTextChange: { text in
+                            viewModel.updateBlockText(block.id, text: text)
+                        },
+                        onEnter: { text, cursorOffset in
+                            viewModel.insertBlock(after: block.id, currentText: text, cursorOffset: cursorOffset)
                         }
-                    }
+                    )
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(AppTheme.Colors.background)
     }
-
-    /// Shown when the document has no blocks yet — a lightweight hint
-    /// where the first block will appear once typing starts (AC2).
-    private var emptyBlockPlaceholder: some View {
-        Text("Start writing…")
-            .appTextStyle(AppTheme.Typography.body)
-            .foregroundStyle(AppTheme.Colors.text2)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, AppTheme.Spacing.md)
-            .padding(.top, AppTheme.Spacing.md)
-    }
 }
 
-/// A single read-only block row, matching the wireframe's `Block_*`
-/// groups: the block's text content with a divider below.
+/// A single editable block row, matching the wireframe's `Block_*` groups:
+/// a text input for the block's content with a divider below
+/// (`Block_Editing`'s cursor when focused — callout ②).
 ///
 /// Block-type-specific styling (headings, lists, checklists, quotes,
-/// code) is `markdown-phase4` scope — this row renders every block as
-/// plain text for now.
+/// code) is `markdown-phase4` scope — this row renders every block as a
+/// plain paragraph input for now.
 private struct BlockRow: View {
     let block: DocumentBlock
+    var focusedBlockId: FocusState<String?>.Binding
+    let onTextChange: (String) -> Void
+    let onEnter: (String, Int) -> Void
+
+    @State private var text: String
+
+    init(
+        block: DocumentBlock,
+        focusedBlockId: FocusState<String?>.Binding,
+        onTextChange: @escaping (String) -> Void,
+        onEnter: @escaping (String, Int) -> Void
+    ) {
+        self.block = block
+        self.focusedBlockId = focusedBlockId
+        self.onTextChange = onTextChange
+        self.onEnter = onEnter
+        _text = State(initialValue: block.markdownSource ?? "")
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(block.markdownSource ?? "")
-                .appTextStyle(AppTheme.Typography.body)
-                .foregroundStyle(AppTheme.Colors.text1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, AppTheme.Spacing.md)
-                .padding(.vertical, AppTheme.Spacing.md)
+            ParagraphTextField(
+                text: $text,
+                onTextChange: onTextChange,
+                onEnter: { cursorOffset in
+                    onEnter(text, cursorOffset)
+                }
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, AppTheme.Spacing.md)
+            .padding(.vertical, AppTheme.Spacing.md)
+            .focused(focusedBlockId, equals: block.id)
 
             Rectangle()
                 .fill(AppTheme.Colors.divider)

@@ -33,7 +33,7 @@ CRUD) and `ui-phase2` (navigation into a document from `HomeView`).
 | Wireframe/Spec | SwiftUI target | Notes |
 |---|---|---|
 | Screen_Detail | `DetailView` (or per CLAUDE.md §1 naming) | document editor |
-| Planning_4_BlockCreateFlow | TBD (block view-model name) | block create/edit/delete/reorder |
+| Planning_4_BlockCreateFlow | `DetailViewModel` (block create/edit), `ParagraphTextField` (UITextView-backed input) | block create/edit/delete/reorder |
 
 ## Decisions & Deviations
 
@@ -59,11 +59,32 @@ CRUD) and `ui-phase2` (navigation into a document from `HomeView`).
   `markdownSource` text for now (`BlockRow`); type-specific styling is
   `markdown-phase4`. A document with zero blocks shows a "Start
   writing…" placeholder — creating the first empty block is AC2's scope.
+- AC2 (paragraph input + Enter-to-create): `DetailViewModel.load()` now
+  creates and persists one empty `paragraph` block (and focuses it) when
+  a document has zero blocks, replacing the old "Start writing…"
+  placeholder — matches PLANNING §6.2's "기본 paragraph block 1개 생성".
+  `BlockRow` renders each block via a new `ParagraphTextField`, a
+  `UITextView`-backed `UIViewRepresentable` (per CLAUDE.md §3's "drop to
+  UIKit only where SwiftUI genuinely can't do the job" — SwiftUI's
+  `TextField`/`TextEditor` don't expose cursor position or let Return be
+  intercepted before inserting a newline). Pressing Return calls
+  `DetailViewModel.insertBlock(after:currentText:cursorOffset:)`, which
+  splits the text at the cursor, keeps the "before" half in the current
+  block, creates a new paragraph block from the "after" half placed
+  immediately below (shifting later blocks' `sortOrder` by one), and sets
+  `focusedBlockId` so `DetailView` moves `@FocusState` to the new block.
+  `updateBlockText(_:text:)` persists `markdownSource`/`contentJSON` on
+  every edit via `DocumentBlockRepository.update` — this is the minimal
+  text-change persistence Enter-to-create needs; AC3 covers the fuller
+  autosave policy (e.g. batching/timing, title autosave). Shift+Enter
+  (multi-line within a block) isn't distinguished from plain Enter at the
+  `UITextView` delegate level, so it's deferred — Enter always creates a
+  new block for now, matching the AC's literal scope.
 
 ## Acceptance Criteria
 
 - [x] `DetailView` matches `Screen_Detail` layout
-- [ ] Paragraph block input + Enter-to-create new block works
+- [x] Paragraph block input + Enter-to-create new block works
 - [ ] Autosave per PLANNING §11 (자동 저장 정책) basic policy
 - [ ] Block delete/merge and reorder implemented per
       `Planning_4_BlockCreateFlow` callouts and PLANNING §5.4 diagram
@@ -72,4 +93,16 @@ CRUD) and `ui-phase2` (navigation into a document from `HomeView`).
 
 ## Open Questions / Follow-ups
 
-- None yet
+- swift-reviewer (AC2, non-blocking Suggested items, revisit during
+  `markdown-phase4` if `ParagraphTextField` gains more capture-dependent
+  behavior):
+  - `ParagraphTextField.updateUIView` doesn't refresh
+    `context.coordinator.parent` — classic stale-coordinator
+    `UIViewRepresentable` pitfall, currently harmless but worth hardening.
+  - `ParagraphTextField` doesn't apply `TextStyleToken.body`'s line height
+    (24pt) via `NSMutableParagraphStyle`/`lineSpacing` — minor visual
+    line-height gap vs. SwiftUI `Text` using `appTextStyle(.body)`.
+  - `DetailViewModel.insertBlock`'s sortOrder-shift loop bumps later
+    blocks' `updatedAt` even though their content didn't change —
+    harmless today (block-level `updatedAt` isn't surfaced in UI), but
+    revisit if revision history is ever built on it.
