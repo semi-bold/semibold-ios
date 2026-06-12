@@ -53,14 +53,21 @@ the repository layer produced here.
 - [x] `folders`, `documents`, `document_blocks` tables created exactly
       per PLANNING.md §9 (field names, types, soft-delete columns)
 - [x] Recommended indexes from §9.4 applied
-- [ ] Repository layer provides CRUD for folders/documents/blocks, named
+- [x] Repository layer provides CRUD for folders/documents/blocks, named
       per PLANNING.md §9 field names (`sortOrder`, `parentId`,
       `contentJSON`, `markdownSource`, …)
 
 ## Open Questions / Follow-ups
 
-- `AppMigrations.swift`'s FK declarations use `onDelete: .none` (= no
-  explicit `ON DELETE` clause / SQLite default). Reads as if it's a
-  deliberate "do nothing" policy; revisit alongside AC4's repository
-  delete semantics (soft-delete via `deletedAt` is the intended path) —
-  either drop `onDelete:` or add a clarifying comment then.
+- Resolved: `AppMigrations.swift`'s FK declarations no longer pass
+  `onDelete: .none` (a verbose no-op) — they now use GRDB's default with
+  a comment explaining that deletion is a soft delete via `deletedAt`
+  (see `FolderRepository`/`DocumentRepository`/`DocumentBlockRepository`),
+  so no `ON DELETE` cascade is needed.
+- `softDelete(id:)` in each repository uses a raw `db.execute(sql:)`
+  UPDATE rather than GRDB's query-interface `updateAll`/fetch+`update` —
+  flagged by swift-reviewer as inconsistent with the typed style used
+  elsewhere (not a §2 violation since it's still GRDB, not raw sqlite3).
+  Left as-is for this AC; revisit if/when repository tests are added.
+- No unit tests added for the new repositories yet — `DatabaseManager`'s
+  `:memory:` mode supports this; deferred to a future tooling/testing AC.
