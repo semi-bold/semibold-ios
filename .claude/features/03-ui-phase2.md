@@ -1,6 +1,6 @@
 # Feature: 03-ui-phase2
 
-Status: in-progress
+Status: done
 
 ## Source
 
