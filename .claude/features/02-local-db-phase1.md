@@ -31,19 +31,36 @@ the repository layer produced here.
 
 ## Decisions & Deviations
 
-_None yet — fill in as decisions are made during implementation._
+- `DatabaseManager` (`semibold/Data/DatabaseManager.swift`) opens a GRDB
+  `DatabaseQueue` at `semibold.sqlite` in Application Support (or a
+  caller-supplied path, e.g. `:memory:` for tests/previews) and runs
+  `AppMigrations.migrator.migrate(dbQueue)` on init.
+- `AppMigrations` (`semibold/Data/AppMigrations.swift`) holds the
+  versioned `DatabaseMigrator`. Its first migration, `v1_createCoreTables`,
+  creates `folders`, `documents`, and `document_blocks` (field names
+  matching PLANNING §9: `parentId`, `sortOrder`, `contentJSON`,
+  `markdownSource`, `createdAt`/`updatedAt`/`deletedAt`, …) plus the five
+  recommended indexes from §9.4 (`idx_folders_parent_id`,
+  `idx_documents_folder_id`, `idx_blocks_document_id`,
+  `idx_blocks_parent_id`, `idx_blocks_sort_order`). This satisfies AC1
+  (migrator setup) and incidentally covers most of AC2/AC3 — repository
+  layer (AC4) and any remaining schema verification are still open.
 
 ## Acceptance Criteria
 
-- [ ] `DatabaseManager` sets up GRDB connection + versioned
+- [x] `DatabaseManager` sets up GRDB connection + versioned
       `DatabaseMigrator`
-- [ ] `folders`, `documents`, `document_blocks` tables created exactly
+- [x] `folders`, `documents`, `document_blocks` tables created exactly
       per PLANNING.md §9 (field names, types, soft-delete columns)
-- [ ] Recommended indexes from §9.4 applied
+- [x] Recommended indexes from §9.4 applied
 - [ ] Repository layer provides CRUD for folders/documents/blocks, named
       per PLANNING.md §9 field names (`sortOrder`, `parentId`,
       `contentJSON`, `markdownSource`, …)
 
 ## Open Questions / Follow-ups
 
-- None yet
+- `AppMigrations.swift`'s FK declarations use `onDelete: .none` (= no
+  explicit `ON DELETE` clause / SQLite default). Reads as if it's a
+  deliberate "do nothing" policy; revisit alongside AC4's repository
+  delete semantics (soft-delete via `deletedAt` is the intended path) —
+  either drop `onDelete:` or add a clarifying comment then.
