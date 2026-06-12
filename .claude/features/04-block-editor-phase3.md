@@ -1,6 +1,6 @@
 # Feature: 04-block-editor-phase3
 
-Status: draft
+Status: in-progress
 
 ## Source
 
