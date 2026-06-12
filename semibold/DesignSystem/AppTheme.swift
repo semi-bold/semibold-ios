@@ -86,6 +86,16 @@ struct TextStyleToken {
     }
 }
 
+extension View {
+    /// Applies a typography token's font and the line spacing needed to
+    /// reach its target line height, so screens can opt into the full
+    /// `TextStyleToken` (not just its font) with one modifier.
+    func appTextStyle(_ token: TextStyleToken) -> some View {
+        font(token.font)
+            .lineSpacing(token.lineHeight - token.size)
+    }
+}
+
 private extension Color {
     /// Creates a `Color` from a `"#RRGGBB"` (or `"#AARRGGBB"`) hex string,
     /// matching the literal hex values declared in `tokens.py`.
