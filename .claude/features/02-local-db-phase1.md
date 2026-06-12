@@ -1,6 +1,6 @@
 # Feature: 02-local-db-phase1
 
-Status: in-progress
+Status: done
 
 ## Source
 
