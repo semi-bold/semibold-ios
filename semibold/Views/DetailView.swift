@@ -17,6 +17,7 @@ struct DetailView: View {
     @State private var viewModel: DetailViewModel
     @FocusState private var focusedBlockId: String?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     init(document: Document) {
         _viewModel = State(initialValue: DetailViewModel(document: document))
@@ -42,6 +43,21 @@ struct DetailView: View {
             guard let newValue else { return }
             focusedBlockId = newValue
             viewModel.focusHandled()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            // Flush any debounced block edits before the app moves to the
+            // background, so nothing typed right before backgrounding is
+            // lost (PLANNING §11.2 "앱 백그라운드 진입: pending change
+            // flush").
+            if newPhase == .background {
+                viewModel.flushPendingChanges()
+            }
+        }
+        .onDisappear {
+            // Also flush when leaving this screen (e.g. tapping "< Back")
+            // so an edit made just before navigating away isn't lost while
+            // its debounce timer is still pending.
+            viewModel.flushPendingChanges()
         }
     }
 
