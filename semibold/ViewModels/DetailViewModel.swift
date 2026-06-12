@@ -12,6 +12,7 @@ import Foundation
 /// (the rest of `Planning_4_BlockCreateFlow`) land in a later acceptance
 /// criterion.
 @Observable
+@MainActor
 final class DetailViewModel {
     /// The document being viewed/edited.
     private(set) var document: Document
@@ -27,12 +28,25 @@ final class DetailViewModel {
 
     private let documentBlockRepository: DocumentBlockRepository
 
+    /// How long to wait after the last keystroke before writing a block's
+    /// text to the database (PLANNING §11.2 "블록 입력: 300~800ms debounce
+    /// 후 저장"). Configurable so tests can use a near-zero delay instead
+    /// of waiting out the real interval.
+    private let autosaveDebounceInterval: Duration
+
+    /// In-flight debounce timers, one per block currently being typed
+    /// into. A new keystroke cancels and replaces the previous timer for
+    /// that block so only the latest edit is written once typing pauses.
+    private var pendingSaveTasks: [String: Task<Void, Never>] = [:]
+
     init(
         document: Document,
-        documentBlockRepository: DocumentBlockRepository = DocumentBlockRepository()
+        documentBlockRepository: DocumentBlockRepository = DocumentBlockRepository(),
+        autosaveDebounceInterval: Duration = .milliseconds(500)
     ) {
         self.document = document
         self.documentBlockRepository = documentBlockRepository
+        self.autosaveDebounceInterval = autosaveDebounceInterval
     }
 
     /// Reloads this document's top-level blocks. If the document has no
@@ -65,17 +79,42 @@ final class DetailViewModel {
         }
     }
 
-    /// Saves the current text typed into `block`, keeping `markdownSource`
-    /// (the round-trippable Markdown the user typed) and `contentJSON`
-    /// (the structured paragraph content used for rendering) in sync
-    /// (PLANNING §6.3 블록 저장 원칙). Called as the user types, so edits to
-    /// existing blocks aren't lost — the fuller autosave policy (e.g.
-    /// batching/timing) is a later acceptance criterion.
+    /// Updates the in-memory text for `block` immediately (so the editor
+    /// stays responsive) and schedules a debounced save of
+    /// `markdownSource`/`contentJSON` to the database (PLANNING §6.3 블록
+    /// 저장 원칙, §11.2 "블록 입력: 300~800ms debounce 후 저장"). A new
+    /// keystroke cancels the previous block's pending save and restarts the
+    /// timer, so rapid typing only writes once the user pauses.
     func updateBlockText(_ blockId: String, text: String) {
         guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
 
         blocks[index].markdownSource = text
         blocks[index].contentJSON = Self.contentJSON(forText: text)
+
+        pendingSaveTasks[blockId]?.cancel()
+        pendingSaveTasks[blockId] = Task { @MainActor [weak self, autosaveDebounceInterval] in
+            do {
+                try await Task.sleep(for: autosaveDebounceInterval)
+            } catch {
+                // Cancelled by a newer keystroke (or `flushPendingChanges`)
+                // before the debounce interval elapsed — don't save yet.
+                return
+            }
+            guard let self else { return }
+            self.persistBlock(blockId)
+            // Safe to clear unconditionally: any path that would reassign
+            // this slot (a newer keystroke, `flushPendingChanges`, or
+            // `insertBlock`'s split) cancels the previous task first, so by
+            // the time this resumes it's still the most recent save for
+            // `blockId` (or has already been cleared/replaced).
+            self.pendingSaveTasks[blockId] = nil
+        }
+    }
+
+    /// Immediately writes `blockId`'s current in-memory text to the
+    /// database, bypassing the debounce timer.
+    private func persistBlock(_ blockId: String) {
+        guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
 
         do {
             blocks[index] = try documentBlockRepository.update(blocks[index])
@@ -83,6 +122,19 @@ final class DetailViewModel {
             // Local-only edit if the save fails; the next successful save
             // (or app relaunch reload) reconciles it. Nothing actionable
             // for the user to do here.
+        }
+    }
+
+    /// Writes every block with a pending debounced save right away
+    /// (PLANNING §11.2 "앱 백그라운드 진입: pending change flush"). Called
+    /// when the app moves to the background so no edits are lost while the
+    /// debounce timer is still running.
+    func flushPendingChanges() {
+        let blockIds = Array(pendingSaveTasks.keys)
+        for blockId in blockIds {
+            pendingSaveTasks[blockId]?.cancel()
+            pendingSaveTasks[blockId] = nil
+            persistBlock(blockId)
         }
     }
 
@@ -111,8 +163,15 @@ final class DetailViewModel {
         let beforeText = String(currentText[currentText.startIndex..<splitIndex])
         let afterText = String(currentText[splitIndex...])
 
-        // Persist the (possibly trimmed) text that stays in the current block.
-        updateBlockText(blockId, text: beforeText)
+        // Block creation saves immediately (PLANNING §11.2 "블록 생성/삭제/
+        // 순서 변경: 즉시 저장"), so update the in-memory text and persist
+        // the (possibly trimmed) text that stays in the current block
+        // right away rather than going through the debounced path.
+        blocks[index].markdownSource = beforeText
+        blocks[index].contentJSON = Self.contentJSON(forText: beforeText)
+        pendingSaveTasks[blockId]?.cancel()
+        pendingSaveTasks[blockId] = nil
+        persistBlock(blockId)
 
         let newBlock = DocumentBlock(
             documentId: document.id,

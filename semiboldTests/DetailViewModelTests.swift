@@ -9,6 +9,11 @@ import Testing
 ///
 /// These exercise the same repository path the editor relies on
 /// end-to-end, against a throwaway in-memory database.
+///
+/// `DetailViewModel` is `@MainActor`-isolated (it mutates `@Observable`
+/// state from a debounced background `Task`, like the real editor would),
+/// so this suite runs on the main actor too.
+@MainActor
 struct DetailViewModelTests {
     private func makeDatabaseManager() -> DatabaseManager {
         DatabaseManager(path: ":memory:")
@@ -58,24 +63,57 @@ struct DetailViewModelTests {
         #expect(viewModel.focusedBlockId == nil)
     }
 
-    @Test("Editing a block's text persists its markdownSource and contentJSON")
-    func updateBlockTextPersists() throws {
+    @Test("Editing a block's text updates it in memory immediately and persists it once the debounce settles")
+    func updateBlockTextPersistsAfterDebounce() async throws {
         let database = makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
         let document = try documentRepository.create(Document(title: "Diary"))
-        let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
+        let viewModel = DetailViewModel(
+            document: document,
+            documentBlockRepository: blockRepository,
+            autosaveDebounceInterval: .milliseconds(10)
+        )
         viewModel.load()
         let blockId = try #require(viewModel.blocks.first?.id)
 
         viewModel.updateBlockText(blockId, text: "Today was a good day")
 
+        // In-memory state updates immediately, before the debounced save runs.
         #expect(viewModel.blocks.first?.markdownSource == "Today was a good day")
         #expect(viewModel.blocks.first?.contentJSON.contains("Today was a good day") == true)
 
+        // The database write hasn't happened yet — debounced, not immediate.
+        let beforeDebounce = try blockRepository.find(id: blockId)
+        #expect(beforeDebounce?.markdownSource != "Today was a good day")
+
+        try await Task.sleep(for: .milliseconds(50))
+
         let reloaded = try #require(try blockRepository.find(id: blockId))
         #expect(reloaded.markdownSource == "Today was a good day")
+    }
+
+    @Test("Backgrounding the app flushes a pending debounced edit immediately")
+    func flushPendingChangesPersistsImmediately() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = DetailViewModel(
+            document: document,
+            documentBlockRepository: blockRepository,
+            autosaveDebounceInterval: .seconds(10)
+        )
+        viewModel.load()
+        let blockId = try #require(viewModel.blocks.first?.id)
+
+        viewModel.updateBlockText(blockId, text: "Saved before backgrounding")
+        viewModel.flushPendingChanges()
+
+        let reloaded = try #require(try blockRepository.find(id: blockId))
+        #expect(reloaded.markdownSource == "Saved before backgrounding")
     }
 
     @Test("Pressing Enter splits the block at the cursor and creates a new block below it, focused")

@@ -80,12 +80,76 @@ CRUD) and `ui-phase2` (navigation into a document from `HomeView`).
   (multi-line within a block) isn't distinguished from plain Enter at the
   `UITextView` delegate level, so it's deferred — Enter always creates a
   new block for now, matching the AC's literal scope.
+- AC3 (autosave per PLANNING §11): `DetailViewModel.updateBlockText(_:text:)`
+  now updates the in-memory `blocks` array immediately (so the editor
+  stays responsive) but defers the `DocumentBlockRepository.update` write
+  with a 500ms debounce per block (PLANNING §11.2 "블록 입력: 300~800ms
+  debounce 후 저장") — each keystroke cancels and restarts a `Task` /
+  `Task.sleep` timer for that block, so only the latest edit is written
+  once typing pauses. The debounce interval is injectable via a new
+  `autosaveDebounceInterval` init parameter (default `.milliseconds(500)`)
+  so tests can use a near-zero interval instead of waiting out the real
+  delay. A new `flushPendingChanges()` writes every block with a pending
+  debounced save immediately, cancelling its timer — `DetailView` calls
+  this from `.onChange(of: scenePhase)` when the scene moves to
+  `.background` (PLANNING §11.2 "앱 백그라운드 진입: pending change
+  flush"). `insertBlock(after:currentText:cursorOffset:)`'s "before text"
+  update (the text that stays in the current block when it's split) now
+  bypasses the debounce and persists immediately alongside the new block's
+  creation, matching §11.2's "블록 생성/삭제/순서 변경: 즉시 저장" for the
+  whole split operation, not just the new block.
+  - Title-edit debounce (§11.2 "제목 변경: 300~500ms debounce 후 저장") is
+    deferred: `DetailView`'s title area (from AC1) is still read-only
+    (`document.title` + last-updated date), so there's no title-editing UI
+    surface yet to debounce. Adding that UI is judged out of scope for
+    this AC — it would expand into new UI rather than the block-input
+    autosave this AC targets — and is left as a follow-up for whichever
+    later brief introduces title editing.
+  - "macOS window close: pending change flush" (§11.2) is out of scope —
+    this app currently has no macOS target/window, so there's no
+    window-close hook to wire up. `flushPendingChanges()` is a
+    plain `DetailViewModel` method usable from any platform-specific hook
+    a future macOS target adds.
+  - `DetailViewModelTests.swift`'s `updateBlockTextPersists` test (AC2)
+    was renamed to `updateBlockTextPersistsAfterDebounce` and now
+    constructs the view model with `autosaveDebounceInterval: .milliseconds(10)`,
+    asserts the in-memory update is immediate but the DB write hasn't
+    happened yet, then awaits past the debounce and re-checks the DB. A
+    new `flushPendingChangesPersistsImmediately` test uses a long
+    (10s) debounce interval and confirms `flushPendingChanges()` persists
+    the pending edit synchronously without waiting.
+  - **swift-reviewer follow-up (post-AC3 fix):** `DetailViewModel` is now
+    marked `@MainActor` — the debounced `Task` it starts in
+    `updateBlockText` mutates `@Observable` state (`blocks`,
+    `pendingSaveTasks`) after `Task.sleep`, and without actor isolation
+    there was no guarantee that resumed on the same thread as the SwiftUI
+    view's calls into `updateBlockText`/`insertBlock`/
+    `flushPendingChanges` — a data race. The debounce `Task` itself is
+    now `Task { @MainActor [weak self, ...] in ... }` so it stays on the
+    main actor across the `Task.sleep` suspension. This is the first
+    `DetailViewModel`/view-model in the app with real intra-object
+    concurrency; other `@Observable` view-models (`HomeViewModel`, etc.)
+    have no background `Task`s and continue to rely on implicit
+    main-actor isolation from being driven only by SwiftUI views.
+    `DetailViewModelTests` (which constructs/calls `DetailViewModel`
+    directly) is now `@MainActor` itself so its `@Test` functions can call
+    the isolated view-model methods; all 7 tests still pass with no other
+    changes needed.
+  - Added a one-line comment on `pendingSaveTasks[blockId] = nil` (after
+    the debounced `persistBlock`) documenting why clearing it
+    unconditionally is safe: every other path that would reassign that
+    slot (a newer keystroke, `flushPendingChanges`, or `insertBlock`'s
+    split) cancels the previous task first.
+  - Added `.onDisappear { viewModel.flushPendingChanges() }` to
+    `DetailView` so navigating back ("< Back") within the debounce window
+    no longer loses a pending edit — previously `flushPendingChanges()`
+    only ran on `scenePhase == .background`.
 
 ## Acceptance Criteria
 
 - [x] `DetailView` matches `Screen_Detail` layout
 - [x] Paragraph block input + Enter-to-create new block works
-- [ ] Autosave per PLANNING §11 (자동 저장 정책) basic policy
+- [x] Autosave per PLANNING §11 (자동 저장 정책) basic policy
 - [ ] Block delete/merge and reorder implemented per
       `Planning_4_BlockCreateFlow` callouts and PLANNING §5.4 diagram
 - [ ] Blocks persist via `document_blocks` repository from
