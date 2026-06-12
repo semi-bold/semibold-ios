@@ -29,11 +29,16 @@ N/A — shared infrastructure consumed by all subsequent screen work.
 
 ## Decisions & Deviations
 
-_None yet — fill in as decisions are made during implementation._
+- `project.yml` needs no changes for the `Models/`/`Views/`/`ViewModels/`/
+  `Data/` split — its `sources: - path: semibold` entry with
+  `createIntermediateGroups: true` already picks up new subdirectories.
+- `App/` (containing `SemiboldApp.swift`, the `@main` entry point) remains
+  as a fifth top-level group alongside the four required by this brief —
+  it's app-lifecycle code, not a Model/View/ViewModel/Data file.
 
 ## Acceptance Criteria
 
-- [ ] `semibold/` split into `Models/`, `Views/`, `ViewModels/`, `Data/`
+- [x] `semibold/` split into `Models/`, `Views/`, `ViewModels/`, `Data/`
       groups
 - [ ] `AppTheme` type exists with colors/spacing/typography matching
       `sketch/tokens.py`
