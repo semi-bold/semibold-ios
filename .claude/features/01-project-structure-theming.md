@@ -35,6 +35,10 @@ N/A — shared infrastructure consumed by all subsequent screen work.
 - `App/` (containing `SemiboldApp.swift`, the `@main` entry point) remains
   as a fifth top-level group alongside the four required by this brief —
   it's app-lifecycle code, not a Model/View/ViewModel/Data file.
+- `ContentView`'s placeholder `VStack` spacing was originally a literal
+  `12`pt. `AppTheme.Spacing` has no 12pt step (`sm` = 8, `md` = 16), so it
+  was rounded down to `AppTheme.Spacing.sm` (8pt) — close enough for a
+  placeholder smoke test and avoids adding a one-off token.
 
 ## Acceptance Criteria
 
@@ -42,7 +46,7 @@ N/A — shared infrastructure consumed by all subsequent screen work.
       groups
 - [x] `AppTheme` type exists with colors/spacing/typography matching
       `sketch/tokens.py`
-- [ ] `ContentView` (placeholder root view) uses `AppTheme` rather than
+- [x] `ContentView` (placeholder root view) uses `AppTheme` rather than
       hardcoded values, as a smoke test of the new type
 
 ## Open Questions / Follow-ups
