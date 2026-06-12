@@ -69,5 +69,8 @@ the repository layer produced here.
   flagged by swift-reviewer as inconsistent with the typed style used
   elsewhere (not a §2 violation since it's still GRDB, not raw sqlite3).
   Left as-is for this AC; revisit if/when repository tests are added.
-- No unit tests added for the new repositories yet — `DatabaseManager`'s
-  `:memory:` mode supports this; deferred to a future tooling/testing AC.
+- Resolved (in `03-ui-phase2` AC4): a `semiboldTests` unit-test target was
+  added (`project.yml`) with
+  `semiboldTests/FolderDocumentPersistenceTests.swift`, covering
+  `FolderRepository`/`DocumentRepository` create + read-back against an
+  `:memory:` `DatabaseManager`.

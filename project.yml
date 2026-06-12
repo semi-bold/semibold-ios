@@ -37,3 +37,22 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+    scheme:
+      testTargets:
+        - semiboldTests
+
+  semiboldTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: semiboldTests
+    dependencies:
+      - package: GRDB
+        product: GRDB
+      - target: semibold
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: YES
