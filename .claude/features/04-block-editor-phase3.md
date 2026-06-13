@@ -144,14 +144,76 @@ CRUD) and `ui-phase2` (navigation into a document from `HomeView`).
     `DetailView` so navigating back ("< Back") within the debounce window
     no longer loses a pending edit — previously `flushPendingChanges()`
     only ran on `scenePhase == .background`.
+- AC4 (delete/merge + reorder, PLANNING §6.3/§13.1, §5.4, §11.2): scope is
+  taken from §6.3's "Backspace로 빈 블록 병합 또는 삭제" requirement, not
+  `Planning_4_BlockCreateFlow`'s §5.4 diagram directly — §5.4 is a
+  creation-only flow (Enter → new block → save → autosave), already
+  covered by AC2/AC3.
+  - `ParagraphTextField` gained an `onBackspaceAtStart: () -> Void`
+    callback (alongside AC2's `onEnter`), fired from
+    `shouldChangeTextIn` when `range == NSRange(location: 0, length: 0)`
+    and `replacementText` is empty — the signature `UITextView` uses for
+    "Backspace with nothing before the caret to delete".
+  - `DetailViewModel.mergeOrDeleteBlock(_:currentText:)` implements
+    PLANNING §13.1's "Backspace at empty block: 이전 블록과 병합 또는 현재
+    블록 삭제":
+    - First block in the document: no-op (every document keeps ≥1 block,
+      per AC2's `load()` bootstrap invariant).
+    - Empty block (not first): soft-deletes the block
+      (`DocumentBlockRepository.softDelete`), shifts later blocks'
+      `sortOrder` down by one, and moves focus to the previous block with
+      the caret at its (unchanged) end.
+    - Non-empty block (not first): appends its text onto the end of the
+      previous block, persists the previous block immediately, then
+      soft-deletes this block and shifts later `sortOrder`s down, moving
+      focus to the previous block with the caret at the merge seam
+      (the previous block's original text length).
+    All of this is immediate, not debounced — matches §11.2 "블록
+    생성/삭제/순서 변경: 즉시 저장" (any pending debounced save for the
+    removed/merged block is cancelled first).
+  - New `focusedBlockCursorOffset` (alongside `focusedBlockId`) carries the
+    caret position the editor should apply once focus moves to the
+    previous block; `ParagraphTextField` gained a
+    `cursorOffsetToApply: Binding<Int?>` that `updateUIView` applies via
+    `selectedRange` and then clears. `focusHandled()` now clears both.
+  - `BlockRow` gained an `.onChange(of: block.markdownSource)` to
+    re-sync its local `@State private var text` when the view model
+    changes a block's content from outside that row's own typing (e.g.
+    the previous block receiving merged text) — without this, the row's
+    `@State` (initialized once from `block.markdownSource` at row
+    creation) would go stale after a merge.
+  - **Reorder** (`Planning_4_BlockCreateFlow` callout ⑤ / §6.3 "Drag &
+    Drop 또는 키보드 조작으로 블록 순서 변경"): implemented at the
+    view-model/persistence layer only —
+    `DetailViewModel.moveBlock(id:direction:)` swaps a block's `sortOrder`
+    with its immediate neighbor (`.up`/`.down`) and persists both rows
+    immediately via `DocumentBlockRepository.update`, no-ops at the
+    top/bottom of the list. No reorder UI (drag handle, keyboard shortcut,
+    or button) is added — per the brief's own Out of Scope, drag & drop
+    reordering UI is `quality-phase5`'s territory, and there's no
+    wireframe for a keyboard-based reorder control either. This leaves
+    `moveBlock` ready for whichever future brief adds the UI.
+  - **Undo/redo** (`Planning_4_BlockCreateFlow` callout ⑤'s "실행취소·다시
+    실행" buttons): out of scope entirely for this brief — not mentioned
+    anywhere in this brief's Scope section, and adding an undo/redo stack
+    spanning create/delete/merge/reorder is a substantial feature in its
+    own right. Flagged as a follow-up for `quality-phase5` or later, once
+    the reorder UI itself is being built.
+  - New `DetailViewModelTests` cases: `backspaceAtStartOfEmptyBlock...`
+    (delete + focus previous block's end), `backspaceAtStartOfNonEmpty...`
+    (merge into previous block, focus at the seam),
+    `backspaceAtStartOfFirstBlockDoesNothing`, and two `moveBlock` tests
+    (swap with neighbor + persist, no-op at boundaries).
 
 ## Acceptance Criteria
 
 - [x] `DetailView` matches `Screen_Detail` layout
 - [x] Paragraph block input + Enter-to-create new block works
 - [x] Autosave per PLANNING §11 (자동 저장 정책) basic policy
-- [ ] Block delete/merge and reorder implemented per
+- [x] Block delete/merge and reorder implemented per
       `Planning_4_BlockCreateFlow` callouts and PLANNING §5.4 diagram
+      (reorder is persistence-layer-only via `moveBlock`, no UI yet —
+      see Decisions & Deviations)
 - [ ] Blocks persist via `document_blocks` repository from
       `local-db-phase1`
 
@@ -170,3 +232,19 @@ CRUD) and `ui-phase2` (navigation into a document from `HomeView`).
     blocks' `updatedAt` even though their content didn't change —
     harmless today (block-level `updatedAt` isn't surfaced in UI), but
     revisit if revision history is ever built on it.
+- swift-reviewer (AC4, non-blocking Suggested items):
+  - `DetailViewModel.moveBlock` doesn't cancel `pendingSaveTasks` for the
+    swapped blocks before persisting (unlike `insertBlock`/
+    `mergeOrDeleteBlock`) — harmless (a later debounced write is just an
+    idempotent re-save bumping `updatedAt` again), but inconsistent with
+    the "cancel before persisting" pattern elsewhere. Tidy up if
+    `moveBlock` gains a UI entry point.
+  - `ParagraphTextField.updateUIView`'s `cursorOffsetToApply` handling
+    relies on `uiView.text` having already been reassigned earlier in the
+    same call — correct but order-dependent; a one-line comment would
+    help future edits not reorder the two steps.
+  - Reorder UI and undo/redo (`Planning_4_BlockCreateFlow` callout ⑤) are
+    out of scope for this brief — `moveBlock` is ready for whichever
+    later brief (`quality-phase5`+) adds a reorder control; undo/redo
+    spans create/delete/merge/reorder and is a substantial follow-up of
+    its own.

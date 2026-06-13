@@ -8,9 +8,10 @@ import Foundation
 /// paragraph block and pressing Enter splits the text at the cursor,
 /// keeping everything before it in the current block and saving
 /// everything after it into a new paragraph block placed right below,
-/// with editing focus moving to that new block. Delete/merge and reorder
-/// (the rest of `Planning_4_BlockCreateFlow`) land in a later acceptance
-/// criterion.
+/// with editing focus moving to that new block. It also implements
+/// Backspace-at-start merge/delete and block reorder
+/// (PLANNING §6.3/§13.1, §5.4) — see `mergeOrDeleteBlock` and
+/// `moveBlock`.
 @Observable
 @MainActor
 final class DetailViewModel {
@@ -25,6 +26,12 @@ final class DetailViewModel {
     /// e.g. right after a new block is created by pressing Enter. The view
     /// observes this and clears it once focus has moved.
     private(set) var focusedBlockId: String?
+
+    /// The caret position (UTF-16 offset) to apply once `focusedBlockId`
+    /// becomes focused, e.g. the merge point when Backspace-at-start
+    /// merges a block into the previous one. `nil` means "leave the caret
+    /// wherever the text view puts it by default."
+    private(set) var focusedBlockCursorOffset: Int?
 
     private let documentBlockRepository: DocumentBlockRepository
 
@@ -199,10 +206,128 @@ final class DetailViewModel {
         }
     }
 
-    /// Clears `focusedBlockId` once the view has moved keyboard focus to
-    /// it, so it doesn't keep re-triggering focus changes.
+    /// Clears `focusedBlockId`/`focusedBlockCursorOffset` once the view has
+    /// moved keyboard focus to it, so it doesn't keep re-triggering focus
+    /// changes.
     func focusHandled() {
         focusedBlockId = nil
+        focusedBlockCursorOffset = nil
+    }
+
+    /// Handles pressing Backspace with the caret at the very start of
+    /// `blockId`'s text (PLANNING §13.1 "Backspace at empty block: 이전
+    /// 블록과 병합 또는 현재 블록 삭제", §6.3 "Backspace로 빈 블록 병합 또는
+    /// 삭제").
+    ///
+    /// - If `blockId` is the document's first block, there's nothing to
+    ///   merge/delete into — every document keeps at least one block
+    ///   (`load()`'s bootstrap invariant), so this does nothing.
+    /// - If `blockId`'s text is empty, the block is removed outright and
+    ///   focus moves to the end of the previous block.
+    /// - Otherwise, `blockId`'s text is appended to the end of the
+    ///   previous block, `blockId` is removed, and focus moves to the
+    ///   previous block with the caret placed at the merge point (the
+    ///   previous block's original text length).
+    ///
+    /// Either way this is a block create/delete-equivalent structural
+    /// change, so it's persisted immediately rather than debounced
+    /// (PLANNING §11.2 "블록 생성/삭제/순서 변경: 즉시 저장").
+    func mergeOrDeleteBlock(_ blockId: String, currentText: String) {
+        guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
+        guard index > 0 else {
+            // First block in the document — Backspace at its start does
+            // nothing, matching AC2's "every document has ≥1 block".
+            return
+        }
+
+        let previousIndex = index - 1
+        let previousBlock = blocks[previousIndex]
+        let previousText = previousBlock.markdownSource ?? ""
+
+        // Cancel any pending debounced save for the block being removed —
+        // its content is either discarded (empty block) or already folded
+        // into the previous block's text below.
+        pendingSaveTasks[blockId]?.cancel()
+        pendingSaveTasks[blockId] = nil
+
+        let mergedText: String
+        let cursorOffset: Int
+        if currentText.isEmpty {
+            // Empty block: just drop it, caret goes to the end of the
+            // previous block's existing text.
+            mergedText = previousText
+            cursorOffset = previousText.utf16.count
+        } else {
+            // Non-empty block: fold its text onto the end of the previous
+            // block, caret lands at the seam between the two texts.
+            mergedText = previousText + currentText
+            cursorOffset = previousText.utf16.count
+        }
+
+        blocks[previousIndex].markdownSource = mergedText
+        blocks[previousIndex].contentJSON = Self.contentJSON(forText: mergedText)
+        pendingSaveTasks[previousBlock.id]?.cancel()
+        pendingSaveTasks[previousBlock.id] = nil
+        persistBlock(previousBlock.id)
+
+        do {
+            try documentBlockRepository.softDelete(id: blockId)
+            blocks.remove(at: index)
+
+            // Shift every later block's sortOrder down by one to close the
+            // gap left by the removed block.
+            for laterIndex in blocks.indices where blocks[laterIndex].sortOrder > previousBlock.sortOrder + 1 {
+                blocks[laterIndex].sortOrder -= 1
+                blocks[laterIndex] = try documentBlockRepository.update(blocks[laterIndex])
+            }
+
+            focusedBlockId = previousBlock.id
+            focusedBlockCursorOffset = cursorOffset
+        } catch {
+            // Local-only state if the delete fails; reloading the document
+            // reconciles it. Nothing actionable for the user to do here.
+        }
+    }
+
+    /// The direction a block moves in `moveBlock(id:direction:)`.
+    enum MoveDirection {
+        case up
+        case down
+    }
+
+    /// Moves `blockId` one position up or down in display order
+    /// (`Planning_4_BlockCreateFlow` callout ⑤ / PLANNING §6.3 "Drag & Drop
+    /// 또는 키보드 조작으로 블록 순서 변경"), swapping `sortOrder` with its
+    /// neighbor and persisting both immediately (PLANNING §11.2 "블록
+    /// 생성/삭제/순서 변경: 즉시 저장").
+    ///
+    /// Does nothing if `blockId` is already at the top (for `.up`) or
+    /// bottom (for `.down`) of the list. The reorder UI itself (drag &
+    /// drop or a keyboard control) is `quality-phase5` — this is the
+    /// persistence-layer half a future UI calls into.
+    func moveBlock(id blockId: String, direction: MoveDirection) {
+        guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
+
+        let neighborIndex = direction == .up ? index - 1 : index + 1
+        guard blocks.indices.contains(neighborIndex) else { return }
+
+        let movedSortOrder = blocks[index].sortOrder
+        let neighborSortOrder = blocks[neighborIndex].sortOrder
+
+        var moved = blocks[index]
+        var neighbor = blocks[neighborIndex]
+        moved.sortOrder = neighborSortOrder
+        neighbor.sortOrder = movedSortOrder
+
+        do {
+            blocks[index] = try documentBlockRepository.update(moved)
+            blocks[neighborIndex] = try documentBlockRepository.update(neighbor)
+            blocks.swapAt(index, neighborIndex)
+        } catch {
+            // Leave the in-memory order as-is (still reflecting the
+            // original `sortOrder` values) if the save fails, so the
+            // editor's order keeps matching what's persisted.
+        }
     }
 
     /// Builds the `contentJSON` for a plain paragraph block holding
