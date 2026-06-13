@@ -21,6 +21,19 @@ struct ParagraphTextField: UIViewRepresentable {
     /// that offset moves into the new block created right below this one.
     var onEnter: (_ cursorOffset: Int) -> Void
 
+    /// Called when the user presses Backspace with the cursor at the very
+    /// start of this block's text (offset 0), so the editor can merge this
+    /// block into the previous one or delete it
+    /// (`Planning_4_BlockCreateFlow`, PLANNING §13.1 "Backspace at empty
+    /// block: 이전 블록과 병합 또는 현재 블록 삭제").
+    var onBackspaceAtStart: () -> Void
+
+    /// A one-shot character offset to move the caret to once this block
+    /// becomes focused, e.g. the merge point when a Backspace-at-start
+    /// merges the block below into this one. `DetailView` clears this back
+    /// to `nil` once it's been applied.
+    @Binding var cursorOffsetToApply: Int?
+
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
         textView.delegate = context.coordinator
@@ -38,6 +51,14 @@ struct ParagraphTextField: UIViewRepresentable {
     func updateUIView(_ uiView: UITextView, context: Context) {
         if uiView.text != text {
             uiView.text = text
+        }
+
+        if let offset = cursorOffsetToApply {
+            let clamped = min(max(offset, 0), uiView.text.utf16.count)
+            uiView.selectedRange = NSRange(location: clamped, length: 0)
+            DispatchQueue.main.async {
+                cursorOffsetToApply = nil
+            }
         }
     }
 
@@ -60,6 +81,14 @@ struct ParagraphTextField: UIViewRepresentable {
             shouldChangeTextIn range: NSRange,
             replacementText text: String
         ) -> Bool {
+            if text.isEmpty && range.location == 0 && range.length == 0 {
+                // Backspace pressed with the caret at the very start of the
+                // block's text — let the editor decide whether to merge
+                // this block into the previous one or delete it.
+                parent.onBackspaceAtStart()
+                return false
+            }
+
             guard text == "\n" else { return true }
 
             let cursorOffset = range.location

@@ -10,12 +10,16 @@ import SwiftUI
 /// Each block is an editable text input (callout ② "입력 중인 블록과
 /// 캐럿"). Pressing Enter/Return splits the current block's text at the
 /// cursor and creates a new paragraph block right below it, moving focus
-/// there (PLANNING §5.4/§13.1). Block-type conversions, delete/merge, and
-/// reorder (`Planning_4_BlockCreateFlow` callouts ①③⑤) land in later
-/// acceptance criteria — every block is a plain paragraph for now.
+/// there (PLANNING §5.4/§13.1). Pressing Backspace at the very start of a
+/// block merges it into the previous block (or deletes it if empty),
+/// moving focus to the merge point (PLANNING §6.3/§13.1). Block-type
+/// conversions and a reorder UI (`Planning_4_BlockCreateFlow` callouts
+/// ①③⑤) land in later acceptance criteria — every block is a plain
+/// paragraph for now.
 struct DetailView: View {
     @State private var viewModel: DetailViewModel
     @FocusState private var focusedBlockId: String?
+    @State private var cursorOffsetToApply: Int?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
@@ -42,6 +46,7 @@ struct DetailView: View {
         .onChange(of: viewModel.focusedBlockId) { _, newValue in
             guard let newValue else { return }
             focusedBlockId = newValue
+            cursorOffsetToApply = viewModel.focusedBlockCursorOffset
             viewModel.focusHandled()
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -126,11 +131,15 @@ struct DetailView: View {
                     BlockRow(
                         block: block,
                         focusedBlockId: $focusedBlockId,
+                        cursorOffsetToApply: $cursorOffsetToApply,
                         onTextChange: { text in
                             viewModel.updateBlockText(block.id, text: text)
                         },
                         onEnter: { text, cursorOffset in
                             viewModel.insertBlock(after: block.id, currentText: text, cursorOffset: cursorOffset)
+                        },
+                        onBackspaceAtStart: { text in
+                            viewModel.mergeOrDeleteBlock(block.id, currentText: text)
                         }
                     )
                 }
@@ -151,21 +160,27 @@ struct DetailView: View {
 private struct BlockRow: View {
     let block: DocumentBlock
     var focusedBlockId: FocusState<String?>.Binding
+    @Binding var cursorOffsetToApply: Int?
     let onTextChange: (String) -> Void
     let onEnter: (String, Int) -> Void
+    let onBackspaceAtStart: (String) -> Void
 
     @State private var text: String
 
     init(
         block: DocumentBlock,
         focusedBlockId: FocusState<String?>.Binding,
+        cursorOffsetToApply: Binding<Int?>,
         onTextChange: @escaping (String) -> Void,
-        onEnter: @escaping (String, Int) -> Void
+        onEnter: @escaping (String, Int) -> Void,
+        onBackspaceAtStart: @escaping (String) -> Void
     ) {
         self.block = block
         self.focusedBlockId = focusedBlockId
+        self._cursorOffsetToApply = cursorOffsetToApply
         self.onTextChange = onTextChange
         self.onEnter = onEnter
+        self.onBackspaceAtStart = onBackspaceAtStart
         _text = State(initialValue: block.markdownSource ?? "")
     }
 
@@ -176,7 +191,11 @@ private struct BlockRow: View {
                 onTextChange: onTextChange,
                 onEnter: { cursorOffset in
                     onEnter(text, cursorOffset)
-                }
+                },
+                onBackspaceAtStart: {
+                    onBackspaceAtStart(text)
+                },
+                cursorOffsetToApply: focusedBlockId.wrappedValue == block.id ? $cursorOffsetToApply : .constant(nil)
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, AppTheme.Spacing.md)
@@ -188,6 +207,16 @@ private struct BlockRow: View {
                 .frame(height: 1)
         }
         .background(AppTheme.Colors.background)
+        .onChange(of: block.markdownSource) { _, newValue in
+            // Keep this row's text in sync when the view model changes
+            // `block`'s content without the user typing here directly —
+            // e.g. a later block's Backspace-at-start merge appends its
+            // text onto the end of this block.
+            let newText = newValue ?? ""
+            if text != newText {
+                text = newText
+            }
+        }
     }
 }
 

@@ -194,4 +194,165 @@ struct DetailViewModelTests {
         let stored = try blockRepository.blocks(documentId: document.id, parentId: nil)
         #expect(stored.map(\.markdownSource) == ["First", "", "Second"])
     }
+
+    @Test("Backspace at the start of an empty block deletes it and focuses the previous block at its end")
+    func backspaceAtStartOfEmptyBlockDeletesItAndFocusesPreviousBlockEnd() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.blocks.first?.id)
+
+        // Add a second, empty block right below the first.
+        let secondBlock = try blockRepository.create(DocumentBlock(
+            documentId: document.id,
+            sortOrder: 1,
+            type: .paragraph,
+            contentJSON: "{\"type\":\"paragraph\",\"text\":[{\"text\":\"\"}]}",
+            markdownSource: ""
+        ))
+        // A third block follows, to check sortOrder shifting after delete.
+        let thirdBlock = try blockRepository.create(DocumentBlock(
+            documentId: document.id,
+            sortOrder: 2,
+            type: .paragraph,
+            contentJSON: "{\"type\":\"paragraph\",\"text\":[{\"text\":\"Third\"}]}",
+            markdownSource: "Third"
+        ))
+        viewModel.load()
+        viewModel.updateBlockText(firstBlockId, text: "First")
+
+        viewModel.mergeOrDeleteBlock(secondBlock.id, currentText: "")
+
+        #expect(viewModel.blocks.map(\.id) == [firstBlockId, thirdBlock.id])
+        #expect(viewModel.blocks.map(\.sortOrder) == [0, 1])
+        #expect(viewModel.blocks[0].markdownSource == "First")
+        #expect(viewModel.focusedBlockId == firstBlockId)
+        #expect(viewModel.focusedBlockCursorOffset == "First".utf16.count)
+
+        // The empty block is soft-deleted, not just dropped in memory.
+        let stored = try blockRepository.blocks(documentId: document.id, parentId: nil)
+        #expect(stored.map(\.id) == [firstBlockId, thirdBlock.id])
+        #expect(stored.map(\.sortOrder) == [0, 1])
+
+        let deleted = try blockRepository.find(id: secondBlock.id)
+        #expect(deleted?.deletedAt != nil)
+    }
+
+    @Test("Backspace at the start of a non-empty block merges its text into the previous block")
+    func backspaceAtStartOfNonEmptyBlockMergesIntoPreviousBlock() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.blocks.first?.id)
+        viewModel.updateBlockText(firstBlockId, text: "Hello")
+        viewModel.flushPendingChanges()
+
+        let secondBlock = try blockRepository.create(DocumentBlock(
+            documentId: document.id,
+            sortOrder: 1,
+            type: .paragraph,
+            contentJSON: "{\"type\":\"paragraph\",\"text\":[{\"text\":\" world\"}]}",
+            markdownSource: " world"
+        ))
+        viewModel.load()
+        #expect(viewModel.blocks.map(\.id) == [firstBlockId, secondBlock.id])
+
+        viewModel.mergeOrDeleteBlock(secondBlock.id, currentText: " world")
+
+        #expect(viewModel.blocks.count == 1)
+        #expect(viewModel.blocks[0].id == firstBlockId)
+        #expect(viewModel.blocks[0].markdownSource == "Hello world")
+        #expect(viewModel.focusedBlockId == firstBlockId)
+        // Caret lands at the seam between "Hello" and " world".
+        #expect(viewModel.focusedBlockCursorOffset == "Hello".utf16.count)
+
+        let stored = try blockRepository.blocks(documentId: document.id, parentId: nil)
+        #expect(stored.map(\.markdownSource) == ["Hello world"])
+
+        let deleted = try blockRepository.find(id: secondBlock.id)
+        #expect(deleted?.deletedAt != nil)
+    }
+
+    @Test("Backspace at the start of the document's first block does nothing")
+    func backspaceAtStartOfFirstBlockDoesNothing() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.blocks.first?.id)
+        viewModel.updateBlockText(firstBlockId, text: "Only block")
+        // Clear the focus state `load()`'s bootstrap set, so the assertion
+        // below reflects `mergeOrDeleteBlock`'s own behavior rather than a
+        // leftover from loading a brand-new document.
+        viewModel.focusHandled()
+
+        viewModel.mergeOrDeleteBlock(firstBlockId, currentText: "Only block")
+
+        #expect(viewModel.blocks.count == 1)
+        #expect(viewModel.blocks[0].id == firstBlockId)
+        #expect(viewModel.focusedBlockId == nil)
+    }
+
+    @Test("moveBlock swaps a block with the neighbor above it and persists the new order")
+    func moveBlockUpSwapsSortOrderAndPersists() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.blocks.first?.id)
+        viewModel.updateBlockText(firstBlockId, text: "First")
+        viewModel.flushPendingChanges()
+
+        let secondBlock = try blockRepository.create(DocumentBlock(
+            documentId: document.id,
+            sortOrder: 1,
+            type: .paragraph,
+            contentJSON: "{\"type\":\"paragraph\",\"text\":[{\"text\":\"Second\"}]}",
+            markdownSource: "Second"
+        ))
+        viewModel.load()
+        #expect(viewModel.blocks.map(\.markdownSource) == ["First", "Second"])
+
+        viewModel.moveBlock(id: secondBlock.id, direction: .up)
+
+        #expect(viewModel.blocks.map(\.markdownSource) == ["Second", "First"])
+        #expect(viewModel.blocks.map(\.sortOrder) == [0, 1])
+
+        let stored = try blockRepository.blocks(documentId: document.id, parentId: nil)
+        #expect(stored.map(\.markdownSource) == ["Second", "First"])
+        #expect(stored.map(\.sortOrder) == [0, 1])
+    }
+
+    @Test("moveBlock does nothing when the block is already at the top or bottom")
+    func moveBlockAtBoundaryDoesNothing() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.blocks.first?.id)
+        viewModel.updateBlockText(firstBlockId, text: "Only block")
+
+        viewModel.moveBlock(id: firstBlockId, direction: .up)
+        #expect(viewModel.blocks.map(\.markdownSource) == ["Only block"])
+
+        viewModel.moveBlock(id: firstBlockId, direction: .down)
+        #expect(viewModel.blocks.map(\.markdownSource) == ["Only block"])
+    }
 }
