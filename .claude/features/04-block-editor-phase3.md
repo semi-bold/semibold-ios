@@ -1,6 +1,6 @@
 # Feature: 04-block-editor-phase3
 
-Status: in-progress
+Status: done
 
 ## Source
 
@@ -204,6 +204,34 @@ CRUD) and `ui-phase2` (navigation into a document from `HomeView`).
     (merge into previous block, focus at the seam),
     `backspaceAtStartOfFirstBlockDoesNothing`, and two `moveBlock` tests
     (swap with neighbor + persist, no-op at boundaries).
+- AC5 (`document_blocks` repository persistence) was satisfied end-to-end
+  by AC1-AC4's existing code — same situation as brief 03's AC4. Every
+  block mutation in `DetailViewModel` goes through
+  `DocumentBlockRepository` (which defaults to
+  `DatabaseManager.shared.dbQueue`, the on-disk SQLite database): `load()`
+  reads via `blocks(documentId:parentId:)` and bootstraps the first block
+  via `create`; `updateBlockText`/`persistBlock`/`flushPendingChanges`
+  write via `update`; `insertBlock` writes the split/shifted blocks via
+  `update` and the new block via `create`; `mergeOrDeleteBlock` removes a
+  block via `softDelete` and renumbers via `update`; `moveBlock` swaps
+  `sortOrder` via `update`. No mock/in-memory-only data path remains in
+  `DetailViewModel`/`DetailView`. `semiboldTests/DetailViewModelTests.swift`
+  (12 tests, all passing) already exercises round-trips for every one of
+  these paths against an `:memory:` `DatabaseManager` — e.g.
+  `loadCreatesFirstEmptyBlockForNewDocument` re-reads via
+  `blockRepository.blocks(...)` after `create`,
+  `updateBlockTextPersistsAfterDebounce`/`flushPendingChangesPersistsImmediately`
+  re-read via `blockRepository.find(...)` after `update`,
+  `insertBlockSplitsAtCursorAndFocusesNewBlock`/
+  `insertBlockShiftsLaterBlocksSortOrder` re-read via `blocks(...)` after
+  `create`/`update`, `backspaceAtStartOfEmptyBlockDeletesIt...`/
+  `backspaceAtStartOfNonEmptyBlockMergesIntoPreviousBlock` confirm
+  `softDelete` (via `find(...).deletedAt != nil`) and the merged text via
+  `blocks(...)`, and `moveBlockUpSwapsSortOrderAndPersists` confirms the
+  swapped `sortOrder` via `blocks(...)`. No code changes were needed; ran
+  `xcodegen generate` + `xcodebuild build`/`test` (iPhone 17 simulator,
+  iOS 26.1) to confirm — build succeeded and all 15 tests (12
+  `DetailViewModelTests` + 3 `FolderDocumentPersistenceTests`) pass.
 
 ## Acceptance Criteria
 
@@ -214,7 +242,7 @@ CRUD) and `ui-phase2` (navigation into a document from `HomeView`).
       `Planning_4_BlockCreateFlow` callouts and PLANNING §5.4 diagram
       (reorder is persistence-layer-only via `moveBlock`, no UI yet —
       see Decisions & Deviations)
-- [ ] Blocks persist via `document_blocks` repository from
+- [x] Blocks persist via `document_blocks` repository from
       `local-db-phase1`
 
 ## Open Questions / Follow-ups
