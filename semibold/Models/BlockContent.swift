@@ -41,11 +41,10 @@ struct RichTextSpan: Codable, Equatable {
 /// `BlockType` and round-trips through `contentJSON` via
 /// `BlockContent.encodeJSON()` / `BlockContent.decode(from:type:)`.
 ///
-/// Only the shapes implemented so far (`paragraph`, `heading`,
-/// `bulletedListItem`, `numberedListItem`, `checklistItem`, `blockquote`,
-/// `codeBlock`) are modeled as real cases — `divider` (which has no
-/// content fields at all per §8.1) falls back to `.paragraph` in
-/// `decode(from:type:)` until a later AC needs it.
+/// Every `BlockType` case (§8.1's 8 union members) has a matching
+/// `BlockContent` case — `decode(from:type:)`, `.text`, and `encodeJSON()`
+/// are exhaustive switches with no fallback arm, so adding a new
+/// `BlockType` forces the compiler to flag these switches as incomplete.
 enum BlockContent: Equatable {
     case paragraph(ParagraphContent)
     case heading(HeadingContent)
@@ -54,12 +53,16 @@ enum BlockContent: Equatable {
     case checklistItem(ChecklistItemContent)
     case blockquote(BlockquoteContent)
     case codeBlock(CodeBlockContent)
+    case divider(DividerContent)
 
     /// The plain text shared by every case modeled so far. A `.codeBlock`'s
     /// `code` (plain text, not rich text per §8.1) is wrapped in a single
     /// unstyled `RichTextSpan` so this stays a uniform accessor —
     /// `DocumentBlock.displayText`'s `.text.map(\.text).joined()` then
-    /// returns `code` unchanged without needing its own case.
+    /// returns `code` unchanged without needing its own case. A `.divider`
+    /// has no text content at all (§8.1's `{ type: "divider" }` carries no
+    /// `text` field), so this returns an empty array — `displayText` for a
+    /// divider block is `""`.
     var text: [RichTextSpan] {
         switch self {
         case .paragraph(let content): return content.text
@@ -69,6 +72,7 @@ enum BlockContent: Equatable {
         case .checklistItem(let content): return content.text
         case .blockquote(let content): return content.text
         case .codeBlock(let content): return [RichTextSpan(text: content.code)]
+        case .divider: return []
         }
     }
 
@@ -83,6 +87,7 @@ enum BlockContent: Equatable {
         case .checklistItem(let content): data = try? JSONEncoder().encode(content)
         case .blockquote(let content): data = try? JSONEncoder().encode(content)
         case .codeBlock(let content): data = try? JSONEncoder().encode(content)
+        case .divider(let content): data = try? JSONEncoder().encode(content)
         }
         guard let data, let json = String(data: data, encoding: .utf8) else {
             return "{\"type\":\"paragraph\",\"text\":[]}"
@@ -92,8 +97,7 @@ enum BlockContent: Equatable {
 
     /// Decodes `json` according to `type`, falling back to an empty
     /// paragraph if the JSON is missing or malformed (e.g. a block created
-    /// before this shape existed). `.divider` (no content fields modeled
-    /// yet) also falls back to `.paragraph` until a later AC adds its case.
+    /// before this shape existed).
     static func decode(from json: String, type: BlockType) -> BlockContent {
         let data = Data(json.utf8)
         switch type {
@@ -133,10 +137,10 @@ enum BlockContent: Equatable {
             }
             return .codeBlock(CodeBlockContent(language: nil, code: ""))
         case .divider:
-            if let content = try? JSONDecoder().decode(ParagraphContent.self, from: data) {
-                return .paragraph(content)
+            if let content = try? JSONDecoder().decode(DividerContent.self, from: data) {
+                return .divider(content)
             }
-            return .paragraph(ParagraphContent(text: []))
+            return .divider(DividerContent())
         }
     }
 
@@ -198,6 +202,12 @@ enum BlockContent: Equatable {
     static func codeBlockJSON(language: String?, code: String) -> String {
         BlockContent.codeBlock(CodeBlockContent(language: language, code: code)).encodeJSON()
     }
+
+    /// Builds the `contentJSON` for a divider block (§8.1
+    /// `{ type: "divider" }`) — a horizontal rule with no text content.
+    static func dividerJSON() -> String {
+        BlockContent.divider(DividerContent()).encodeJSON()
+    }
 }
 
 /// The `contentJSON` shape for a `.paragraph` block (§8.1
@@ -257,6 +267,13 @@ struct CodeBlockContent: Codable, Equatable {
     var type = "code_block"
     var language: String?
     var code: String
+}
+
+/// The `contentJSON` shape for a `.divider` block (§8.1
+/// `{ type: "divider" }`) — a horizontal rule between blocks, with no other
+/// fields (no text, no extra configuration).
+struct DividerContent: Codable, Equatable {
+    var type = "divider"
 }
 
 extension DocumentBlock {
