@@ -1,14 +1,39 @@
 import Foundation
 
+/// An inline formatting mark that can be applied to a `RichTextSpan` (§8.1
+/// `RichTextSpan.marks`) — bold, italic, strikethrough, inline code, or a
+/// link. `link` is recorded alongside `RichTextSpan.href`, which carries the
+/// link's destination URL.
+enum RichTextMark: String, Codable, Equatable {
+    case bold
+    case italic
+    case strike
+    case inlineCode = "inline_code"
+    case link
+}
+
 /// A run of text within a block's content, carrying any inline formatting
 /// marks applied to it (PLANNING/`tasks/NO-001.md` §8.1 `RichTextSpan`).
 ///
-/// Marks (`bold`, `italic`, `strike`, `inline_code`, `link`) and `href` are
-/// `markdown-phase4` follow-up scope (AC6) — for now every span is plain
-/// text, but the type is named and shaped to match §8.1 so that work can
-/// extend it without renaming.
+/// `marks`/`href` are `Optional` so `contentJSON` written before
+/// `markdown-phase4` AC6 (encoded as `{"text": "..."}` with neither key)
+/// still decodes correctly — `Codable` leaves an `Optional` property `nil`
+/// when its key is missing, rather than failing to decode.
 struct RichTextSpan: Codable, Equatable {
     var text: String
+    /// Inline formatting marks applied to `text` (§7.1/§7.3's `**bold**`,
+    /// `*italic*`, `~~strike~~`, `` `code` ``, `[text](url)` syntax), or
+    /// `nil` for a plain unstyled span.
+    var marks: [RichTextMark]?
+    /// The link destination for a span whose `marks` includes `.link`
+    /// (§7.1/§7.3's `[text](url)` syntax), or `nil` for a non-link span.
+    var href: String?
+
+    init(text: String, marks: [RichTextMark]? = nil, href: String? = nil) {
+        self.text = text
+        self.marks = marks
+        self.href = href
+    }
 }
 
 /// The structured content stored in a `DocumentBlock`'s `contentJSON`,
@@ -115,53 +140,54 @@ enum BlockContent: Equatable {
         }
     }
 
-    /// Builds the `contentJSON` for a plain paragraph block holding
-    /// `text` as a single unstyled span (§8.1 `{ type: "paragraph", text:
-    /// RichTextSpan[] }`).
+    /// Builds the `contentJSON` for a plain paragraph block, parsing `text`
+    /// for inline Markdown marks (§7.1/§7.3's `**bold**`, `*italic*`,
+    /// `~~strike~~`, `` `code` ``, `[text](url)` syntax) into `[RichTextSpan]`
+    /// (§8.1 `{ type: "paragraph", text: RichTextSpan[] }`).
     static func paragraphJSON(text: String) -> String {
-        BlockContent.paragraph(ParagraphContent(text: [RichTextSpan(text: text)])).encodeJSON()
+        BlockContent.paragraph(ParagraphContent(text: RichTextSpan.parse(markdownText: text))).encodeJSON()
     }
 
-    /// Builds the `contentJSON` for a heading block at `level` (1-3)
-    /// holding `text` as a single unstyled span (§8.1 `{ type: "heading",
-    /// level: 1|2|3, text: RichTextSpan[] }`).
+    /// Builds the `contentJSON` for a heading block at `level` (1-3),
+    /// parsing `text` for inline Markdown marks into `[RichTextSpan]` (§8.1
+    /// `{ type: "heading", level: 1|2|3, text: RichTextSpan[] }`).
     static func headingJSON(level: Int, text: String) -> String {
-        BlockContent.heading(HeadingContent(level: level, text: [RichTextSpan(text: text)])).encodeJSON()
+        BlockContent.heading(HeadingContent(level: level, text: RichTextSpan.parse(markdownText: text))).encodeJSON()
     }
 
-    /// Builds the `contentJSON` for a bulleted (unordered) list item
-    /// holding `text` as a single unstyled span (§8.1
+    /// Builds the `contentJSON` for a bulleted (unordered) list item,
+    /// parsing `text` for inline Markdown marks into `[RichTextSpan]` (§8.1
     /// `{ type: "bulleted_list_item", text: RichTextSpan[] }`).
     static func bulletedListItemJSON(text: String) -> String {
         BlockContent.bulletedListItem(
-            ListItemContent(type: "bulleted_list_item", text: [RichTextSpan(text: text)])
+            ListItemContent(type: "bulleted_list_item", text: RichTextSpan.parse(markdownText: text))
         ).encodeJSON()
     }
 
-    /// Builds the `contentJSON` for a numbered (ordered) list item holding
-    /// `text` as a single unstyled span (§8.1
+    /// Builds the `contentJSON` for a numbered (ordered) list item, parsing
+    /// `text` for inline Markdown marks into `[RichTextSpan]` (§8.1
     /// `{ type: "numbered_list_item", text: RichTextSpan[] }`).
     static func numberedListItemJSON(text: String) -> String {
         BlockContent.numberedListItem(
-            ListItemContent(type: "numbered_list_item", text: [RichTextSpan(text: text)])
+            ListItemContent(type: "numbered_list_item", text: RichTextSpan.parse(markdownText: text))
         ).encodeJSON()
     }
 
-    /// Builds the `contentJSON` for a checklist item holding `text` as a
-    /// single unstyled span and `checked` as its current done/not-done
-    /// state (§8.1 `{ type: "checklist_item", checked: boolean, text:
-    /// RichTextSpan[] }`).
+    /// Builds the `contentJSON` for a checklist item, parsing `text` for
+    /// inline Markdown marks into `[RichTextSpan]`, with `checked` as its
+    /// current done/not-done state (§8.1 `{ type: "checklist_item", checked:
+    /// boolean, text: RichTextSpan[] }`).
     static func checklistItemJSON(checked: Bool, text: String) -> String {
         BlockContent.checklistItem(
-            ChecklistItemContent(checked: checked, text: [RichTextSpan(text: text)])
+            ChecklistItemContent(checked: checked, text: RichTextSpan.parse(markdownText: text))
         ).encodeJSON()
     }
 
-    /// Builds the `contentJSON` for a blockquote block holding `text` as a
-    /// single unstyled span (§8.1 `{ type: "blockquote", text:
-    /// RichTextSpan[] }`).
+    /// Builds the `contentJSON` for a blockquote block, parsing `text` for
+    /// inline Markdown marks into `[RichTextSpan]` (§8.1
+    /// `{ type: "blockquote", text: RichTextSpan[] }`).
     static func blockquoteJSON(text: String) -> String {
-        BlockContent.blockquote(BlockquoteContent(text: [RichTextSpan(text: text)])).encodeJSON()
+        BlockContent.blockquote(BlockquoteContent(text: RichTextSpan.parse(markdownText: text))).encodeJSON()
     }
 
     /// Builds the `contentJSON` for a code block holding `code` as plain
