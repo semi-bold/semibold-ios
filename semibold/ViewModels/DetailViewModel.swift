@@ -95,8 +95,8 @@ final class DetailViewModel {
     ///
     /// Before applying a plain text edit, checks whether `text` now starts
     /// with a supported Markdown prefix (`# `/`## `/`### `, `- `, `<n>. `,
-    /// `- [ ] `/`- [x] `, `> `) — if so, the block's type is converted on
-    /// the spot
+    /// `- [ ] `/`- [x] `, `> `, ` ``` `/` ```<lang> `) — if so, the block's
+    /// type is converted on the spot
     /// (`Planning_4_BlockCreateFlow`'s "Markdown Syntax → Markdown parser가
     /// 타입 감지" branch, §5.4) and saved immediately rather than going
     /// through the debounce, since a type change is a structural edit
@@ -148,6 +148,17 @@ final class DetailViewModel {
             return
         }
 
+        if blocks[index].type == .paragraph, let codeBlock = Self.codeBlockConversion(forTypedText: text) {
+            blocks[index].type = .codeBlock
+            blocks[index].contentJSON = BlockContent.codeBlockJSON(language: codeBlock.language, code: codeBlock.code)
+            blocks[index].markdownSource = Self.codeBlockMarkdownSource(language: codeBlock.language, code: codeBlock.code)
+
+            pendingSaveTasks[blockId]?.cancel()
+            pendingSaveTasks[blockId] = nil
+            persistBlock(blockId)
+            return
+        }
+
         if blocks[index].type == .heading {
             let level = Self.headingLevel(forContentJSON: blocks[index].contentJSON)
             blocks[index].markdownSource = Self.headingMarkdownSource(level: level, text: text)
@@ -166,6 +177,10 @@ final class DetailViewModel {
         } else if blocks[index].type == .blockquote {
             blocks[index].markdownSource = Self.blockquoteMarkdownSource(text: text)
             blocks[index].contentJSON = BlockContent.blockquoteJSON(text: text)
+        } else if blocks[index].type == .codeBlock {
+            let language = blocks[index].codeLanguage
+            blocks[index].markdownSource = Self.codeBlockMarkdownSource(language: language, code: text)
+            blocks[index].contentJSON = BlockContent.codeBlockJSON(language: language, code: text)
         } else {
             blocks[index].markdownSource = text
             blocks[index].contentJSON = BlockContent.paragraphJSON(text: text)

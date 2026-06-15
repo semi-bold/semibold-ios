@@ -163,8 +163,9 @@ struct DetailView: View {
 /// column — tapping it toggles the task's done/not-done state (§7.1).
 /// `.blockquote` blocks show a vertical rule in that same leading column and
 /// dim the quoted text, marking it as a quote (§7.1/§7.3's `> quote`
-/// syntax). Code-block styling is still `markdown-phase4` follow-up scope —
-/// that block type renders as a plain paragraph input for now.
+/// syntax). `.codeBlock` blocks show their code in a monospaced font on a
+/// distinguishing surface background, with the fence's language identifier
+/// (if any) as a small label above the code (§7.1/§7.3's ` ```lang ` syntax).
 private struct BlockRow: View {
     let block: DocumentBlock
     var focusedBlockId: FocusState<String?>.Binding
@@ -234,47 +235,64 @@ private struct BlockRow: View {
         block.type == .blockquote ? AppTheme.Colors.text2 : AppTheme.Colors.text1
     }
 
+    /// Whether this row's text is shown in a monospaced font — `true` for
+    /// `.codeBlock` blocks (§7.1/§7.3's ` ```lang ` syntax), so code reads
+    /// distinctly from prose.
+    private var isCodeBlock: Bool {
+        block.type == .codeBlock
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
-                if let listMarker {
-                    Text(listMarker)
-                        .appTextStyle(textStyle)
-                        .foregroundStyle(AppTheme.Colors.text1)
-                        .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
-                } else if block.type == .checklistItem {
-                    Button(action: onToggleChecklist) {
-                        Image(systemName: block.isChecked ? "checkmark.square" : "square")
-                            .foregroundStyle(block.isChecked ? AppTheme.Colors.primary : AppTheme.Colors.text2)
-                    }
-                    .buttonStyle(.plain)
-                    .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
-                    .frame(height: textStyle.lineHeight, alignment: .center)
-                } else if block.type == .blockquote {
-                    Rectangle()
-                        .fill(AppTheme.Colors.border)
-                        .frame(width: AppTheme.Spacing.xs)
-                        .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                if isCodeBlock, let codeLanguage = block.codeLanguage {
+                    Text(codeLanguage)
+                        .appTextStyle(AppTheme.Typography.caption)
+                        .foregroundStyle(AppTheme.Colors.text2)
                 }
 
-                ParagraphTextField(
-                    text: $text,
-                    textStyle: textStyle,
-                    textColor: textColor,
-                    onTextChange: onTextChange,
-                    onEnter: { cursorOffset in
-                        onEnter(text, cursorOffset)
-                    },
-                    onBackspaceAtStart: {
-                        onBackspaceAtStart(text)
-                    },
-                    cursorOffsetToApply: focusedBlockId.wrappedValue == block.id ? $cursorOffsetToApply : .constant(nil)
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .focused(focusedBlockId, equals: block.id)
+                HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                    if let listMarker {
+                        Text(listMarker)
+                            .appTextStyle(textStyle)
+                            .foregroundStyle(AppTheme.Colors.text1)
+                            .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+                    } else if block.type == .checklistItem {
+                        Button(action: onToggleChecklist) {
+                            Image(systemName: block.isChecked ? "checkmark.square" : "square")
+                                .foregroundStyle(block.isChecked ? AppTheme.Colors.primary : AppTheme.Colors.text2)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+                        .frame(height: textStyle.lineHeight, alignment: .center)
+                    } else if block.type == .blockquote {
+                        Rectangle()
+                            .fill(AppTheme.Colors.border)
+                            .frame(width: AppTheme.Spacing.xs)
+                            .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+                    }
+
+                    ParagraphTextField(
+                        text: $text,
+                        textStyle: textStyle,
+                        textColor: textColor,
+                        isMonospaced: isCodeBlock,
+                        onTextChange: onTextChange,
+                        onEnter: { cursorOffset in
+                            onEnter(text, cursorOffset)
+                        },
+                        onBackspaceAtStart: {
+                            onBackspaceAtStart(text)
+                        },
+                        cursorOffsetToApply: focusedBlockId.wrappedValue == block.id ? $cursorOffsetToApply : .constant(nil)
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .focused(focusedBlockId, equals: block.id)
+                }
             }
             .padding(.horizontal, AppTheme.Spacing.md)
             .padding(.vertical, AppTheme.Spacing.md)
+            .background(isCodeBlock ? AppTheme.Colors.surface2 : AppTheme.Colors.background)
 
             Rectangle()
                 .fill(AppTheme.Colors.divider)

@@ -25,6 +25,12 @@ struct ParagraphTextField: UIViewRepresentable {
     /// change.
     var textColor: Color = AppTheme.Colors.text1
 
+    /// Whether this block's text is shown in a monospaced font — `true`
+    /// for a `.codeBlock` block's code (§7.1/§7.3's ` ```lang ` syntax), so
+    /// code reads distinctly from prose. Defaults to `false` so existing
+    /// call sites don't need to change.
+    var isMonospaced: Bool = false
+
     /// Called as the user edits this block's text, so the document
     /// editor can save the change.
     var onTextChange: (String) -> Void
@@ -47,10 +53,20 @@ struct ParagraphTextField: UIViewRepresentable {
     /// to `nil` once it's been applied.
     @Binding var cursorOffsetToApply: Int?
 
+    /// The `UIFont` for this field's current `textStyle`/`isMonospaced` —
+    /// a monospaced font for `.codeBlock` blocks, or the system font at
+    /// `textStyle`'s size/weight otherwise.
+    private var font: UIFont {
+        if isMonospaced {
+            return UIFont.monospacedSystemFont(ofSize: textStyle.size, weight: textStyle.weight.uiFontWeight)
+        }
+        return UIFont.systemFont(ofSize: textStyle.size, weight: textStyle.weight.uiFontWeight)
+    }
+
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
         textView.delegate = context.coordinator
-        textView.font = UIFont.systemFont(ofSize: textStyle.size, weight: textStyle.weight.uiFontWeight)
+        textView.font = font
         textView.backgroundColor = .clear
         textView.textColor = UIColor(textColor)
         textView.isScrollEnabled = false
@@ -65,7 +81,7 @@ struct ParagraphTextField: UIViewRepresentable {
             uiView.text = text
         }
 
-        let font = UIFont.systemFont(ofSize: textStyle.size, weight: textStyle.weight.uiFontWeight)
+        let font = font
         if uiView.font != font {
             uiView.font = font
         }

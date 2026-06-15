@@ -17,10 +17,10 @@ struct RichTextSpan: Codable, Equatable {
 /// `BlockContent.encodeJSON()` / `BlockContent.decode(from:type:)`.
 ///
 /// Only the shapes implemented so far (`paragraph`, `heading`,
-/// `bulletedListItem`, `numberedListItem`, `checklistItem`, `blockquote`)
-/// are modeled as real cases — code/divider shapes are added as later
-/// `markdown-phase4` acceptance criteria implement those conversions, and
-/// fall back to `.paragraph` in `decode(from:type:)` until then.
+/// `bulletedListItem`, `numberedListItem`, `checklistItem`, `blockquote`,
+/// `codeBlock`) are modeled as real cases — `divider` (which has no
+/// content fields at all per §8.1) falls back to `.paragraph` in
+/// `decode(from:type:)` until a later AC needs it.
 enum BlockContent: Equatable {
     case paragraph(ParagraphContent)
     case heading(HeadingContent)
@@ -28,10 +28,13 @@ enum BlockContent: Equatable {
     case numberedListItem(ListItemContent)
     case checklistItem(ChecklistItemContent)
     case blockquote(BlockquoteContent)
+    case codeBlock(CodeBlockContent)
 
-    /// The plain text shared by every case modeled so far. Block types
-    /// without a `text` field (e.g. a future `code_block`/`divider`) would
-    /// need their own accessor — not needed yet.
+    /// The plain text shared by every case modeled so far. A `.codeBlock`'s
+    /// `code` (plain text, not rich text per §8.1) is wrapped in a single
+    /// unstyled `RichTextSpan` so this stays a uniform accessor —
+    /// `DocumentBlock.displayText`'s `.text.map(\.text).joined()` then
+    /// returns `code` unchanged without needing its own case.
     var text: [RichTextSpan] {
         switch self {
         case .paragraph(let content): return content.text
@@ -40,6 +43,7 @@ enum BlockContent: Equatable {
         case .numberedListItem(let content): return content.text
         case .checklistItem(let content): return content.text
         case .blockquote(let content): return content.text
+        case .codeBlock(let content): return [RichTextSpan(text: content.code)]
         }
     }
 
@@ -53,6 +57,7 @@ enum BlockContent: Equatable {
         case .numberedListItem(let content): data = try? JSONEncoder().encode(content)
         case .checklistItem(let content): data = try? JSONEncoder().encode(content)
         case .blockquote(let content): data = try? JSONEncoder().encode(content)
+        case .codeBlock(let content): data = try? JSONEncoder().encode(content)
         }
         guard let data, let json = String(data: data, encoding: .utf8) else {
             return "{\"type\":\"paragraph\",\"text\":[]}"
@@ -62,9 +67,8 @@ enum BlockContent: Equatable {
 
     /// Decodes `json` according to `type`, falling back to an empty
     /// paragraph if the JSON is missing or malformed (e.g. a block created
-    /// before this shape existed). Block types not modeled as a case yet
-    /// (`codeBlock`/`divider`) also fall back to `.paragraph` until a later
-    /// AC adds their case.
+    /// before this shape existed). `.divider` (no content fields modeled
+    /// yet) also falls back to `.paragraph` until a later AC adds its case.
     static func decode(from json: String, type: BlockType) -> BlockContent {
         let data = Data(json.utf8)
         switch type {
@@ -98,7 +102,12 @@ enum BlockContent: Equatable {
                 return .blockquote(content)
             }
             return .blockquote(BlockquoteContent(text: []))
-        case .codeBlock, .divider:
+        case .codeBlock:
+            if let content = try? JSONDecoder().decode(CodeBlockContent.self, from: data) {
+                return .codeBlock(content)
+            }
+            return .codeBlock(CodeBlockContent(language: nil, code: ""))
+        case .divider:
             if let content = try? JSONDecoder().decode(ParagraphContent.self, from: data) {
                 return .paragraph(content)
             }
@@ -154,6 +163,15 @@ enum BlockContent: Equatable {
     static func blockquoteJSON(text: String) -> String {
         BlockContent.blockquote(BlockquoteContent(text: [RichTextSpan(text: text)])).encodeJSON()
     }
+
+    /// Builds the `contentJSON` for a code block holding `code` as plain
+    /// text and an optional `language` identifier (§8.1
+    /// `{ type: "code_block", language?: string, code: string }`).
+    /// `language` is `nil` when the user typed a bare ` ``` ` fence with no
+    /// language identifier after it.
+    static func codeBlockJSON(language: String?, code: String) -> String {
+        BlockContent.codeBlock(CodeBlockContent(language: language, code: code)).encodeJSON()
+    }
 }
 
 /// The `contentJSON` shape for a `.paragraph` block (§8.1
@@ -202,6 +220,19 @@ struct BlockquoteContent: Codable, Equatable {
     var text: [RichTextSpan]
 }
 
+/// The `contentJSON` shape for a `.codeBlock` block (§8.1
+/// `{ type: "code_block", language?: string, code: string }`). Unlike
+/// every other case so far, a code block's `code` is plain text — not
+/// `RichTextSpan[]` — since code isn't subject to inline formatting marks
+/// (bold/italic/etc.). `language` is the identifier typed after the
+/// opening ` ``` ` fence (e.g. `"swift"`), or `nil` if the fence had no
+/// language.
+struct CodeBlockContent: Codable, Equatable {
+    var type = "code_block"
+    var language: String?
+    var code: String
+}
+
 extension DocumentBlock {
     /// The plain text the editor shows/edits for this block — the
     /// `contentJSON`'s text spans joined together, WITHOUT any Markdown
@@ -245,6 +276,17 @@ extension DocumentBlock {
             return false
         }
         return content.checked
+    }
+
+    /// The language identifier shown above a `.codeBlock` block's code
+    /// (e.g. `"swift"` for ` ```swift `), read from `contentJSON.language`.
+    /// `nil` for any other block type, or for a `.codeBlock` whose fence had
+    /// no language identifier.
+    var codeLanguage: String? {
+        guard case .codeBlock(let content) = BlockContent.decode(from: contentJSON, type: type) else {
+            return nil
+        }
+        return content.language
     }
 }
 

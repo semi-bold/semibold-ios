@@ -231,4 +231,63 @@ extension DetailViewModel {
     static func blockquoteMarkdownSource(text: String) -> String {
         "> " + text
     }
+
+    /// A detected Markdown code-fence prefix (` ``` ` or ` ```<lang> `),
+    /// ready to apply to a block.
+    struct CodeBlockConversion {
+        /// The language identifier typed right after the opening fence
+        /// (e.g. `"swift"` for ` ```swift `), or `nil` if the fence had no
+        /// language.
+        let language: String?
+        /// Any text typed after the fence (and its language, and the single
+        /// space separating them, if present) — becomes the code block's
+        /// initial `code` content. Empty if the user has only typed the
+        /// fence (and language) so far.
+        let code: String
+    }
+
+    /// Detects whether `text` (the block's full text right after this
+    /// keystroke) now starts with a complete Markdown code-fence prefix —
+    /// three backticks (` ``` `), optionally followed immediately by a
+    /// language identifier — per §7.1/§7.3's ` ```lang ` → Code Block
+    /// syntax.
+    ///
+    /// Returns `nil` if `text` doesn't start with three backticks, so the
+    /// caller leaves the block as a paragraph. `` `` `` (two backticks) and
+    /// `` ` `` (one backtick, §7.3's inline-code syntax) don't match and so
+    /// don't convert here.
+    ///
+    /// Unlike AC1-AC4's single-line prefixes, a code block's content can
+    /// span multiple lines and is normally closed by a separate ` ``` `
+    /// fence on its own line — out of scope for this single-block editor
+    /// (Enter creates a new block, not a newline within one). Conversion
+    /// happens as soon as the opening fence (and optional language) is
+    /// typed; any text typed after it on the same line becomes the initial
+    /// `code`, and the closing fence isn't required for the conversion
+    /// itself. Multi-line code editing within one block is a follow-up.
+    static func codeBlockConversion(forTypedText text: String) -> CodeBlockConversion? {
+        guard text.hasPrefix("```") else { return nil }
+        let afterFence = text.dropFirst(3)
+
+        var language = ""
+        var remainder = Substring(afterFence)
+        while let first = remainder.first, !first.isWhitespace {
+            language.append(first)
+            remainder = remainder.dropFirst()
+        }
+        if remainder.first == " " {
+            remainder = remainder.dropFirst()
+        }
+
+        return CodeBlockConversion(language: language.isEmpty ? nil : language, code: String(remainder))
+    }
+
+    /// Rebuilds the literal Markdown `markdownSource` for a code block at
+    /// `language` (or no language) holding `code`, keeping the closing
+    /// fence so the block round-trips as ` ```<language>\n<code>\n``` `
+    /// (§8.1 comment), rebuilt on every edit like AC1-AC4's
+    /// `*MarkdownSource` builders.
+    static func codeBlockMarkdownSource(language: String?, code: String) -> String {
+        "```\(language ?? "")\n\(code)\n```"
+    }
 }

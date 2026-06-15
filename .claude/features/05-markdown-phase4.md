@@ -173,7 +173,7 @@ wireframe/flow artifact. Block type model comes from PLANNING.md §8.
 - [x] List conversion (ordered/unordered per §7.1/§7.3)
 - [x] Checklist conversion
 - [x] Blockquote conversion
-- [ ] Code block conversion
+- [x] Code block conversion
 - [ ] Inline marks: bold, italic, strike, inline code, link
 - [ ] Block type model matches PLANNING §8.1/§8.2 (Swift types named per
       the TS example, mapped to `contentJSON`/`markdownSource`)
@@ -330,6 +330,91 @@ wireframe/flow artifact. Block type model comes from PLANNING.md §8.
     Backspace-at-start of an empty blockquote) is unimplemented, same
     deferral rationale as AC1/AC2's heading/list-item reversion follow-ups.
 
+- Code block conversion (this AC):
+  - **Single-block fence conversion, not multi-line textarea editing**: per
+    the brief's own framing, option (a) was chosen — typing a complete
+    ` ``` `/` ```<lang> ` fence prefix on a `.paragraph` block converts THAT
+    block to `.codeBlock` immediately, the same "convert on prefix,
+    persist immediately" precedent as AC1-AC4. The closing ` ``` ` fence is
+    NOT required for the conversion to happen — `block-editor-phase3`'s
+    Enter key creates new blocks rather than inserting newlines within one
+    block, so there is no in-block mechanism to type a second line and a
+    closing fence within the same block yet. `markdownSource` is rebuilt
+    with a closing fence (see below) purely for round-tripping, not because
+    the user typed one.
+  - **Code-block content model** (`semibold/Models/BlockContent.swift`):
+    added `CodeBlockContent` (`{ type: "code_block", language: String?,
+    code: String }`, §8.1 — field names match the TS example exactly,
+    `language` optional/nullable) and a matching `BlockContent.codeBlock`
+    case with a `codeBlockJSON(language:code:)` builder. `.codeBlock` is
+    moved out of AC2's grouped fallback arm in `decode(from:type:)` into
+    its own real case (falling back to `CodeBlockContent(language: nil,
+    code: "")` on malformed JSON); `encodeJSON()` gained a matching arm.
+    The remaining fallback arm in `decode(from:type:)` is now `.divider`
+    only — left as a single-case fallback (falling back to `.paragraph`)
+    rather than given its own `BlockContent.divider` case, since `.divider`
+    has no content fields at all per §8.1 (`{ type: "divider" }`) and isn't
+    in this AC's scope; a future divider AC can add a real case then.
+  - **`.text`/`displayText` for `.codeBlock`**: rather than adding a
+    separate `displayText` branch, `BlockContent.text` wraps a code block's
+    `code` (plain `String`, not `[RichTextSpan]` per §8.1) in a single
+    unstyled `RichTextSpan`. `DocumentBlock.displayText`'s existing
+    `.text.map(\.text).joined()` then returns `code` unchanged, so
+    `.codeBlock` needs no special case in `displayText` itself — keeps the
+    accessor uniform across all seven cases. Added
+    `DocumentBlock.codeLanguage` (reads `contentJSON.language`, `nil` for
+    non-code blocks or a fence with no language) for `BlockRow`'s language
+    label.
+  - **Detection & conversion**
+    (`DetailViewModel+MarkdownConversion.swift`'s new
+    `codeBlockConversion(forTypedText:)`, called from `updateBlockText`
+    after the blockquote check): if the typed text starts with exactly
+    three backticks (` ``` `), the `.paragraph` block converts to
+    `.codeBlock`. The `language` is the run of non-whitespace characters
+    immediately after the fence (e.g. `"swift"` for ` ```swift`), or `nil`
+    if the fence is immediately followed by whitespace or end-of-string
+    (a bare ` ``` `). Any text after the language (minus one separating
+    space, if present) becomes the code block's initial `code` — e.g.
+    ` ```swift let x = 1` → `language: "swift"`, `code: "let x = 1"`.
+    Persisted immediately, same precedent as AC1-AC4. No precedence
+    conflict with `#`/`-`/`<n>. `/`- [ ] `/`> ` — backtick doesn't overlap
+    with any of those leading characters.
+  - **Negative cases per §7.3's literal ` ```lang ` syntax**: `` ` `` (one
+    backtick) and `` `` `` (two backticks) do NOT match the three-backtick
+    fence prefix and stay `.paragraph` — single/double backtick is inline-
+    code syntax (`` `code` ``, AC6 scope), not a code-fence. Both covered by
+    new `CodeBlockConversionTests` cases, plus a precedence test confirming
+    `"# Title"`/`"- item"`/`"1. item"`/`"- [ ] task"`/`"> quote"` never
+    convert to `.codeBlock`.
+  - **`markdownSource` maintenance**: new
+    `codeBlockMarkdownSource(language:code:)` rebuilds
+    ` ```<language>\n<code>\n``` ` (closing fence included) on every edit —
+    unlike AC1-AC4's single-line builders, this is multi-line, matching the
+    brief's explicit guidance. Editing a code block's `code` (the text
+    `ParagraphTextField` reports back, i.e. `displayText` without the
+    fence) keeps the block's existing `language` and rebuilds both
+    `contentJSON` and `markdownSource` via this helper.
+  - **Rendering** (`BlockRow` in `DetailView.swift`,
+    `ParagraphTextField.swift`): `.codeBlock` blocks render their code in a
+    monospaced font (`ParagraphTextField` gained an `isMonospaced: Bool`
+    parameter, using `UIFont.monospacedSystemFont(ofSize:weight:)` at the
+    row's `textStyle` size/weight — `.body`, since no dedicated code-block
+    typography token exists) on a distinguishing background
+    (`AppTheme.Colors.surface2`, the next surface layer up from
+    `.background`, applied to the row's content `VStack` so the divider
+    below stays the normal background color). If the fence had a language,
+    it's shown as a small `AppTheme.Typography.caption` /
+    `AppTheme.Colors.text2` label above the code. **Deviation**: no
+    `Screen_*`/`Planning_*` wireframe artifact defines a code-block layout
+    (checked `wireframe.py`/`planning.py` — only `iOS_Editor`'s generic
+    block rows exist, same gap AC2-AC4 found), and `tokens.py` has no
+    font-family/monospace token at all (every typography token is
+    size/weight/line-height only) — `surface2` background + system
+    monospaced font + existing `caption`/`text2` for the language label are
+    new conventions reusing existing `AppTheme` tokens rather than inventing
+    new ones. Worth a design pass once a dedicated code-block wireframe
+    exists.
+
 - Checklist conversion (this AC):
   - **Checklist item content model** (`semibold/Models/BlockContent.swift`):
     added `ChecklistItemContent` (`{ type: "checklist_item", checked: Bool,
@@ -404,3 +489,38 @@ wireframe/flow artifact. Block type model comes from PLANNING.md §8.
     blockquote/code-block conversion tests (AC4/AC5) should follow this same
     per-topic-file convention rather than appending to
     `DetailViewModelTests.swift`.
+
+- Code block conversion (this AC):
+  - **Multi-line code editing within one block is NOT implemented** —
+    `ParagraphTextField`'s `UITextView` still treats Return as "create a
+    new block" (`block-editor-phase3`'s Enter-to-create), so a `.codeBlock`
+    block's `code` can only ever be a single line in this editor today.
+    Typing a closing ` ``` ` fence on its own "line" isn't possible without
+    a newline, so it's neither detected nor required — `markdownSource`'s
+    closing fence is synthetic (added by `codeBlockMarkdownSource` for
+    round-tripping only). A future AC that wants real multi-line code
+    blocks would need either: (a) a textarea-style block that accepts
+    literal newlines (diverging from the current one-block-per-line model),
+    or (b) representing a code block as multiple `DocumentBlock` rows under
+    a shared `parentId` (§8.2's block-tree structure already supports
+    nesting). Neither is attempted here per the brief's "don't over-build"
+    guidance.
+  - **Code block → paragraph reversion** (Backspace-ing the fence back out,
+    or Backspace-at-start of an empty code block) is unimplemented, same
+    deferral rationale as AC1-AC4's heading/list/checklist/blockquote
+    reversion follow-ups.
+  - **4+ backtick fences** (e.g. ` ```` `, GFM's "fences can be 4+
+    backticks if the code itself contains a 3-backtick run") are not
+    specially handled — `codeBlockConversion(forTypedText:)` only checks
+    `hasPrefix("```")`, so ` ```` ` would be detected as a 3-backtick fence
+    with `` ` `` treated as the start of its "language" (a single stray
+    backtick character). §7.3 doesn't specify 4+-backtick fences, and this
+    is an unlikely thing to type by hand, so it's left as-is — worth
+    revisiting only if markdown import/export (`quality-phase5`) needs to
+    round-trip such fences.
+  - **Inline code** (`` `code` ``, single backticks, §7.3) is explicitly
+    AC6 (inline marks) scope, not this AC — `codeBlockConversion` only
+    matches three or more leading backticks, so `` `code` ``/`` ``code`` ``
+    correctly fall through to stay `.paragraph` here (covered by
+    `CodeBlockConversionTests.oneBacktickDoesNotConvert`/
+    `.twoBackticksDoesNotConvert`).
