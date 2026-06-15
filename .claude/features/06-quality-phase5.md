@@ -90,11 +90,62 @@ detail/editor view from earlier phases — no new dedicated screen.
   a keyboard shortcut" goal is addressed indirectly, via the
   Cmd+Option+1/2/3 shortcuts themselves (not a right-click menu).
 
+### iOS Slash Command bottom sheet (§12.2/§13.1)
+
+- **Trigger detection.** `DetailViewModel.updateBlockText` now checks
+  `Self.isSlashCommandTrigger(forTypedText:currentType:)` first, before
+  AC1-AC5's other prefix conversions: if the block is currently a
+  `.paragraph` and its text is now exactly `"/"` (i.e. the user typed `/`
+  as the very first character of an empty block), the `/` is consumed —
+  cleared back to an empty paragraph and persisted immediately, like the
+  other structural conversions (PLANNING §11.2 "블록 생성/삭제/순서 변경:
+  즉시 저장") — and `slashCommandBlockId` is set so `DetailView` presents the
+  sheet. `/` typed mid-sentence (`"1/2"`) or in a non-paragraph block
+  doesn't trigger it, mirroring how `headingConversion`/etc. only fire on a
+  complete leading prefix.
+- **Sheet UI.** New `SlashCommandSheet` (`Views/SlashCommandSheet.swift`)
+  lists `SlashCommandOption`'s 9 cases (Heading 1/2/3, Bulleted list,
+  Numbered list, Checklist, Blockquote, Code block, Divider — everything
+  except plain paragraph) as a `List` of icon+label rows, presented via
+  `.sheet(isPresented:)` at `.medium`/`.large` detents. **No
+  `Screen_*`/`Planning_N_*Flow` artboard defines a "slash command menu"
+  component** (checked `wireframe.py`/`planning.py`/`atoms.py` — only
+  prose references to "Slash Command" in `planning.py`'s callout text, no
+  layout) — per CLAUDE.md §0 step 3, this is documented here rather than
+  invented as a new wireframe. The row layout (leading SF Symbol icon,
+  label, row divider) follows `atoms.py`'s `doc_row` list-row language,
+  styled with `AppTheme` tokens (`Colors.background/text1/text2`,
+  `Spacing.md/lg`, `Typography.body`).
+- **Conversion.** Picking an option calls
+  `DetailViewModel.convertBlock(_:toSlashCommandOption:)`
+  (`ViewModels/DetailViewModel+SlashCommand.swift`, following the
+  `+MarkdownConversion`/`+KeyboardShortcuts` extension-file split) — sets
+  the block's type and an **empty** `contentJSON`/`markdownSource` via the
+  existing `*JSON`/`*MarkdownSource` helpers (`headingJSON(level:text:"")`,
+  `bulletedListItemJSON(text:"")`, `checklistItemJSON(checked:false,
+  text:"")`, `blockquoteJSON(text:"")`, `codeBlockJSON(language:nil,
+  code:"")`, `dividerJSON()`), persists immediately, and dismisses the
+  sheet. The block stays focused so the user can keep typing in the new
+  type. Heading 1/2/3 map to `.heading` at level 1/2/3, consistent with
+  Cmd+Option+1/2/3 (AC1).
+- **Divider included.** Brief 05's Open Question (`.divider`/`dividerJSON()`
+  dead code, no rendering) is resolved here: `BlockRow` now branches on a
+  new `isDivider` check and renders a `.divider` block as a horizontal-rule
+  row (`Rectangle` filled with `AppTheme.Colors.border`, `Spacing.lg`
+  vertical padding) with no `ParagraphTextField` — a divider has no text
+  content (§8.1 `{ type: "divider" }`), so it isn't editable. This was a
+  low-effort addition once the slash-command menu existed, so Divider is
+  included as a full menu option rather than excluded.
+- **Sheet dismiss without picking.** Swiping the sheet away calls
+  `dismissSlashCommand()` (via the `.sheet(isPresented:)` binding's setter),
+  leaving the block as the empty paragraph the `/`-clearing step already
+  produced — no extra "undo" path needed.
+
 ## Acceptance Criteria
 
 - [x] macOS keyboard shortcuts implemented per PLANNING §13.2 and
       `Planning_5_MacOSMainFlow`
-- [ ] iOS slash-command bottom sheet for inserting block types
+- [x] iOS slash-command bottom sheet for inserting block types
 - [ ] Drag & drop block reordering (§12.3)
 - [ ] Empty states implemented per §15.1
 - [ ] Error states implemented per §15.2

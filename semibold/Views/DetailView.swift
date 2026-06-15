@@ -65,6 +65,29 @@ struct DetailView: View {
             // its debounce timer is still pending.
             viewModel.flushPendingChanges()
         }
+        .sheet(isPresented: slashCommandSheetPresented) {
+            SlashCommandSheet { option in
+                if let blockId = viewModel.slashCommandBlockId {
+                    viewModel.convertBlock(blockId, toSlashCommandOption: option)
+                }
+            }
+        }
+    }
+
+    /// Whether the Slash Command bottom sheet (§12.2/§13.1) is shown —
+    /// driven by `viewModel.slashCommandBlockId`, set when the user types a
+    /// lone `/` into an empty paragraph block. Swiping the sheet away (the
+    /// `false` write below) clears that id via `dismissSlashCommand()` so
+    /// it doesn't reopen.
+    private var slashCommandSheetPresented: Binding<Bool> {
+        Binding(
+            get: { viewModel.slashCommandBlockId != nil },
+            set: { isPresented in
+                if !isPresented {
+                    viewModel.dismissSlashCommand()
+                }
+            }
+        )
     }
 
     // MARK: - macOS keyboard shortcuts
@@ -288,7 +311,40 @@ private struct BlockRow: View {
         block.type == .codeBlock
     }
 
+    /// Whether this block is a `.divider` — rendered as a horizontal rule
+    /// with no editable text (the Slash Command "Divider" option, §12.2).
+    private var isDivider: Bool {
+        block.type == .divider
+    }
+
     var body: some View {
+        if isDivider {
+            dividerBody
+        } else {
+            editableBody
+        }
+    }
+
+    /// A `.divider` block's row: a horizontal rule, matching the visual
+    /// language of a Markdown `---` divider. Not editable — there's no
+    /// `ParagraphTextField` for a divider since it has no text content
+    /// (§8.1 `{ type: "divider" }`).
+    private var dividerBody: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(AppTheme.Colors.border)
+                .frame(height: 1)
+                .padding(.horizontal, AppTheme.Spacing.md)
+                .padding(.vertical, AppTheme.Spacing.lg)
+
+            Rectangle()
+                .fill(AppTheme.Colors.divider)
+                .frame(height: 1)
+        }
+        .background(AppTheme.Colors.background)
+    }
+
+    private var editableBody: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                 if isCodeBlock, let codeLanguage = block.codeLanguage {
