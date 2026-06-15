@@ -17,8 +17,8 @@ struct RichTextSpan: Codable, Equatable {
 /// `BlockContent.encodeJSON()` / `BlockContent.decode(from:type:)`.
 ///
 /// Only the shapes implemented so far (`paragraph`, `heading`,
-/// `bulletedListItem`, `numberedListItem`) are modeled as real cases —
-/// checklist/blockquote/code/divider shapes are added as later
+/// `bulletedListItem`, `numberedListItem`, `checklistItem`) are modeled as
+/// real cases — blockquote/code/divider shapes are added as later
 /// `markdown-phase4` acceptance criteria implement those conversions, and
 /// fall back to `.paragraph` in `decode(from:type:)` until then.
 enum BlockContent: Equatable {
@@ -26,6 +26,7 @@ enum BlockContent: Equatable {
     case heading(HeadingContent)
     case bulletedListItem(ListItemContent)
     case numberedListItem(ListItemContent)
+    case checklistItem(ChecklistItemContent)
 
     /// The plain text shared by every case modeled so far. Block types
     /// without a `text` field (e.g. a future `code_block`/`divider`) would
@@ -36,6 +37,7 @@ enum BlockContent: Equatable {
         case .heading(let content): return content.text
         case .bulletedListItem(let content): return content.text
         case .numberedListItem(let content): return content.text
+        case .checklistItem(let content): return content.text
         }
     }
 
@@ -47,6 +49,7 @@ enum BlockContent: Equatable {
         case .heading(let content): data = try? JSONEncoder().encode(content)
         case .bulletedListItem(let content): data = try? JSONEncoder().encode(content)
         case .numberedListItem(let content): data = try? JSONEncoder().encode(content)
+        case .checklistItem(let content): data = try? JSONEncoder().encode(content)
         }
         guard let data, let json = String(data: data, encoding: .utf8) else {
             return "{\"type\":\"paragraph\",\"text\":[]}"
@@ -57,8 +60,8 @@ enum BlockContent: Equatable {
     /// Decodes `json` according to `type`, falling back to an empty
     /// paragraph if the JSON is missing or malformed (e.g. a block created
     /// before this shape existed). Block types not modeled as a case yet
-    /// (`checklistItem`/`blockquote`/`codeBlock`/`divider`) also fall back
-    /// to `.paragraph` until a later AC adds their case.
+    /// (`blockquote`/`codeBlock`/`divider`) also fall back to `.paragraph`
+    /// until a later AC adds their case.
     static func decode(from json: String, type: BlockType) -> BlockContent {
         let data = Data(json.utf8)
         switch type {
@@ -82,7 +85,12 @@ enum BlockContent: Equatable {
                 return .numberedListItem(content)
             }
             return .numberedListItem(ListItemContent(type: "numbered_list_item", text: []))
-        case .checklistItem, .blockquote, .codeBlock, .divider:
+        case .checklistItem:
+            if let content = try? JSONDecoder().decode(ChecklistItemContent.self, from: data) {
+                return .checklistItem(content)
+            }
+            return .checklistItem(ChecklistItemContent(checked: false, text: []))
+        case .blockquote, .codeBlock, .divider:
             if let content = try? JSONDecoder().decode(ParagraphContent.self, from: data) {
                 return .paragraph(content)
             }
@@ -121,6 +129,16 @@ enum BlockContent: Equatable {
             ListItemContent(type: "numbered_list_item", text: [RichTextSpan(text: text)])
         ).encodeJSON()
     }
+
+    /// Builds the `contentJSON` for a checklist item holding `text` as a
+    /// single unstyled span and `checked` as its current done/not-done
+    /// state (§8.1 `{ type: "checklist_item", checked: boolean, text:
+    /// RichTextSpan[] }`).
+    static func checklistItemJSON(checked: Bool, text: String) -> String {
+        BlockContent.checklistItem(
+            ChecklistItemContent(checked: checked, text: [RichTextSpan(text: text)])
+        ).encodeJSON()
+    }
 }
 
 /// The `contentJSON` shape for a `.paragraph` block (§8.1
@@ -145,6 +163,16 @@ struct HeadingContent: Codable, Equatable {
 /// on the block's `BlockType`.
 struct ListItemContent: Codable, Equatable {
     var type: String
+    var text: [RichTextSpan]
+}
+
+/// The `contentJSON` shape for a `.checklistItem` block (§8.1
+/// `{ type: "checklist_item", checked: boolean, text: RichTextSpan[] }`).
+/// `checked` tracks whether the task has been marked done, toggled by
+/// tapping the checklist item's checkbox (§7.1).
+struct ChecklistItemContent: Codable, Equatable {
+    var type = "checklist_item"
+    var checked: Bool
     var text: [RichTextSpan]
 }
 
@@ -180,6 +208,17 @@ extension DocumentBlock {
     var numberedListNumber: Int? {
         guard type == .numberedListItem else { return nil }
         return BlockContent.leadingNumber(forMarkdownSource: markdownSource)
+    }
+
+    /// Whether a `.checklistItem` block's task is marked done, read from
+    /// `contentJSON.checked` (§7.1's checklist toggle). `false` for any
+    /// other block type, or for a `.checklistItem` whose `contentJSON` is
+    /// missing/malformed.
+    var isChecked: Bool {
+        guard case .checklistItem(let content) = BlockContent.decode(from: contentJSON, type: type) else {
+            return false
+        }
+        return content.checked
     }
 }
 

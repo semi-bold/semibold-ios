@@ -96,6 +96,54 @@ struct BlockContentTests {
         #expect(decoded.text.map(\.text) == ["Step one"])
     }
 
+    @Test("Checklist item content round-trips through contentJSON, carrying its checked state")
+    func checklistItemRoundTrips() throws {
+        for checked in [false, true] {
+            let json = BlockContent.checklistItemJSON(checked: checked, text: "Buy milk")
+
+            #expect(json.contains("\"type\":\"checklist_item\""))
+            #expect(json.contains("\"checked\":\(checked)"))
+            #expect(json.contains("Buy milk"))
+
+            let decoded = BlockContent.decode(from: json, type: .checklistItem)
+            #expect(decoded == .checklistItem(ChecklistItemContent(checked: checked, text: [RichTextSpan(text: "Buy milk")])))
+            #expect(decoded.text.map(\.text) == ["Buy milk"])
+        }
+    }
+
+    @Test("DocumentBlock.displayText/isChecked reflect checklist-item contentJSON/markdownSource")
+    func displayTextAndCheckedReflectChecklistItems() throws {
+        let unchecked = DocumentBlock(
+            documentId: "doc",
+            type: .checklistItem,
+            contentJSON: BlockContent.checklistItemJSON(checked: false, text: "Buy milk"),
+            markdownSource: "- [ ] Buy milk"
+        )
+
+        #expect(unchecked.displayText == "Buy milk")
+        #expect(unchecked.isChecked == false)
+
+        let checked = DocumentBlock(
+            documentId: "doc",
+            type: .checklistItem,
+            contentJSON: BlockContent.checklistItemJSON(checked: true, text: "Buy milk"),
+            markdownSource: "- [x] Buy milk"
+        )
+
+        #expect(checked.displayText == "Buy milk")
+        #expect(checked.isChecked == true)
+
+        // Non-checklist blocks always read as not checked.
+        let paragraph = DocumentBlock(
+            documentId: "doc",
+            type: .paragraph,
+            contentJSON: BlockContent.paragraphJSON(text: "Plain text"),
+            markdownSource: "Plain text"
+        )
+
+        #expect(paragraph.isChecked == false)
+    }
+
     @Test("DocumentBlock.displayText/numberedListNumber reflect list-item contentJSON/markdownSource")
     func displayTextAndNumberReflectListItems() throws {
         let bulleted = DocumentBlock(

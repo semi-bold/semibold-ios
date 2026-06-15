@@ -114,6 +114,17 @@ final class DetailViewModel {
             return
         }
 
+        if blocks[index].type == .paragraph, let checklist = Self.checklistConversion(forTypedText: text) {
+            blocks[index].type = .checklistItem
+            blocks[index].contentJSON = BlockContent.checklistItemJSON(checked: checklist.checked, text: checklist.text)
+            blocks[index].markdownSource = checklist.markdownSource
+
+            pendingSaveTasks[blockId]?.cancel()
+            pendingSaveTasks[blockId] = nil
+            persistBlock(blockId)
+            return
+        }
+
         if blocks[index].type == .paragraph, let list = Self.listConversion(forTypedText: text) {
             blocks[index].type = list.type
             blocks[index].contentJSON = list.contentJSON(text: list.text)
@@ -136,6 +147,10 @@ final class DetailViewModel {
             let number = BlockContent.leadingNumber(forMarkdownSource: blocks[index].markdownSource)
             blocks[index].markdownSource = Self.numberedListMarkdownSource(number: number, text: text)
             blocks[index].contentJSON = BlockContent.numberedListItemJSON(text: text)
+        } else if blocks[index].type == .checklistItem {
+            let checked = blocks[index].isChecked
+            blocks[index].markdownSource = Self.checklistMarkdownSource(checked: checked, text: text)
+            blocks[index].contentJSON = BlockContent.checklistItemJSON(checked: checked, text: text)
         } else {
             blocks[index].markdownSource = text
             blocks[index].contentJSON = BlockContent.paragraphJSON(text: text)
@@ -173,6 +188,29 @@ final class DetailViewModel {
             // (or app relaunch reload) reconciles it. Nothing actionable
             // for the user to do here.
         }
+    }
+
+    /// Toggles a `.checklistItem` block's done/not-done state (§7.1's
+    /// checkbox tap). Flips `contentJSON.checked`, rebuilds
+    /// `markdownSource` to match (`"- [ ] task"` ↔ `"- [x] task"`), and
+    /// persists immediately — like the prefix conversions above, this is a
+    /// structural edit rather than a text edit, so it bypasses the
+    /// debounce (PLANNING §11.2 "블록 생성/삭제/순서 변경: 즉시 저장").
+    ///
+    /// Does nothing if `blockId` isn't a `.checklistItem` block.
+    func toggleChecklistItem(blockId: String) {
+        guard let index = blocks.firstIndex(where: { $0.id == blockId }), blocks[index].type == .checklistItem else {
+            return
+        }
+
+        let newChecked = !blocks[index].isChecked
+        let text = blocks[index].displayText
+        blocks[index].contentJSON = BlockContent.checklistItemJSON(checked: newChecked, text: text)
+        blocks[index].markdownSource = Self.checklistMarkdownSource(checked: newChecked, text: text)
+
+        pendingSaveTasks[blockId]?.cancel()
+        pendingSaveTasks[blockId] = nil
+        persistBlock(blockId)
     }
 
     /// Writes every block with a pending debounced save right away
@@ -467,9 +505,13 @@ final class DetailViewModel {
     /// Returns `nil` if `text` doesn't start with such a prefix, so the
     /// caller leaves the block as a paragraph. `"-item"` (no space) and
     /// `"-- item"` (a second `-` instead of the item text) don't match
-    /// §7.3's literal `- item` syntax and so don't convert.
+    /// §7.3's literal `- item` syntax and so don't convert. `"- [ ] task"`/
+    /// `"- [x] task"` (checklist syntax, §7.3) also don't match here —
+    /// `checklistConversion(forTypedText:)` runs before this and takes
+    /// precedence for those, so this never sees them in practice, but the
+    /// explicit exclusion keeps this function correct on its own.
     private static func listConversion(forTypedText text: String) -> ListConversion? {
-        if text.hasPrefix("- ") {
+        if text.hasPrefix("- "), checklistConversion(forTypedText: text) == nil {
             let remainder = String(text.dropFirst(2))
             return ListConversion(type: .bulletedListItem, text: remainder, markdownSource: text)
         }
@@ -505,4 +547,54 @@ final class DetailViewModel {
         "\(number). " + text
     }
 
+    /// A detected Markdown checklist-item prefix (`- [ ] ` or `- [x] `),
+    /// ready to apply to a block.
+    private struct ChecklistConversion {
+        /// Whether the task starts checked (`- [x] `) or unchecked
+        /// (`- [ ] `).
+        let checked: Bool
+        /// The text after the prefix, shown in the editor and stored as
+        /// the checklist item's `RichTextSpan`.
+        let text: String
+        /// The full literal Markdown (`"- [ ] task"`, `"- [x] task"`) to
+        /// keep as `markdownSource` for round-tripping (§8.1 comment).
+        let markdownSource: String
+    }
+
+    /// Detects whether `text` (the block's full text right after this
+    /// keystroke) now starts with a complete Markdown checklist-item
+    /// prefix — `- [ ] ` (unchecked) or `- [x] ` (checked) — per
+    /// §7.1/§7.3's `- [ ] task` / `- [x] task` → Checklist syntax.
+    ///
+    /// Returns `nil` if `text` doesn't start with either prefix, so the
+    /// caller leaves the block as a paragraph (or falls through to
+    /// `listConversion(forTypedText:)`'s plain `- item` bulleted-list
+    /// check). This check runs BEFORE that bulleted-list check in
+    /// `updateBlockText`, so `"- [ ] task"`/`"- [x] task"` convert to
+    /// `.checklistItem` rather than `.bulletedListItem` with a literal
+    /// `"[ ] task"`/`"[x] task"` as their text.
+    ///
+    /// Per §7.3's literal syntax table, only the lowercase `x` marks a
+    /// checked task — `"- [X] task"` (uppercase) and `"- [] task"` (no
+    /// space inside the brackets) don't match either prefix and so don't
+    /// convert.
+    private static func checklistConversion(forTypedText text: String) -> ChecklistConversion? {
+        if text.hasPrefix("- [ ] ") {
+            let remainder = String(text.dropFirst("- [ ] ".count))
+            return ChecklistConversion(checked: false, text: remainder, markdownSource: text)
+        }
+        if text.hasPrefix("- [x] ") {
+            let remainder = String(text.dropFirst("- [x] ".count))
+            return ChecklistConversion(checked: true, text: remainder, markdownSource: text)
+        }
+        return nil
+    }
+
+    /// Rebuilds the literal Markdown `markdownSource` (`"- [ ] task"` /
+    /// `"- [x] task"`) for a checklist item holding `text`, based on its
+    /// current `checked` state, so further edits and toggles keep
+    /// round-tripping correctly.
+    private static func checklistMarkdownSource(checked: Bool, text: String) -> String {
+        (checked ? "- [x] " : "- [ ] ") + text
+    }
 }

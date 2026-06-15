@@ -171,7 +171,7 @@ wireframe/flow artifact. Block type model comes from PLANNING.md §8.
 
 - [x] Heading conversion (per §7.1/§7.3 syntax)
 - [x] List conversion (ordered/unordered per §7.1/§7.3)
-- [ ] Checklist conversion
+- [x] Checklist conversion
 - [ ] Blockquote conversion
 - [ ] Code block conversion
 - [ ] Inline marks: bold, italic, strike, inline code, link
@@ -227,3 +227,89 @@ wireframe/flow artifact. Block type model comes from PLANNING.md §8.
     AC3's checklist-prefix check (`^- \[[ x]\] `) must run *before* (or be
     excluded from) the `^- ` bulleted-list check in `listConversion`/
     `updateBlockText`.
+  - `DetailViewModel.swift` was already 508 lines (over SwiftLint's default
+    400-line `file_length` warning threshold) before AC2; this AC's
+    additions (checklist conversion + `toggleChecklistItem` + helpers) bring
+    it to ~600. Still only a warning (error threshold is 1000), and the
+    build has no SwiftLint errors, but AC4/AC5 (blockquote/code block) will
+    add more conversion logic to the same file. Worth considering splitting
+    `DetailViewModel`'s Markdown-conversion helpers
+    (heading/list/checklist/blockquote/code-block detection +
+    `markdownSource` builders) into a separate extension file (e.g.
+    `DetailViewModel+MarkdownConversion.swift`) once AC4/AC5 land, the same
+    way the conversion *tests* were just split out below.
+
+- Checklist conversion (this AC):
+  - **Checklist item content model** (`semibold/Models/BlockContent.swift`):
+    added `ChecklistItemContent` (`{ type: "checklist_item", checked: Bool,
+    text: [RichTextSpan] }`, §8.1) and a matching `BlockContent
+    .checklistItem` case with a `checklistItemJSON(checked:text:)` builder,
+    following AC1/AC2's `headingJSON`/`bulletedListItemJSON` pattern.
+    `.checklistItem` is moved out of AC2's grouped fallback arm in
+    `decode(from:type:)` into its own real case (falling back to
+    `ChecklistItemContent(checked: false, text: [])` on malformed JSON);
+    `.text`/`encodeJSON()` gained matching arms, keeping the switches
+    exhaustive over `BlockType` per AC1/AC2's convention. Added
+    `DocumentBlock.isChecked` (reads `contentJSON.checked`, `false` for any
+    non-checklist block or malformed JSON).
+  - **Precedence vs. bulleted-list conversion** (resolves the AC2
+    swift-reviewer note above): `DetailViewModel.updateBlockText` now runs a
+    new `checklistConversion(forTypedText:)` check *before*
+    `listConversion(forTypedText:)`. If the typed text matches `^- \[ \] `
+    or `^- \[x\] ` (lowercase `x` + spaces, §7.3's literal syntax), the
+    `.paragraph` block converts to `.checklistItem` with `checked = false`/
+    `true` respectively and `contentJSON.text` = the text after the prefix,
+    persisted immediately (same immediate-persist precedent as AC1/AC2).
+    Belt-and-suspenders: `listConversion`'s own `^- ` branch additionally
+    guards with `checklistConversion(forTypedText: text) == nil`, so even if
+    call order ever changes, `"- [ ] task"`/`"- [x] task"` still can't
+    misconvert to `.bulletedListItem`.
+  - **`markdownSource` maintenance**: analogous to AC1/AC2 —
+    `checklistMarkdownSource(checked:text:)` rebuilds `"- [ ] <text>"` /
+    `"- [x] <text>"` on every edit, keeping the literal Markdown (with
+    current checked state) for round-tripping.
+  - **`toggleChecklistItem(blockId:)`** (new `DetailViewModel` method): flips
+    a `.checklistItem` block's `contentJSON.checked`, rebuilds
+    `markdownSource` with the new `- [ ] `/`- [x] ` prefix, and persists
+    immediately (a checkbox tap is a structural state change, not a text
+    edit — same immediate-persist precedent as type conversions). Does
+    nothing if `blockId` isn't a `.checklistItem` block.
+  - **Negative cases per §7.3's literal `- [ ] `/`- [x] ` syntax**: `"- []
+    task"` (no inner space) and `"- [X] task"` (uppercase `X`) do NOT match
+    `checklistConversion` — per §7.3's syntax table only lowercase `x` with
+    surrounding spaces (`- [ ] `/`- [x] `) is checklist syntax. Both
+    therefore fall through to AC2's `^- ` bulleted-list check and become
+    `.bulletedListItem` with literal `displayText == "[] task"`/`"[X] task"`
+    (the `"- "` prefix is consumed, but `"[]"`/`"[X]"` is just ordinary list
+    text). This is the same precedence chain, just resolving to the *other*
+    branch — covered by `ChecklistConversionTests
+    .nonChecklistBracketSyntaxFallsThroughToBulletedList`. **Deviation**:
+    uppercase `X` is intentionally NOT treated as "checked" — if a future
+    spec wants case-insensitive checklist syntax, this would need revisiting
+    alongside the markdown import/export work (`quality-phase5`).
+  - **Rendering** (`BlockRow` in `DetailView.swift`): `.checklistItem` blocks
+    show a tappable checkbox (SF Symbol `square`/`checkmark.square`,
+    `AppTheme.Colors.text2`/`.primary`) in the same leading column AC2's
+    `listMarker` uses for `•`/`<n>.`, sized to `AppTheme.Spacing.lg` width
+    and the row's `textStyle.lineHeight` height so it vertically centers
+    against the first line of text. Tapping it calls
+    `viewModel.toggleChecklistItem(blockId:)`. **Deviation**: no
+    `Screen_*`/`Planning_*` wireframe artifact defines a checklist-item
+    layout (checked `wireframe.py`/`planning.py` — only `iOS_Editor`'s
+    generic block rows exist, same gap AC2 found for list markers), so this
+    checkbox-in-leading-column placement is a new convention reusing AC2's
+    column width/spacing rather than inventing new tokens. Worth a design
+    pass once a dedicated checklist wireframe exists.
+  - **Test file split** (new convention): `DetailViewModelTests.swift` had
+    already grown past SwiftLint's default `type_body_length` (350-line
+    struct body) before this AC. Rather than grow it further, the
+    heading/list/checklist conversion tests were split out into their own
+    topic-focused suites — `HeadingConversionTests.swift`,
+    `ListConversionTests.swift`, `ChecklistConversionTests.swift` (each
+    `@MainActor struct ... Tests` with its own `makeDatabaseManager()`
+    helper, mirroring `DetailViewModelTests`'s pattern) — leaving
+    `DetailViewModelTests.swift` covering only the `block-editor-phase3`
+    create/edit/split/merge/reorder behavior it originally covered. Future
+    blockquote/code-block conversion tests (AC4/AC5) should follow this same
+    per-topic-file convention rather than appending to
+    `DetailViewModelTests.swift`.
