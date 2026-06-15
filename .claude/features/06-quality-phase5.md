@@ -1,6 +1,6 @@
 # Feature: 06-quality-phase5
 
-Status: draft
+Status: in-progress
 
 ## Source
 
