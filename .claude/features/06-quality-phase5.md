@@ -248,6 +248,113 @@ detail/editor view from earlier phases — no new dedicated screen.
   is `false` when loading a document whose single existing block already has
   text.
 
+### Error states (§15.2)
+
+- **Three states, three different mechanisms.** §15.2 defines "DB 열기
+  실패" (DB open failure), "저장 실패" (save failure), and "삭제 실패"
+  (delete failure), each with its exact Korean message. Centralized all
+  three strings in a new `AppErrorMessages` enum
+  (`DesignSystem/AppErrorMessages.swift`) — `databaseUnavailable`,
+  `saveFailed`, `deleteFailed` — so every screen that surfaces one of these
+  uses the same wording, following the `AppTheme` "centralize, don't
+  hardcode" convention for this kind of shared user-facing copy (it's not
+  a design token, but the same "one source of truth" rationale applies).
+- **DB open failure — `DatabaseManager.init` now `throws`.**
+  `DatabaseManager.init(path:)` previously used `fatalError` if
+  `DatabaseQueue(path:)`/`AppMigrations.migrator.migrate` failed, crashing
+  the app outright. It's now a throwing initializer.
+  `DatabaseManager.shared` changed from a non-optional `static let
+  DatabaseManager()` to a `static let DatabaseManager?` computed via `try?`
+  (capturing the underlying error in a new `static private(set) var
+  openError: Error?` for diagnostics). `SemiboldApp`'s root view now
+  branches: `HomeView()` if `DatabaseManager.shared != nil`, else a new
+  `Views/DatabaseUnavailableView.swift` — a full-screen centered message
+  showing `AppErrorMessages.databaseUnavailable`
+  ("로컬 저장소를 열 수 없습니다.") with a warning-triangle SF Symbol, styled
+  with `AppTheme` tokens. This replaces a hard crash with a screen that at
+  least explains what's wrong, without a larger "degraded mode" (e.g.
+  retry, offline cache) — out of scope per the brief's "best-effort version,
+  document remaining gaps" guidance.
+  - **Repository default-argument fallout.** `FolderRepository`,
+    `DocumentRepository`, `DocumentBlockRepository` all default their
+    `dbQueue:` parameter to `DatabaseManager.shared.dbQueue`, which no
+    longer compiles once `shared` is optional. Added
+    `DatabaseManager.sharedOrFallbackQueue: DatabaseQueue` — returns
+    `shared`'s queue when available, else a throwaway in-memory
+    `DatabaseQueue()` — and pointed all three repositories' default
+    arguments at it. This fallback queue is never actually exercised by a
+    real user: when `shared` is `nil`, `SemiboldApp` shows
+    `DatabaseUnavailableView` instead of any screen that would construct a
+    repository. It exists purely so the default-argument expressions stay
+    non-optional/non-throwing without threading an `Error`/optional through
+    every repository initializer — documented inline at the property.
+  - **Test fallout.** `DatabaseManager(path: ":memory:")` is now
+    `try DatabaseManager(path: ":memory:")` — updated all 10 test files'
+    `makeDatabaseManager()` helpers (now `throws`) and their ~80 call sites
+    (all already inside `throws`/`async throws` test functions, so this is
+    a mechanical `try` addition).
+- **Save failure — `DetailViewModel.errorMessage: String?`.** Added an
+  `@Observable` `errorMessage` property to `DetailViewModel`, following the
+  existing `NewFolderViewModel`/`NewDocumentViewModel.errorMessage`
+  precedent. Every block-editor write path that previously had a
+  silent-catch comment ("local-only edit if the save fails…") now sets
+  `errorMessage = AppErrorMessages.saveFailed`
+  ("변경사항을 저장하지 못했습니다. 다시 시도해주세요.") on failure:
+  `persistBlock` (debounced text edits and all the structural-conversion
+  immediate saves that route through it), `insertBlock`'s new-block
+  create/shift, `moveBlock(id:direction:)`'s reorder, and the
+  `persistBlockForKeyboardShortcut`/`persistBlockForSlashCommand` siblings
+  in `DetailViewModel+KeyboardShortcuts.swift`/`+SlashCommand.swift`.
+  `reorderBlocks`/`moveBlock(id:beforeBlockId:)` (AC3) route through
+  `persistBlock` too, so they're covered without extra changes. The
+  in-memory edit/state change is kept either way (so the user doesn't lose
+  what they typed) — only the persisted copy may be stale until the next
+  successful save or app relaunch, as the original comments already said.
+  - **`NewFolderViewModel`/`NewDocumentViewModel`**: their existing
+    `errorMessage` save-failure strings ("Couldn't save this folder/document.
+    Please try again.") were ad-hoc English text from earlier ACs — replaced
+    with `AppErrorMessages.saveFailed` for consistency with §15.2's exact
+    wording. `NewFolderViewModel`'s separate "Please enter a folder name."
+    *validation* message (empty name, not a persistence failure) is
+    untouched — §15.2 doesn't cover client-side validation.
+- **Delete failure — same `errorMessage` property.**
+  `mergeOrDeleteBlock`'s `documentBlockRepository.softDelete` catch now sets
+  `errorMessage = AppErrorMessages.deleteFailed` ("항목을 삭제하지
+  못했습니다.") instead of its previous silent-catch comment. No
+  folder/document delete UI exists yet in any brief through this phase (only
+  block soft-delete via Backspace-merge), so `HomeViewModel` doesn't need an
+  `errorMessage` of its own for this AC — flagged in Open Questions for
+  whenever a folder/document delete flow is added.
+- **UI: `.alert` on `DetailView`.** No `Screen_*`/`Planning_N_*Flow`
+  artboard or `atoms.py` component defines an "error toast/banner" (checked
+  per CLAUDE.md §0 step 3) — per the brief's own suggestion, used a plain
+  SwiftUI `.alert(...)` bound to `viewModel.errorMessage != nil`, showing
+  the exact §15.2 string with an "OK" button that clears `errorMessage`.
+  `NewFolderSheet`/`NewDocumentSheet` already had their own inline
+  `errorMessage` `Text` (red, `AppTheme.Colors.error`,
+  `AppTheme.Typography.caption`) from earlier ACs — left as-is, just updated
+  to §15.2's wording (see above).
+- **`load()`'s read-failure path is unchanged/out of scope.** §15.2 only
+  defines DB-open, save, and delete failures — not a generic "read failed"
+  state. `DetailViewModel.load()`'s existing catch (falls back to
+  `blocks = []`) and `HomeViewModel.load()`'s (falls back to empty
+  folders/documents) are left as-is; they're read paths, not one of
+  §15.2's three states.
+- **Tests.** Added to `DetailViewModelTests.swift`: one test that hard-deletes
+  a block's row out from under the view model so a subsequent structural save
+  (`convertBlockToHeading`, which calls the shared
+  `persistBlockForKeyboardShortcut`) hits GRDB's
+  `PersistenceError.recordNotFound` and sets `errorMessage ==
+  AppErrorMessages.saveFailed`; and one test that closes the in-memory
+  `DatabaseQueue` so `mergeOrDeleteBlock`'s `softDelete` write fails and sets
+  `errorMessage == AppErrorMessages.deleteFailed`. A dedicated "DB open
+  failure" unit test wasn't added — `DatabaseManager.init(path:)` failing
+  requires an unopenable SQLite path (e.g. a directory, or a read-only
+  filesystem location), which isn't a clean fit for the existing
+  `":memory:"`-based test suite; the `shared`/`DatabaseUnavailableView`
+  wiring is exercised by inspection and the build/test run rather than a
+  forced-failure test. Flagged in Open Questions.
+
 ## Acceptance Criteria
 
 - [x] macOS keyboard shortcuts implemented per PLANNING §13.2 and
@@ -255,7 +362,7 @@ detail/editor view from earlier phases — no new dedicated screen.
 - [x] iOS slash-command bottom sheet for inserting block types
 - [x] Drag & drop block reordering (§12.3)
 - [x] Empty states implemented per §15.1
-- [ ] Error states implemented per §15.2
+- [x] Error states implemented per §15.2
 - [ ] Markdown export implemented per §10.3
 
 ## Open Questions / Follow-ups
@@ -268,3 +375,25 @@ detail/editor view from earlier phases — no new dedicated screen.
 - Selection-scoped formatting for Cmd+B/I/K (noted in the "macOS keyboard
   shortcuts" subsection above) remains a follow-up once
   `ParagraphTextField` exposes `UITextView.selectedRange`.
+- **§15.2 DB open failure** (`DatabaseUnavailableView`) is best-effort: it
+  replaces a hard crash with a static message, but offers no retry/recovery
+  (e.g. "try again", or falling back to an in-memory/temporary database so
+  the user can at least use the app for the current session). If this needs
+  to be more resilient, `SemiboldApp`'s `if DatabaseManager.shared != nil`
+  branch and `DatabaseUnavailableView` are the places to extend. No unit
+  test forces `DatabaseManager.init` to throw (see "Tests" above) — if that
+  coverage matters, it'd need a deliberately-unopenable path (e.g. a
+  directory passed as the SQLite file path) in a new test.
+- **§15.2 delete failure** only has a UI path through
+  `DetailViewModel.mergeOrDeleteBlock` (block soft-delete via
+  Backspace-merge) — there's no folder/document delete flow in any brief
+  through this phase. When one is added, it should set its own
+  `errorMessage` (on `HomeViewModel` or a future delete-flow view model) to
+  `AppErrorMessages.deleteFailed`, following this AC's pattern.
+- `HomeView` has no `.alert`/banner for `AppErrorMessages` yet, since
+  `HomeViewModel` has no write/delete path of its own in this phase (folder/
+  document creation's save-failure UI already exists in
+  `NewFolderSheet`/`NewDocumentSheet`'s inline `errorMessage` `Text`, updated
+  to §15.2's wording above). If/when `HomeViewModel` gains a write/delete
+  path, it should get its own `errorMessage` + `.alert`, mirroring
+  `DetailView`'s.

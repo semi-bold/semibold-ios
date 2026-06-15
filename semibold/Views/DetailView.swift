@@ -72,6 +72,33 @@ struct DetailView: View {
                 }
             }
         }
+        .alert(
+            "Error",
+            isPresented: errorAlertPresented,
+            presenting: viewModel.errorMessage
+        ) { _ in
+            Button("OK") {
+                viewModel.errorMessage = nil
+            }
+        } message: { message in
+            // §15.2 "저장 실패"/"삭제 실패" — shown when a block edit,
+            // create, or delete couldn't be persisted.
+            Text(message)
+        }
+    }
+
+    /// Whether the §15.2 save/delete-failure alert is shown — driven by
+    /// `viewModel.errorMessage`. Dismissing the alert (the "OK" button, or
+    /// swiping it away) clears the message so it doesn't reappear.
+    private var errorAlertPresented: Binding<Bool> {
+        Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    viewModel.errorMessage = nil
+                }
+            }
+        )
     }
 
     /// Whether the Slash Command bottom sheet (§12.2/§13.1) is shown —

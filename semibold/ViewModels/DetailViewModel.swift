@@ -62,6 +62,12 @@ final class DetailViewModel {
     /// paragraph block; `DetailView` observes this to present the sheet.
     private(set) var slashCommandBlockId: String?
 
+    /// Set when a block save or delete fails to persist (§15.2 "저장
+    /// 실패"/"삭제 실패"), so `DetailView` can show the corresponding
+    /// message. `nil` once the message has been shown/dismissed, or after
+    /// the next successful save/delete.
+    var errorMessage: String?
+
     /// Not `private` for the same cross-file-access reason as `blocks`
     /// above — `DetailViewModel+KeyboardShortcuts.swift` persists its
     /// shortcut-driven edits through this same repository.
@@ -265,9 +271,11 @@ final class DetailViewModel {
         do {
             blocks[index] = try documentBlockRepository.update(blocks[index])
         } catch {
-            // Local-only edit if the save fails; the next successful save
-            // (or app relaunch reload) reconciles it. Nothing actionable
-            // for the user to do here.
+            // §15.2 "저장 실패" — the edit stays in memory (so the user
+            // doesn't lose what they typed) but didn't reach the database;
+            // the next successful save (or app relaunch reload) reconciles
+            // it.
+            errorMessage = AppErrorMessages.saveFailed
         }
     }
 
@@ -363,8 +371,10 @@ final class DetailViewModel {
             blocks.insert(created, at: index + 1)
             focusedBlockId = created.id
         } catch {
-            // Local-only state if the save fails; reloading the document
-            // reconciles it. Nothing actionable for the user to do here.
+            // §15.2 "저장 실패" — the new block stays local-only; reloading
+            // the document reconciles it once the database is reachable
+            // again.
+            errorMessage = AppErrorMessages.saveFailed
         }
     }
 
@@ -455,8 +465,10 @@ final class DetailViewModel {
             focusedBlockId = previousBlock.id
             focusedBlockCursorOffset = cursorOffset
         } catch {
-            // Local-only state if the delete fails; reloading the document
-            // reconciles it. Nothing actionable for the user to do here.
+            // §15.2 "삭제 실패" — the block stays in the database
+            // un-deleted; reloading the document reconciles the in-memory
+            // list with it.
+            errorMessage = AppErrorMessages.deleteFailed
         }
     }
 
@@ -495,9 +507,11 @@ final class DetailViewModel {
             blocks[neighborIndex] = try documentBlockRepository.update(neighbor)
             blocks.swapAt(index, neighborIndex)
         } catch {
-            // Leave the in-memory order as-is (still reflecting the
-            // original `sortOrder` values) if the save fails, so the
-            // editor's order keeps matching what's persisted.
+            // §15.2 "저장 실패" — leave the in-memory order as-is (still
+            // reflecting the original `sortOrder` values) if the save
+            // fails, so the editor's order keeps matching what's
+            // persisted.
+            errorMessage = AppErrorMessages.saveFailed
         }
     }
 

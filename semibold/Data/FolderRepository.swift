@@ -9,7 +9,7 @@ import GRDB
 struct FolderRepository {
     let dbQueue: DatabaseQueue
 
-    init(dbQueue: DatabaseQueue = DatabaseManager.shared.dbQueue) {
+    init(dbQueue: DatabaseQueue = DatabaseManager.sharedOrFallbackQueue) {
         self.dbQueue = dbQueue
     }
 

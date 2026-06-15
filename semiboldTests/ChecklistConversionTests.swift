@@ -14,13 +14,13 @@ import Testing
 /// within SwiftLint's `type_body_length`.
 @MainActor
 struct ChecklistConversionTests {
-    private func makeDatabaseManager() -> DatabaseManager {
-        DatabaseManager(path: ":memory:")
+    private func makeDatabaseManager() throws -> DatabaseManager {
+        try DatabaseManager(path: ":memory:")
     }
 
     @Test("Typing '- [ ] task' converts the block to an unchecked checklist item, saved immediately")
     func typingUncheckedChecklistPrefixConvertsBlockToChecklistItem() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -60,7 +60,7 @@ struct ChecklistConversionTests {
 
     @Test("Typing '- [x] task' converts the block to a checked checklist item, saved immediately")
     func typingCheckedChecklistPrefixConvertsBlockToChecklistItem() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -97,7 +97,7 @@ struct ChecklistConversionTests {
         ]
     )
     func checklistPrefixesDoNotConvertToBulletedList(_ testCase: (prefix: String, checked: Bool)) throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -121,7 +121,7 @@ struct ChecklistConversionTests {
 
     @Test("Editing a checklist item keeps its checked state and rebuilds markdownSource with the '- [ ]'/'- [x]' prefix")
     func editingChecklistItemKeepsCheckedStateAndPrefix() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -148,7 +148,7 @@ struct ChecklistConversionTests {
 
     @Test("toggleChecklistItem flips the checked state, rebuilds markdownSource, and persists immediately")
     func toggleChecklistItemFlipsCheckedStateAndPersists() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -189,7 +189,7 @@ struct ChecklistConversionTests {
 
     @Test("toggleChecklistItem does nothing for a non-checklist block")
     func toggleChecklistItemDoesNothingForNonChecklistBlock() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -211,7 +211,7 @@ struct ChecklistConversionTests {
         arguments: ["- [] task", "- [X] task"]
     )
     func nonChecklistBracketSyntaxFallsThroughToBulletedList(_ typedText: String) throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 

@@ -8,8 +8,16 @@ struct SemiboldApp: App {
 
     var body: some Scene {
         WindowGroup {
-            HomeView()
-                .environment(commandCenter)
+            // §15.2 "DB 열기 실패": if the local database couldn't be
+            // opened/migrated at launch, `DatabaseManager.shared` is `nil`
+            // — show that error instead of a `HomeView` that has nothing
+            // to read from or write to.
+            if DatabaseManager.shared != nil {
+                HomeView()
+                    .environment(commandCenter)
+            } else {
+                DatabaseUnavailableView()
+            }
         }
         .commands {
             // macOS keyboard shortcuts (PLANNING/tasks §13.2):
