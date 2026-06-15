@@ -62,7 +62,8 @@ final class NewFolderViewModel {
             errorMessage = nil
             return created
         } catch {
-            errorMessage = "Couldn't save this folder. Please try again."
+            // §15.2 "저장 실패" — saving a new folder failed.
+            errorMessage = AppErrorMessages.saveFailed
             return nil
         }
     }

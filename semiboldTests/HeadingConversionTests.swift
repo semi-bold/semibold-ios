@@ -12,8 +12,8 @@ import Testing
 /// within SwiftLint's `type_body_length`.
 @MainActor
 struct HeadingConversionTests {
-    private func makeDatabaseManager() -> DatabaseManager {
-        DatabaseManager(path: ":memory:")
+    private func makeDatabaseManager() throws -> DatabaseManager {
+        try DatabaseManager(path: ":memory:")
     }
 
     @Test(
@@ -25,7 +25,7 @@ struct HeadingConversionTests {
         ]
     )
     func typingHeadingPrefixConvertsBlockToHeading(_ testCase: (prefix: String, level: Int)) throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -65,7 +65,7 @@ struct HeadingConversionTests {
 
     @Test("Editing a heading block's text keeps its level and rebuilds markdownSource with the '#' prefix")
     func editingHeadingBlockKeepsLevelAndPrefix() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -92,7 +92,7 @@ struct HeadingConversionTests {
 
     @Test("A 4th '#' doesn't trigger heading conversion")
     func fourHashesDoesNotConvert() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -110,7 +110,7 @@ struct HeadingConversionTests {
 
     @Test("A '#' without a trailing space doesn't trigger heading conversion")
     func hashWithoutSpaceDoesNotConvert() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 

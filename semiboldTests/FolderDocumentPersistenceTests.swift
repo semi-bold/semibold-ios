@@ -13,13 +13,13 @@ import Testing
 /// `semibold.sqlite` is never touched.
 struct FolderDocumentPersistenceTests {
     /// A fresh, fully-migrated in-memory database for one test.
-    private func makeDatabaseManager() -> DatabaseManager {
-        DatabaseManager(path: ":memory:")
+    private func makeDatabaseManager() throws -> DatabaseManager {
+        try DatabaseManager(path: ":memory:")
     }
 
     @Test("A created root-level folder is persisted and shows up in HomeView's folder list")
     func createFolderPersistsAndIsListed() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let folderRepository = FolderRepository(dbQueue: database.dbQueue)
 
         let folder = Folder(name: "Recipes")
@@ -36,7 +36,7 @@ struct FolderDocumentPersistenceTests {
 
     @Test("A created root-level document is persisted and shows up in HomeView's document list")
     func createDocumentPersistsAndIsListed() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
 
         let document = Document(title: "Project Plan")
@@ -53,7 +53,7 @@ struct FolderDocumentPersistenceTests {
 
     @Test("A document created inside a folder is not listed at the root")
     func documentInFolderIsScopedToThatFolder() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let folderRepository = FolderRepository(dbQueue: database.dbQueue)
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
 

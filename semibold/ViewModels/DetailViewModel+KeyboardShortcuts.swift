@@ -185,9 +185,9 @@ extension DetailViewModel {
         do {
             blocks[index] = try documentBlockRepository.update(blocks[index])
         } catch {
-            // Local-only edit if the save fails; the next successful save
-            // (or app relaunch reload) reconciles it. Nothing actionable
-            // for the user to do here.
+            // §15.2 "저장 실패" — the edit stays in memory; the next
+            // successful save (or app relaunch reload) reconciles it.
+            errorMessage = AppErrorMessages.saveFailed
         }
     }
 }

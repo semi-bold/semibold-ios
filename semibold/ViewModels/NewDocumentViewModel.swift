@@ -56,7 +56,8 @@ final class NewDocumentViewModel {
             errorMessage = nil
             return created
         } catch {
-            errorMessage = "Couldn't save this document. Please try again."
+            // §15.2 "저장 실패" — saving a new document failed.
+            errorMessage = AppErrorMessages.saveFailed
             return nil
         }
     }
