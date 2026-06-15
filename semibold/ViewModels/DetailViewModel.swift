@@ -92,11 +92,36 @@ final class DetailViewModel {
     /// 저장 원칙, §11.2 "블록 입력: 300~800ms debounce 후 저장"). A new
     /// keystroke cancels the previous block's pending save and restarts the
     /// timer, so rapid typing only writes once the user pauses.
+    ///
+    /// Before applying a plain text edit, checks whether `text` now starts
+    /// with a supported Markdown prefix (`# `, `## `, `### `) — if so, the
+    /// block's type is converted on the spot (`Planning_4_BlockCreateFlow`'s
+    /// "Markdown Syntax → Markdown parser가 타입 감지" branch, §5.4) and
+    /// saved immediately rather than going through the debounce, since a
+    /// type change is a structural edit (§11.2 "블록 생성/삭제/순서 변경:
+    /// 즉시 저장").
     func updateBlockText(_ blockId: String, text: String) {
         guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
 
-        blocks[index].markdownSource = text
-        blocks[index].contentJSON = Self.contentJSON(forText: text)
+        if blocks[index].type == .paragraph, let heading = Self.headingConversion(forTypedText: text) {
+            blocks[index].type = .heading
+            blocks[index].contentJSON = BlockContent.headingJSON(level: heading.level, text: heading.text)
+            blocks[index].markdownSource = heading.markdownSource
+
+            pendingSaveTasks[blockId]?.cancel()
+            pendingSaveTasks[blockId] = nil
+            persistBlock(blockId)
+            return
+        }
+
+        if blocks[index].type == .heading {
+            let level = Self.headingLevel(forContentJSON: blocks[index].contentJSON)
+            blocks[index].markdownSource = Self.headingMarkdownSource(level: level, text: text)
+            blocks[index].contentJSON = BlockContent.headingJSON(level: level, text: text)
+        } else {
+            blocks[index].markdownSource = text
+            blocks[index].contentJSON = BlockContent.paragraphJSON(text: text)
+        }
 
         pendingSaveTasks[blockId]?.cancel()
         pendingSaveTasks[blockId] = Task { @MainActor [weak self, autosaveDebounceInterval] in
@@ -331,27 +356,64 @@ final class DetailViewModel {
     }
 
     /// Builds the `contentJSON` for a plain paragraph block holding
-    /// `text` (PLANNING §8.1's `{ type: "paragraph", text: RichTextSpan[] }`
-    /// shape). Inline formatting marks are `markdown-phase4` scope, so each
-    /// block is a single unstyled text span for now.
+    /// `text` (§8.1's `{ type: "paragraph", text: RichTextSpan[] }` shape).
+    /// Inline formatting marks are `markdown-phase4` follow-up scope (AC6),
+    /// so each block is a single unstyled text span for now.
     private static func contentJSON(forText text: String) -> String {
-        let span = ParagraphContent(text: [ParagraphContent.Span(text: text)])
-        guard let data = try? JSONEncoder().encode(span),
-              let json = String(data: data, encoding: .utf8) else {
-            return "{\"type\":\"paragraph\",\"text\":[]}"
-        }
-        return json
+        BlockContent.paragraphJSON(text: text)
     }
-}
 
-/// The `contentJSON` shape for a `.paragraph` block (PLANNING §8.1).
-/// Inline formatting marks (`bold`, `italic`, …) are `markdown-phase4`
-/// scope, so `Span` only carries plain text for now.
-private struct ParagraphContent: Codable {
-    let type = "paragraph"
-    var text: [Span]
+    /// A detected Markdown heading prefix, ready to apply to a block.
+    private struct HeadingConversion {
+        /// The heading level (1-3), from the number of leading `#`s.
+        let level: Int
+        /// The text after the prefix, shown in the editor and stored as
+        /// the heading's `RichTextSpan`.
+        let text: String
+        /// The full literal Markdown (`"# Title"`, …) to keep as
+        /// `markdownSource` for round-tripping (§8.1 comment).
+        let markdownSource: String
+    }
 
-    struct Span: Codable {
-        var text: String
+    /// Detects whether `text` (the block's full text right after this
+    /// keystroke) now starts with a complete Markdown heading prefix —
+    /// 1-3 `#`s followed by a space — per §7.1/§7.3's
+    /// `# Title` / `## Title` / `### Title` → Heading 1/2/3 syntax.
+    ///
+    /// Returns `nil` if `text` doesn't start with such a prefix, so the
+    /// caller leaves the block as a paragraph.
+    private static func headingConversion(forTypedText text: String) -> HeadingConversion? {
+        var hashCount = 0
+        for character in text {
+            if character == "#" {
+                hashCount += 1
+                if hashCount > 3 { return nil }
+            } else {
+                break
+            }
+        }
+        guard hashCount >= 1, hashCount <= 3 else { return nil }
+
+        let afterHashes = text.dropFirst(hashCount)
+        guard afterHashes.first == " " else { return nil }
+
+        let remainder = String(afterHashes.dropFirst())
+        return HeadingConversion(level: hashCount, text: remainder, markdownSource: text)
+    }
+
+    /// Reads the `level` (1-3) out of a `.heading` block's `contentJSON`,
+    /// defaulting to 1 if it's missing/malformed.
+    private static func headingLevel(forContentJSON json: String) -> Int {
+        if case .heading(let content) = BlockContent.decode(from: json, type: .heading) {
+            return content.level
+        }
+        return 1
+    }
+
+    /// Rebuilds the literal Markdown `markdownSource` (`"# Title"`, …) for
+    /// a heading block at `level` holding `text`, so further edits keep
+    /// round-tripping correctly.
+    private static func headingMarkdownSource(level: Int, text: String) -> String {
+        String(repeating: "#", count: level) + " " + text
     }
 }

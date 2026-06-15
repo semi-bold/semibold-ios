@@ -181,13 +181,31 @@ private struct BlockRow: View {
         self.onTextChange = onTextChange
         self.onEnter = onEnter
         self.onBackspaceAtStart = onBackspaceAtStart
-        _text = State(initialValue: block.markdownSource ?? "")
+        _text = State(initialValue: block.displayText)
+    }
+
+    /// The typography this block's text is shown in — heading levels 1-3
+    /// map to `AppTheme.Typography.heading1`/`.heading2`/`.heading3`
+    /// (§7.1/§7.3's `# `/`## `/`### ` conversions); every other block type
+    /// uses `.body`.
+    private var textStyle: TextStyleToken {
+        switch block.type {
+        case .heading:
+            switch block.headingLevel {
+            case 1: return AppTheme.Typography.heading1
+            case 2: return AppTheme.Typography.heading2
+            default: return AppTheme.Typography.title
+            }
+        default:
+            return AppTheme.Typography.body
+        }
     }
 
     var body: some View {
         VStack(spacing: 0) {
             ParagraphTextField(
                 text: $text,
+                textStyle: textStyle,
                 onTextChange: onTextChange,
                 onEnter: { cursorOffset in
                     onEnter(text, cursorOffset)
@@ -207,12 +225,14 @@ private struct BlockRow: View {
                 .frame(height: 1)
         }
         .background(AppTheme.Colors.background)
-        .onChange(of: block.markdownSource) { _, newValue in
+        .onChange(of: block.contentJSON) { _, _ in
             // Keep this row's text in sync when the view model changes
             // `block`'s content without the user typing here directly —
             // e.g. a later block's Backspace-at-start merge appends its
-            // text onto the end of this block.
-            let newText = newValue ?? ""
+            // text onto the end of this block, or this same block just
+            // converted from paragraph to heading (its displayed text
+            // drops the `#` prefix).
+            let newText = block.displayText
             if text != newText {
                 text = newText
             }
