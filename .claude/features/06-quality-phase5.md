@@ -1,6 +1,6 @@
 # Feature: 06-quality-phase5
 
-Status: in-progress
+Status: done
 
 ## Source
 
@@ -355,6 +355,117 @@ detail/editor view from earlier phases — no new dedicated screen.
   wiring is exercised by inspection and the build/test run rather than a
   forced-failure test. Flagged in Open Questions.
 
+### Markdown export (§10.3)
+
+- **`MarkdownExporter` (`semibold/Models/MarkdownExporter.swift`)**. A
+  stateless `enum` with one entry point,
+  `render(documentTitle:blocks:) -> String`, covering §10.3's last two steps
+  ("Markdown Renderer" → "`.md` 문자열 생성"). The earlier steps ("문서/블록
+  조회" → "Block Tree 조립") are already `DetailViewModel.blocks` —
+  `viewModel.load()` fetches the document's blocks via
+  `documentBlockRepository` and keeps them in `sortOrder` order (AC3's
+  `reorderBlocks`/`moveBlock` already maintain this invariant), so the
+  renderer just takes that array as-is. Named to match the project's
+  `Models/`-helper convention (`BlockContent+InlineMarks.swift`,
+  `DetailViewModel+MarkdownConversion.swift`) — a new top-level type rather
+  than an extension, since there's no existing type this logic naturally
+  extends. `documentTitle` replaced an earlier `document: Document`
+  parameter that `render` never actually used — taken now so a future
+  revision could prepend a title heading without changing the signature
+  again; not used in the rendered body today.
+- **Joining rules.** Each block contributes one line (its `markdownSource`,
+  see below), separated by a blank line from the next — **except** between
+  two consecutive list items of the *same* family (bulleted, numbered, or
+  checklist), which go on adjacent lines with no blank line, so they render
+  as one continuous Markdown list rather than three separate single-item
+  lists. Headings, paragraphs, blockquotes, code blocks, and dividers are
+  always blank-line-separated from their neighbors (including from list
+  items), since §7.3 treats each as its own block. This mirrors how a human
+  would hand-write the same Markdown. `listFamily(for:)` is an exhaustive
+  switch over `BlockType` (returning `nil` for the five non-list cases
+  explicitly), matching `BlockContent.swift`'s exhaustiveness convention so
+  a new `BlockType` forces a compile error here too.
+- **`.divider` → `---`.** Per AC2's Open Question (`.divider` blocks have
+  `markdownSource == nil` and no `dividerMarkdownSource()` helper), the
+  renderer special-cases `block.type == .divider` to literal `"---"` —
+  Markdown's standard horizontal rule (§8.1/§8.2) — without adding a new
+  `BlockContent` helper, since `.divider` carries no text/state for a
+  helper to format. This is the only `BlockType` the renderer special-cases;
+  every other case's `markdownSource` (built/maintained by
+  `markdown-phase4` AC1-AC5 and this phase's AC1-AC2 conversions) is used
+  verbatim.
+- **Defensive fallback for `nil` markdownSource on non-divider blocks.** If
+  any other block's `markdownSource` is unexpectedly `nil` (shouldn't
+  normally happen — every conversion path sets it), the renderer falls back
+  to `block.displayText` (plain text, no Markdown prefix) rather than
+  dropping the block or emitting an empty line — so export never silently
+  loses a block's content, even if its literal Markdown prefix is missing.
+- **Export trigger — `ShareLink` in `DetailView`'s nav bar, with a lazy
+  `Transferable` export.** Added a trailing `ShareLink` (SF Symbol
+  `square.and.arrow.up`, `AppTheme.Colors.primary`) next to the existing
+  "< Back" button. The item it shares is a new `MarkdownDocumentExport`
+  (`semibold/Models/MarkdownDocumentExport.swift`) — a small `Transferable`
+  struct holding just the document's title and its current (in-memory)
+  `[DocumentBlock]`. Its `transferRepresentation` is a `FileRepresentation`
+  whose `exporting` closure calls `MarkdownExporter.render(documentTitle:
+  blocks:)`, writes the result to a temporary `<title>.md` file
+  (`FileManager.default.temporaryDirectory`), and returns a
+  `SentTransferredFile` — giving the standard iOS share sheet ("Save to
+  Files", Mail, Messages, etc.) a properly-named-and-extensioned `.md` file,
+  covering §10.3's "파일 저장 또는 공유" without a custom save dialog.
+  - **Original implementation was a `swift-reviewer`-flagged Blocking
+    issue and has been reworked.** The first version exposed a plain
+    `exportFileURL: URL` computed property (rendering + writing the temp
+    file synchronously) referenced from `navBar`, which is part of `body`.
+    Since SwiftUI re-evaluates `body` on every `@Observable` mutation of
+    `viewModel` (every keystroke, block insert/reorder/checklist toggle),
+    that meant a full document render + disk write on every keystroke, not
+    just on tap — a SwiftUI anti-pattern (side effects from a view's
+    computed properties). The `Transferable`/`FileRepresentation` rework
+    above defers `MarkdownExporter.render` and the temp-file write to
+    `exporting`'s closure, which the system only calls once the user taps
+    the share button and the share sheet actually requests the file's data
+    — `DetailView.body`/`exportShareLink` now only *constructs* the
+    lightweight `MarkdownDocumentExport` value (title + blocks reference,
+    no I/O) on every re-render.
+  - **`ShareLink(item:preview:label:)`.** The generic `Transferable`
+    overload of `ShareLink` requires a `preview:` (`SharePreview`), unlike
+    the `URL`/`String`-specific overloads — passed
+    `SharePreview(MarkdownDocumentExport.fileName(forDocumentTitle:))` (text
+    only, no image/icon) so the share sheet's preview row shows the same
+    `<title>.md` name as the exported file.
+  - **Filename sanitization hardened.** `MarkdownDocumentExport.fileName(
+    forDocumentTitle:)` (a `static` helper, also used for the `ShareLink`
+    preview) now trims whitespace/newlines after replacing `/`/`:` with
+    `-`, and falls back to `"Untitled"` if the result is empty — so a
+    blank or whitespace-only document title still produces a valid
+    `Untitled.md` rather than a bare `.md` file.
+- **No `Screen_*`/`Planning_N_*Flow` artboard defines an export/share
+  affordance.** Checked `wireframe.py`'s `iOS_Editor`
+  (`screen_detail`/`NavBar` in `wireframe.py`) — its `NavBar` only has the
+  back button (`"< 일상"`) and the out-of-scope "잠금" (Secret Lock) button;
+  no share/export icon. Per CLAUDE.md §0 step 3, this is documented here
+  rather than matched to a non-existent reference — the new button reuses
+  the nav bar's existing row/height/typography and a standard SF Symbol,
+  placed on the trailing edge opposite "< Back".
+- **Tests — `MarkdownExporterTests.swift`** (`semiboldTests/`, new file,
+  following `BlockContentTests.swift`'s plain-struct/`@testable import`
+  convention — no database needed, this is pure rendering logic). Covers:
+  heading+paragraph with a blank line between them; consecutive bulleted
+  list items with no blank line; numbered-list-then-checklist getting a
+  blank line between the two families; blockquote+code block each
+  blank-line-separated; `.divider` → `---`; a `nil`-`markdownSource`
+  paragraph falling back to `displayText`; all 8 `BlockType` cases rendered
+  in `sortOrder` with the documented joining rules; and an empty block list
+  rendering as an empty string. 8 new tests, 127 total across 13 suites
+  (was 119 across 12). `MarkdownDocumentExport`'s `Transferable`/
+  `FileRepresentation` plumbing isn't separately unit-tested — it's a thin
+  wrapper around the already-tested `MarkdownExporter.render`, and
+  `FileRepresentation`'s `exporting` closure is only invoked by the live
+  share-sheet flow (UI-level, not exercised by the `Testing`-framework
+  suite); the build/test run above confirms it compiles and the rest of the
+  suite is unaffected.
+
 ## Acceptance Criteria
 
 - [x] macOS keyboard shortcuts implemented per PLANNING §13.2 and
@@ -363,7 +474,7 @@ detail/editor view from earlier phases — no new dedicated screen.
 - [x] Drag & drop block reordering (§12.3)
 - [x] Empty states implemented per §15.1
 - [x] Error states implemented per §15.2
-- [ ] Markdown export implemented per §10.3
+- [x] Markdown export implemented per §10.3
 
 ## Open Questions / Follow-ups
 
@@ -397,3 +508,16 @@ detail/editor view from earlier phases — no new dedicated screen.
   to §15.2's wording above). If/when `HomeViewModel` gains a write/delete
   path, it should get its own `errorMessage` + `.alert`, mirroring
   `DetailView`'s.
+- **Markdown export's nav-bar share button placement** has no
+  `Screen_*`/`Planning_N_*Flow` reference (see "Markdown export (§10.3)"
+  above) — if a future wireframe adds an export/share affordance with a
+  different icon or position, `DetailView.exportShareLink`/`navBar` is the
+  single place to adjust.
+- **Numbered-list renumbering on export** isn't addressed: each
+  `.numberedListItem`'s `markdownSource` keeps the literal number the user
+  typed (`numberedListNumber`'s doc comment already flags this as a
+  `quality-phase5` follow-up from `markdown-phase4`), so exported numbered
+  lists could have gaps/duplicates if items were reordered (AC3) without
+  the user manually editing each number. Out of scope for this AC — would
+  need either a renumber-on-reorder pass in `DetailViewModel` or a
+  renumbering step in `MarkdownExporter` itself.
