@@ -170,6 +170,13 @@ struct DetailView: View {
     /// (`DocLockBtn`) — that's Secret Lock, explicitly out of this
     /// planning's scope (callout ④ of `Planning_4_BlockCreateFlow`,
     /// PLANNING §1.2), so it's omitted here.
+    ///
+    /// A trailing share button (§10.3 "파일 저장 또는 공유") is added on the
+    /// opposite side from the back button — no `Screen_*`/`Planning_N_*Flow`
+    /// artboard defines an export affordance for `iOS_Editor` (only the
+    /// "잠금" button is shown there, and that's the out-of-scope Secret Lock
+    /// button above), so this reuses the back button's row/typography and a
+    /// standard SF Symbol share icon rather than inventing new layout.
     private var navBar: some View {
         VStack(spacing: 0) {
             HStack {
@@ -182,6 +189,8 @@ struct DetailView: View {
                 }
 
                 Spacer()
+
+                exportShareLink
             }
             .padding(.horizontal, AppTheme.Spacing.md)
             .frame(height: 52)
@@ -191,6 +200,31 @@ struct DetailView: View {
                 .frame(height: 1)
         }
         .background(AppTheme.Colors.surface)
+    }
+
+    /// "파일 저장 또는 공유" (§10.3's final step): shares the document's
+    /// blocks as a Markdown `.md` file, using `ShareLink`'s standard sheet —
+    /// which already covers both "Save to Files" and sharing to other apps
+    /// from one control.
+    ///
+    /// `ShareLink(item:)` takes a `MarkdownDocumentExport` (a `Transferable`
+    /// wrapping this document's title and current blocks) rather than a
+    /// pre-rendered file `URL`. That defers `MarkdownExporter.render` and the
+    /// temporary-file write to `MarkdownDocumentExport`'s `exporting` closure,
+    /// which only runs when the user taps this button and the system actually
+    /// requests the export — not on every `body` re-evaluation (e.g. every
+    /// keystroke).
+    private var exportShareLink: some View {
+        let export = MarkdownDocumentExport(documentTitle: viewModel.document.title, blocks: viewModel.blocks)
+        return ShareLink(
+            item: export,
+            preview: SharePreview(
+                MarkdownDocumentExport.fileName(forDocumentTitle: viewModel.document.title)
+            )
+        ) {
+            Image(systemName: "square.and.arrow.up")
+                .foregroundStyle(AppTheme.Colors.primary)
+        }
     }
 
     // MARK: - Title area
