@@ -214,6 +214,18 @@ struct DetailView: View {
                             viewModel.toggleChecklistItem(blockId: block.id)
                         }
                     )
+                    // Drag & drop block reordering (§12.3): dropping
+                    // another block onto this row moves it to this row's
+                    // position (PLANNING §11.2 "블록 생성/삭제/순서 변경: 즉시
+                    // 저장" — `moveBlock(id:beforeBlockId:)` persists the new
+                    // `sortOrder`s right away, no debounce). The drag itself
+                    // starts from `BlockRow`'s trailing grip handle, so it
+                    // doesn't conflict with tapping into the row to edit.
+                    .dropDestination(for: String.self) { droppedIds, _ in
+                        guard let draggedBlockId = droppedIds.first else { return false }
+                        viewModel.moveBlock(id: draggedBlockId, beforeBlockId: block.id)
+                        return true
+                    }
                 }
             }
         }
@@ -331,17 +343,32 @@ private struct BlockRow: View {
     /// (§8.1 `{ type: "divider" }`).
     private var dividerBody: some View {
         VStack(spacing: 0) {
-            Rectangle()
-                .fill(AppTheme.Colors.border)
-                .frame(height: 1)
-                .padding(.horizontal, AppTheme.Spacing.md)
-                .padding(.vertical, AppTheme.Spacing.lg)
+            HStack(alignment: .center, spacing: AppTheme.Spacing.sm) {
+                Rectangle()
+                    .fill(AppTheme.Colors.border)
+                    .frame(height: 1)
+
+                dragHandle
+            }
+            .padding(.horizontal, AppTheme.Spacing.md)
+            .padding(.vertical, AppTheme.Spacing.lg)
 
             Rectangle()
                 .fill(AppTheme.Colors.divider)
                 .frame(height: 1)
         }
         .background(AppTheme.Colors.background)
+    }
+
+    /// A small grip icon at the trailing edge of a block row — the drag
+    /// source for §12.3's drag & drop reordering. Long-pressing it and
+    /// dragging onto another row moves this block to that row's position
+    /// (`DetailView.blockList`'s `.dropDestination` handles the drop).
+    private var dragHandle: some View {
+        Image(systemName: "line.3.horizontal")
+            .foregroundStyle(AppTheme.Colors.text2)
+            .frame(width: AppTheme.Spacing.lg, height: AppTheme.Spacing.lg)
+            .draggable(block.id)
     }
 
     private var editableBody: some View {
@@ -390,6 +417,9 @@ private struct BlockRow: View {
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .focused(focusedBlockId, equals: block.id)
+
+                    dragHandle
+                        .padding(.top, (textStyle.lineHeight - AppTheme.Spacing.lg) / 2)
                 }
             }
             .padding(.horizontal, AppTheme.Spacing.md)

@@ -141,16 +141,78 @@ detail/editor view from earlier phases — no new dedicated screen.
   leaving the block as the empty paragraph the `/`-clearing step already
   produced — no extra "undo" path needed.
 
+### Drag & drop block reordering (§12.3)
+
+- **No dedicated wireframe/spec for drag & drop.** Checked
+  `wireframe.py`/`planning.py`/`atoms.py` and `tasks/NO-001.md` §12.3 — §12.3
+  ("공통 인터랙션") lists "블록 추가" (block add, AC1-4) and "블록 타입 변경"
+  (type change, ACs 1-2/this brief's first AC) but doesn't spell out
+  drag-and-drop by name, and no `Screen_*`/`Planning_N_*Flow` artboard shows a
+  drag handle. Per CLAUDE.md §0 step 3, this AC is driven by the brief's own
+  Scope statement ("Drag & drop reordering (§12.3)") and `moveBlock(id:
+  direction:)`'s existing doc comment (added in `block-editor-phase3`, which
+  already named "Drag & Drop ... 블록 순서 변경" as this AC's follow-up) rather
+  than a detailed layout spec — documented here instead of inventing a new
+  wireframe.
+- **View-model: `reorderBlocks(fromOffsets:toOffset:)`.** Added to
+  `DetailViewModel.swift`, matching SwiftUI's `List.onMove(perform:)`
+  signature (`IndexSet`, `Int`) so the same logic could back a `List`-based
+  drag handle later. Reorders the in-memory `blocks` array via
+  `Array.move(fromOffsets:toOffset:)`, recomputes every block's `sortOrder`
+  to match its new index (0, 1, 2, …), and immediately persists (via
+  `documentBlockRepository.update`, no debounce) only the blocks whose
+  `sortOrder` actually changed — matching `moveBlock(id:direction:)`'s and
+  AC1/AC2's "structural change → immediate save" precedent (PLANNING §11.2
+  "블록 생성/삭제/순서 변경: 즉시 저장").
+- **View-model: `moveBlock(id:beforeBlockId:)`.** A second, drop-target-shaped
+  entry point that finds the dragged and target blocks' current indices,
+  computes the `IndexSet`/destination `Array.move` needs to land the dragged
+  block directly above the target, and calls `reorderBlocks`. Does nothing if
+  either id is missing or the dragged block is dropped onto itself.
+- **UI: `.draggable`/`.dropDestination` on a trailing grip handle.**
+  `DetailView`'s block list is a `ScrollView`/`LazyVStack` (not a `List`), so
+  `.onMove` isn't directly available — used the iOS 16+ `Transferable`-based
+  `.draggable(_:)`/`.dropDestination(for:)` instead, per the brief's suggested
+  approach. Each `BlockRow` (`.divider` and editable types alike) now shows a
+  small trailing `"line.3.horizontal"` grip icon (`AppTheme.Colors.text2`,
+  `AppTheme.Spacing.lg`-sized) — `.draggable(block.id)` lives on just this
+  icon (not the whole row) so a drag gesture doesn't conflict with tapping
+  into the row to edit its text. `.dropDestination(for: String.self)` lives on
+  each `ForEach` row in `blockList`; dropping a dragged block's id onto a row
+  calls `viewModel.moveBlock(id:beforeBlockId:)` with that row's block as the
+  target. No `Screen_*` defines this icon/column, so its exact placement
+  (trailing edge, vertically centered against the row's text/marker) is this
+  AC's own minimal addition — flagged below for `swift-reviewer` follow-up if
+  a future wireframe specifies something different.
+- **Flat reorder only, uniform across block types.** As called out in the
+  brief's "What to build", `parentId` nesting isn't used yet (per brief 05),
+  so this reorders the document's top-level block list only. `.divider` rows
+  (added in the previous AC) get the same grip handle and
+  `.dropDestination` as editable rows — no special-casing needed.
+- **Tests.** Added to `DetailViewModelTests.swift` (existing file, following
+  its `moveBlock(id:direction:)` test conventions): four `reorderBlocks`
+  tests (move later, move earlier, no-op same-position, empty source) and
+  three `moveBlock(id:beforeBlockId:)` tests (forward drop, backward drop,
+  drop-onto-self no-op), each asserting both the in-memory `blocks` order/
+  `sortOrder` and the persisted rows via `DocumentBlockRepository`.
+
 ## Acceptance Criteria
 
 - [x] macOS keyboard shortcuts implemented per PLANNING §13.2 and
       `Planning_5_MacOSMainFlow`
 - [x] iOS slash-command bottom sheet for inserting block types
-- [ ] Drag & drop block reordering (§12.3)
+- [x] Drag & drop block reordering (§12.3)
 - [ ] Empty states implemented per §15.1
 - [ ] Error states implemented per §15.2
 - [ ] Markdown export implemented per §10.3
 
 ## Open Questions / Follow-ups
 
-- None yet
+- The drag handle's grip icon and placement (trailing edge of each block
+  row) have no `Screen_*`/`Planning_N_*Flow` reference — if a future
+  wireframe defines a different reorder affordance (e.g. a leading-edge
+  handle, or a `List`/`EditMode` "≡" control), `BlockRow.dragHandle` in
+  `DetailView.swift` is the single place to adjust.
+- Selection-scoped formatting for Cmd+B/I/K (noted in the "macOS keyboard
+  shortcuts" subsection above) remains a follow-up once
+  `ParagraphTextField` exposes `UITextView.selectedRange`.

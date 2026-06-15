@@ -1,3 +1,4 @@
+import Foundation
 import GRDB
 import Testing
 
@@ -354,5 +355,156 @@ struct DetailViewModelTests {
 
         viewModel.moveBlock(id: firstBlockId, direction: .down)
         #expect(viewModel.blocks.map(\.markdownSource) == ["Only block"])
+    }
+
+    /// Loads a document with four paragraph blocks ("A", "B", "C", "D")
+    /// with `sortOrder` 0, 1, 2, 3, for the drag & drop reorder tests
+    /// below (§12.3).
+    private func loadFourBlockDocument(
+        documentRepository: DocumentRepository,
+        blockRepository: DocumentBlockRepository
+    ) throws -> (DetailViewModel, [DocumentBlock]) {
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.blocks.first?.id)
+        viewModel.updateBlockText(firstBlockId, text: "A")
+        viewModel.flushPendingChanges()
+
+        for (offset, text) in ["B", "C", "D"].enumerated() {
+            _ = try blockRepository.create(DocumentBlock(
+                documentId: document.id,
+                sortOrder: offset + 1,
+                type: .paragraph,
+                contentJSON: "{\"type\":\"paragraph\",\"text\":[{\"text\":\"\(text)\"}]}",
+                markdownSource: text
+            ))
+        }
+        viewModel.load()
+        #expect(viewModel.blocks.map(\.markdownSource) == ["A", "B", "C", "D"])
+        #expect(viewModel.blocks.map(\.sortOrder) == [0, 1, 2, 3])
+
+        return (viewModel, viewModel.blocks)
+    }
+
+    @Test("reorderBlocks moves a block to a later position and renumbers sortOrder in between")
+    func reorderBlocksMovesBlockLaterAndRenumbers() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let (viewModel, _) = try loadFourBlockDocument(documentRepository: documentRepository, blockRepository: blockRepository)
+
+        // Move "B" (index 1) to just after "C" (SwiftUI's onMove
+        // `toOffset` semantics: destination index in the pre-removal array).
+        viewModel.reorderBlocks(fromOffsets: IndexSet(integer: 1), toOffset: 3)
+
+        #expect(viewModel.blocks.map(\.markdownSource) == ["A", "C", "B", "D"])
+        #expect(viewModel.blocks.map(\.sortOrder) == [0, 1, 2, 3])
+
+        let stored = try blockRepository.blocks(documentId: viewModel.document.id, parentId: nil)
+        #expect(stored.map(\.markdownSource) == ["A", "C", "B", "D"])
+        #expect(stored.map(\.sortOrder) == [0, 1, 2, 3])
+    }
+
+    @Test("reorderBlocks moves a block to an earlier position and renumbers sortOrder in between")
+    func reorderBlocksMovesBlockEarlierAndRenumbers() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let (viewModel, _) = try loadFourBlockDocument(documentRepository: documentRepository, blockRepository: blockRepository)
+
+        // Move "D" (index 3) to the front.
+        viewModel.reorderBlocks(fromOffsets: IndexSet(integer: 3), toOffset: 0)
+
+        #expect(viewModel.blocks.map(\.markdownSource) == ["D", "A", "B", "C"])
+        #expect(viewModel.blocks.map(\.sortOrder) == [0, 1, 2, 3])
+
+        let stored = try blockRepository.blocks(documentId: viewModel.document.id, parentId: nil)
+        #expect(stored.map(\.markdownSource) == ["D", "A", "B", "C"])
+        #expect(stored.map(\.sortOrder) == [0, 1, 2, 3])
+    }
+
+    @Test("reorderBlocks to the same position is a no-op that persists nothing new")
+    func reorderBlocksToSamePositionIsNoOp() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let (viewModel, _) = try loadFourBlockDocument(documentRepository: documentRepository, blockRepository: blockRepository)
+
+        // Moving index 1 to destination 1 (or 2, which `Array.move`
+        // treats as "stay put" when moving a single element forward by
+        // one) leaves the order unchanged.
+        viewModel.reorderBlocks(fromOffsets: IndexSet(integer: 1), toOffset: 1)
+
+        #expect(viewModel.blocks.map(\.markdownSource) == ["A", "B", "C", "D"])
+        #expect(viewModel.blocks.map(\.sortOrder) == [0, 1, 2, 3])
+    }
+
+    @Test("reorderBlocks with an empty source does nothing")
+    func reorderBlocksWithEmptySourceDoesNothing() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let (viewModel, _) = try loadFourBlockDocument(documentRepository: documentRepository, blockRepository: blockRepository)
+
+        viewModel.reorderBlocks(fromOffsets: IndexSet(), toOffset: 2)
+
+        #expect(viewModel.blocks.map(\.markdownSource) == ["A", "B", "C", "D"])
+        #expect(viewModel.blocks.map(\.sortOrder) == [0, 1, 2, 3])
+    }
+
+    @Test("moveBlock(id:beforeBlockId:) moves a dragged block to sit just above the drop target")
+    func moveBlockBeforeTargetReordersAndPersists() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let (viewModel, blocks) = try loadFourBlockDocument(documentRepository: documentRepository, blockRepository: blockRepository)
+
+        // Drag "A" (first) and drop it onto "C" — "A" should land directly
+        // above "C".
+        let blockA = blocks[0]
+        let blockC = blocks[2]
+        viewModel.moveBlock(id: blockA.id, beforeBlockId: blockC.id)
+
+        #expect(viewModel.blocks.map(\.markdownSource) == ["B", "A", "C", "D"])
+        #expect(viewModel.blocks.map(\.sortOrder) == [0, 1, 2, 3])
+
+        let stored = try blockRepository.blocks(documentId: viewModel.document.id, parentId: nil)
+        #expect(stored.map(\.markdownSource) == ["B", "A", "C", "D"])
+        #expect(stored.map(\.sortOrder) == [0, 1, 2, 3])
+    }
+
+    @Test("moveBlock(id:beforeBlockId:) moves a dragged block backwards above an earlier target")
+    func moveBlockBeforeEarlierTargetReordersAndPersists() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let (viewModel, blocks) = try loadFourBlockDocument(documentRepository: documentRepository, blockRepository: blockRepository)
+
+        // Drag "D" (last) and drop it onto "B" — "D" should land directly
+        // above "B".
+        let blockB = blocks[1]
+        let blockD = blocks[3]
+        viewModel.moveBlock(id: blockD.id, beforeBlockId: blockB.id)
+
+        #expect(viewModel.blocks.map(\.markdownSource) == ["A", "D", "B", "C"])
+        #expect(viewModel.blocks.map(\.sortOrder) == [0, 1, 2, 3])
+
+        let stored = try blockRepository.blocks(documentId: viewModel.document.id, parentId: nil)
+        #expect(stored.map(\.markdownSource) == ["A", "D", "B", "C"])
+        #expect(stored.map(\.sortOrder) == [0, 1, 2, 3])
+    }
+
+    @Test("moveBlock(id:beforeBlockId:) does nothing when dragging a block onto itself")
+    func moveBlockBeforeSelfDoesNothing() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let (viewModel, blocks) = try loadFourBlockDocument(documentRepository: documentRepository, blockRepository: blockRepository)
+
+        viewModel.moveBlock(id: blocks[1].id, beforeBlockId: blocks[1].id)
+
+        #expect(viewModel.blocks.map(\.markdownSource) == ["A", "B", "C", "D"])
+        #expect(viewModel.blocks.map(\.sortOrder) == [0, 1, 2, 3])
     }
 }
