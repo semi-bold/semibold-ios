@@ -16,12 +16,16 @@ struct RichTextSpan: Codable, Equatable {
 /// `BlockType` and round-trips through `contentJSON` via
 /// `BlockContent.encodeJSON()` / `BlockContent.decode(from:type:)`.
 ///
-/// Only the shapes this AC needs (`paragraph`, `heading`) are modeled so
-/// far — list/checklist/blockquote/code/divider shapes are added as later
-/// `markdown-phase4` acceptance criteria implement those conversions.
+/// Only the shapes implemented so far (`paragraph`, `heading`,
+/// `bulletedListItem`, `numberedListItem`) are modeled as real cases —
+/// checklist/blockquote/code/divider shapes are added as later
+/// `markdown-phase4` acceptance criteria implement those conversions, and
+/// fall back to `.paragraph` in `decode(from:type:)` until then.
 enum BlockContent: Equatable {
     case paragraph(ParagraphContent)
     case heading(HeadingContent)
+    case bulletedListItem(ListItemContent)
+    case numberedListItem(ListItemContent)
 
     /// The plain text shared by every case modeled so far. Block types
     /// without a `text` field (e.g. a future `code_block`/`divider`) would
@@ -30,6 +34,8 @@ enum BlockContent: Equatable {
         switch self {
         case .paragraph(let content): return content.text
         case .heading(let content): return content.text
+        case .bulletedListItem(let content): return content.text
+        case .numberedListItem(let content): return content.text
         }
     }
 
@@ -39,6 +45,8 @@ enum BlockContent: Equatable {
         switch self {
         case .paragraph(let content): data = try? JSONEncoder().encode(content)
         case .heading(let content): data = try? JSONEncoder().encode(content)
+        case .bulletedListItem(let content): data = try? JSONEncoder().encode(content)
+        case .numberedListItem(let content): data = try? JSONEncoder().encode(content)
         }
         guard let data, let json = String(data: data, encoding: .utf8) else {
             return "{\"type\":\"paragraph\",\"text\":[]}"
@@ -48,16 +56,33 @@ enum BlockContent: Equatable {
 
     /// Decodes `json` according to `type`, falling back to an empty
     /// paragraph if the JSON is missing or malformed (e.g. a block created
-    /// before this shape existed).
+    /// before this shape existed). Block types not modeled as a case yet
+    /// (`checklistItem`/`blockquote`/`codeBlock`/`divider`) also fall back
+    /// to `.paragraph` until a later AC adds their case.
     static func decode(from json: String, type: BlockType) -> BlockContent {
         let data = Data(json.utf8)
         switch type {
+        case .paragraph:
+            if let content = try? JSONDecoder().decode(ParagraphContent.self, from: data) {
+                return .paragraph(content)
+            }
+            return .paragraph(ParagraphContent(text: []))
         case .heading:
             if let content = try? JSONDecoder().decode(HeadingContent.self, from: data) {
                 return .heading(content)
             }
             return .heading(HeadingContent(level: 1, text: []))
-        default:
+        case .bulletedListItem:
+            if let content = try? JSONDecoder().decode(ListItemContent.self, from: data) {
+                return .bulletedListItem(content)
+            }
+            return .bulletedListItem(ListItemContent(type: "bulleted_list_item", text: []))
+        case .numberedListItem:
+            if let content = try? JSONDecoder().decode(ListItemContent.self, from: data) {
+                return .numberedListItem(content)
+            }
+            return .numberedListItem(ListItemContent(type: "numbered_list_item", text: []))
+        case .checklistItem, .blockquote, .codeBlock, .divider:
             if let content = try? JSONDecoder().decode(ParagraphContent.self, from: data) {
                 return .paragraph(content)
             }
@@ -78,6 +103,24 @@ enum BlockContent: Equatable {
     static func headingJSON(level: Int, text: String) -> String {
         BlockContent.heading(HeadingContent(level: level, text: [RichTextSpan(text: text)])).encodeJSON()
     }
+
+    /// Builds the `contentJSON` for a bulleted (unordered) list item
+    /// holding `text` as a single unstyled span (§8.1
+    /// `{ type: "bulleted_list_item", text: RichTextSpan[] }`).
+    static func bulletedListItemJSON(text: String) -> String {
+        BlockContent.bulletedListItem(
+            ListItemContent(type: "bulleted_list_item", text: [RichTextSpan(text: text)])
+        ).encodeJSON()
+    }
+
+    /// Builds the `contentJSON` for a numbered (ordered) list item holding
+    /// `text` as a single unstyled span (§8.1
+    /// `{ type: "numbered_list_item", text: RichTextSpan[] }`).
+    static func numberedListItemJSON(text: String) -> String {
+        BlockContent.numberedListItem(
+            ListItemContent(type: "numbered_list_item", text: [RichTextSpan(text: text)])
+        ).encodeJSON()
+    }
 }
 
 /// The `contentJSON` shape for a `.paragraph` block (§8.1
@@ -92,6 +135,16 @@ struct ParagraphContent: Codable, Equatable {
 struct HeadingContent: Codable, Equatable {
     var type = "heading"
     var level: Int
+    var text: [RichTextSpan]
+}
+
+/// The `contentJSON` shape shared by `.bulletedListItem` and
+/// `.numberedListItem` blocks (§8.1 `{ type: "bulleted_list_item" |
+/// "numbered_list_item", text: RichTextSpan[] }`). `type` distinguishes
+/// the two on disk; `BlockContent` wraps this in the matching case based
+/// on the block's `BlockType`.
+struct ListItemContent: Codable, Equatable {
+    var type: String
     var text: [RichTextSpan]
 }
 
@@ -112,5 +165,39 @@ extension DocumentBlock {
             return nil
         }
         return content.level
+    }
+
+    /// The number shown before a `.numberedListItem` block's text (e.g.
+    /// `1` for `"1. item"`), or `nil` for any other block type.
+    ///
+    /// Read from `markdownSource`'s leading `<n>.` rather than
+    /// `contentJSON`, since `ListItemContent` doesn't carry the number
+    /// itself (§8.1's `numbered_list_item` shape is `{ type, text }` only).
+    /// Defaults to 1 if `markdownSource` is missing/malformed.
+    /// Auto-incrementing this number across a list's items is a
+    /// `quality-phase5` follow-up — each item currently keeps the number
+    /// the user originally typed.
+    var numberedListNumber: Int? {
+        guard type == .numberedListItem else { return nil }
+        return BlockContent.leadingNumber(forMarkdownSource: markdownSource)
+    }
+}
+
+extension BlockContent {
+    /// Reads the leading `<n>` out of a `markdownSource` string
+    /// (`"<n>. ..."`), defaulting to 1 if it's missing/malformed. Shared by
+    /// `DocumentBlock.numberedListNumber` and
+    /// `DetailViewModel`'s numbered-list-item editing path.
+    static func leadingNumber(forMarkdownSource markdownSource: String?) -> Int {
+        guard let markdownSource else { return 1 }
+        var digits = ""
+        for character in markdownSource {
+            if character.isNumber {
+                digits.append(character)
+            } else {
+                break
+            }
+        }
+        return Int(digits) ?? 1
     }
 }

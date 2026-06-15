@@ -63,4 +63,68 @@ struct BlockContentTests {
         #expect(paragraph.displayText == "Plain text")
         #expect(paragraph.headingLevel == nil)
     }
+
+    @Test("Bulleted list item content round-trips through contentJSON")
+    func bulletedListItemRoundTrips() throws {
+        let json = BlockContent.bulletedListItemJSON(text: "Buy milk")
+
+        #expect(json.contains("\"type\":\"bulleted_list_item\""))
+        #expect(json.contains("Buy milk"))
+
+        let decoded = BlockContent.decode(from: json, type: .bulletedListItem)
+        #expect(
+            decoded == .bulletedListItem(
+                ListItemContent(type: "bulleted_list_item", text: [RichTextSpan(text: "Buy milk")])
+            )
+        )
+        #expect(decoded.text.map(\.text) == ["Buy milk"])
+    }
+
+    @Test("Numbered list item content round-trips through contentJSON")
+    func numberedListItemRoundTrips() throws {
+        let json = BlockContent.numberedListItemJSON(text: "Step one")
+
+        #expect(json.contains("\"type\":\"numbered_list_item\""))
+        #expect(json.contains("Step one"))
+
+        let decoded = BlockContent.decode(from: json, type: .numberedListItem)
+        #expect(
+            decoded == .numberedListItem(
+                ListItemContent(type: "numbered_list_item", text: [RichTextSpan(text: "Step one")])
+            )
+        )
+        #expect(decoded.text.map(\.text) == ["Step one"])
+    }
+
+    @Test("DocumentBlock.displayText/numberedListNumber reflect list-item contentJSON/markdownSource")
+    func displayTextAndNumberReflectListItems() throws {
+        let bulleted = DocumentBlock(
+            documentId: "doc",
+            type: .bulletedListItem,
+            contentJSON: BlockContent.bulletedListItemJSON(text: "Milk"),
+            markdownSource: "- Milk"
+        )
+
+        #expect(bulleted.displayText == "Milk")
+        #expect(bulleted.numberedListNumber == nil)
+
+        let numbered = DocumentBlock(
+            documentId: "doc",
+            type: .numberedListItem,
+            contentJSON: BlockContent.numberedListItemJSON(text: "First step"),
+            markdownSource: "1. First step"
+        )
+
+        #expect(numbered.displayText == "First step")
+        #expect(numbered.numberedListNumber == 1)
+
+        let numberedFive = DocumentBlock(
+            documentId: "doc",
+            type: .numberedListItem,
+            contentJSON: BlockContent.numberedListItemJSON(text: "Fifth step"),
+            markdownSource: "5. Fifth step"
+        )
+
+        #expect(numberedFive.numberedListNumber == 5)
+    }
 }
