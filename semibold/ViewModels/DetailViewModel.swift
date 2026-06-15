@@ -28,6 +28,22 @@ final class DetailViewModel {
     /// is file-scoped. Still `internal` (module-only), not `public`.
     var blocks: [DocumentBlock] = []
 
+    /// Whether the editor should show the "Markdown으로 작성하거나 / 를 눌러
+    /// 블록을 추가하세요." empty-state placeholder (§15.1, third case —
+    /// "문서 내용이 없을 때").
+    ///
+    /// `load()` guarantees every document has at least one block, so a
+    /// document "with no content" is the single-paragraph,
+    /// no-text-typed-yet case: exactly one block, of type `.paragraph`,
+    /// whose `displayText` is empty. The placeholder is an overlay shown
+    /// alongside that block's (empty) input — like a text field's
+    /// placeholder text — not a replacement for it, so the user can start
+    /// typing Markdown or press `/` right where the hint appears.
+    var showsEmptyContentPlaceholder: Bool {
+        guard blocks.count == 1, let onlyBlock = blocks.first else { return false }
+        return onlyBlock.type == .paragraph && onlyBlock.displayText.isEmpty
+    }
+
     /// The id of the block the editor should move keyboard focus to next,
     /// e.g. right after a new block is created by pressing Enter. The view
     /// observes this and clears it once focus has moved.

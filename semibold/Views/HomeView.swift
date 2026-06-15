@@ -141,7 +141,9 @@ struct HomeView: View {
     private var folderSection: some View {
         Section {
             if viewModel.folders.isEmpty {
-                emptyRow(text: "No folders yet")
+                // §15.1 "폴더가 없을 때" — encourages creating the first
+                // folder via the "+" button in `navBar`.
+                emptyRow(text: "첫 폴더를 만들어보세요.")
             } else {
                 ForEach(viewModel.folders) { folder in
                     FolderRow(folder: folder, isSelected: folder.id == viewModel.selectedFolderId)
@@ -157,7 +159,9 @@ struct HomeView: View {
     private var documentSection: some View {
         Section {
             if viewModel.documents.isEmpty {
-                emptyRow(text: "No documents yet")
+                // §15.1 "문서가 없을 때" — encourages creating the first
+                // document via the "+" button in `navBar`.
+                emptyRow(text: "이 폴더에 첫 문서를 만들어보세요.")
             } else {
                 ForEach(viewModel.documents) { document in
                     NavigationLink(value: document) {

@@ -507,4 +507,73 @@ struct DetailViewModelTests {
         #expect(viewModel.blocks.map(\.markdownSource) == ["A", "B", "C", "D"])
         #expect(viewModel.blocks.map(\.sortOrder) == [0, 1, 2, 3])
     }
+
+    @Test("A brand-new document with no content shows the empty-state placeholder")
+    func showsEmptyContentPlaceholderForBrandNewDocument() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+
+        let document = try documentRepository.create(Document(title: "Untitled"))
+        let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
+        viewModel.load()
+
+        #expect(viewModel.showsEmptyContentPlaceholder)
+    }
+
+    @Test("Typing into the document's only block hides the empty-state placeholder")
+    func hidesEmptyContentPlaceholderOnceTextIsTyped() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+
+        let document = try documentRepository.create(Document(title: "Untitled"))
+        let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.blocks.first?.id)
+
+        viewModel.updateBlockText(firstBlockId, text: "Hello")
+
+        #expect(!viewModel.showsEmptyContentPlaceholder)
+    }
+
+    @Test("A document with more than one block doesn't show the empty-state placeholder")
+    func hidesEmptyContentPlaceholderWhenMultipleBlocksExist() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.blocks.first?.id)
+
+        // Splitting the empty block into two via Enter leaves two empty
+        // paragraph blocks — no longer the single-empty-block state.
+        viewModel.insertBlock(after: firstBlockId, currentText: "", cursorOffset: 0)
+
+        #expect(viewModel.blocks.count == 2)
+        #expect(!viewModel.showsEmptyContentPlaceholder)
+    }
+
+    @Test("Loading a document whose only block already has text doesn't show the empty-state placeholder")
+    func hidesEmptyContentPlaceholderForExistingNonEmptyBlock() throws {
+        let database = makeDatabaseManager()
+        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        _ = try blockRepository.create(DocumentBlock(
+            documentId: document.id,
+            sortOrder: 0,
+            type: .paragraph,
+            contentJSON: "{\"type\":\"paragraph\",\"text\":[{\"text\":\"Hello\"}]}",
+            markdownSource: "Hello"
+        ))
+
+        let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
+        viewModel.load()
+
+        #expect(!viewModel.showsEmptyContentPlaceholder)
+    }
 }
