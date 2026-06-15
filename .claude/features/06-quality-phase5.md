@@ -39,11 +39,60 @@ detail/editor view from earlier phases — no new dedicated screen.
 
 ## Decisions & Deviations
 
-_None yet — fill in as decisions are made during implementation._
+### macOS keyboard shortcuts (§13.2)
+
+- **App structure.** `semibold` is currently a single iOS-platform target
+  (`project.yml` has no macOS target). `.commands`/`.keyboardShortcut()`
+  still compile and are exercised under "My Mac (Designed for iPad)"/Mac
+  Catalyst-style destinations, so the shortcuts below are wired at the
+  SwiftUI level without adding a macOS target or `#if os(macOS)` guards —
+  consistent with "no full 3-column macOS layout in this AC" per the
+  brief.
+- **Cmd+N / Cmd+Shift+N** ("새 문서" / "새 폴더"): implemented via
+  `CommandGroup(replacing: .newItem)` in `SemiboldApp.swift`. Since
+  `HomeView`'s new-document/new-folder sheets are presented from
+  view-local `@State`, added a tiny app-level `@Observable
+  AppCommandCenter` (two request counters) injected via `.environment` —
+  `SemiboldApp`'s menu commands bump a counter, `HomeView` observes it via
+  `.onChange` and opens the same sheet a "+" tap would. No new
+  app-wide view model beyond this minimal trigger.
+- **Cmd+Option+1/2/3** (Heading 1/2/3, §13.2 / `Planning_5_MacOSMainFlow`
+  callout ⑤'s "블록 타입 변환" via keyboard instead of a right-click menu):
+  `DetailViewModel.convertBlockToHeading(_:level:)` converts whichever
+  block currently has focus (`DetailView`'s existing `@FocusState
+  focusedBlockId`) to a `.heading` at that level, keeping its text —
+  reusing AC1's `headingMarkdownSource`/`BlockContent.headingJSON` helpers.
+  Wired via hidden, zero-size `Button`s with `.keyboardShortcut(_:
+  modifiers: [.command, .option])` in `DetailView`, since
+  `ParagraphTextField` (a `UITextView` wrapper) doesn't surface this key
+  combo to SwiftUI directly.
+- **Cmd+B / Cmd+I / Cmd+K** (Bold/Italic/Link, §13.2): **scoped down from
+  selection-based formatting**. `ParagraphTextField` doesn't expose
+  `UITextView.selectedRange` to SwiftUI, so these toggle Markdown
+  delimiters (`**…**`, `*…*`, `[…]()`) around the **focused block's whole
+  text** rather than a text selection — pressing the shortcut again
+  removes the wrapper (on/off toggle). An empty block does nothing for any
+  of the three. This mirrors AC1-AC5's existing "whole-block Markdown
+  conversion" precedent (`DetailViewModel+MarkdownConversion.swift`) and
+  keeps the shortcuts usable without a `ParagraphTextField`/UITextView
+  rework. Selection-scoped formatting is a natural follow-up once
+  `ParagraphTextField` exposes the selection range.
+  - New view-model logic lives in
+    `DetailViewModel+KeyboardShortcuts.swift`, following the existing
+    `+MarkdownConversion` extension-file split. `blocks`,
+    `pendingSaveTasks`, and `documentBlockRepository` were loosened from
+    `private` to `internal` (module-only) on `DetailViewModel` so this
+    sibling file can apply/persist the same edits `updateBlockText` does —
+    documented inline at each property.
+- **`Planning_5_MacOSMainFlow`**: the full 3-column Sidebar/document-list/
+  Editor layout (callouts ①-④) remains out of scope for this AC, per the
+  brief — only callout ⑤'s "block type conversion without needing to know
+  a keyboard shortcut" goal is addressed indirectly, via the
+  Cmd+Option+1/2/3 shortcuts themselves (not a right-click menu).
 
 ## Acceptance Criteria
 
-- [ ] macOS keyboard shortcuts implemented per PLANNING §13.2 and
+- [x] macOS keyboard shortcuts implemented per PLANNING §13.2 and
       `Planning_5_MacOSMainFlow`
 - [ ] iOS slash-command bottom sheet for inserting block types
 - [ ] Drag & drop block reordering (§12.3)

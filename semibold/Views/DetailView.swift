@@ -39,6 +39,7 @@ struct DetailView: View {
             blockList
         }
         .background(AppTheme.Colors.background)
+        .background(keyboardShortcuts)
         .navigationBarBackButtonHidden()
         .onAppear {
             viewModel.load()
@@ -64,6 +65,51 @@ struct DetailView: View {
             // its debounce timer is still pending.
             viewModel.flushPendingChanges()
         }
+    }
+
+    // MARK: - macOS keyboard shortcuts
+
+    /// Invisible buttons that exist only to register the macOS
+    /// keyboard shortcuts from §13.2 — Cmd+B/I/K and Cmd+Option+1/2/3 — and
+    /// apply them to whichever block currently has keyboard focus.
+    ///
+    /// `ParagraphTextField` is a `UITextView` wrapper that doesn't surface
+    /// these key combinations to SwiftUI directly, so `.keyboardShortcut()`
+    /// on buttons scoped to this screen is the standard SwiftUI pattern for
+    /// "while the editor is visible, this key combo does X." The buttons
+    /// are zero-sized and hidden from accessibility — they're never seen or
+    /// tapped, only triggered by their shortcut.
+    private var keyboardShortcuts: some View {
+        Group {
+            Button("Bold") {
+                guard let blockId = focusedBlockId else { return }
+                viewModel.toggleBoldOnBlock(blockId)
+            }
+            .keyboardShortcut("b", modifiers: [.command])
+
+            Button("Italic") {
+                guard let blockId = focusedBlockId else { return }
+                viewModel.toggleItalicOnBlock(blockId)
+            }
+            .keyboardShortcut("i", modifiers: [.command])
+
+            Button("Link") {
+                guard let blockId = focusedBlockId else { return }
+                viewModel.toggleLinkOnBlock(blockId)
+            }
+            .keyboardShortcut("k", modifiers: [.command])
+
+            ForEach(1...3, id: \.self) { level in
+                Button("Heading \(level)") {
+                    guard let blockId = focusedBlockId else { return }
+                    viewModel.convertBlockToHeading(blockId, level: level)
+                }
+                .keyboardShortcut(KeyEquivalent(Character("\(level)")), modifiers: [.command, .option])
+            }
+        }
+        .frame(width: 0, height: 0)
+        .hidden()
+        .accessibilityHidden(true)
     }
 
     // MARK: - Nav bar
