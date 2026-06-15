@@ -94,8 +94,9 @@ final class DetailViewModel {
     /// timer, so rapid typing only writes once the user pauses.
     ///
     /// Before applying a plain text edit, checks whether `text` now starts
-    /// with a supported Markdown prefix (`# `/`## `/`### `, `- `, `<n>. `)
-    /// — if so, the block's type is converted on the spot
+    /// with a supported Markdown prefix (`# `/`## `/`### `, `- `, `<n>. `,
+    /// `- [ ] `/`- [x] `, `> `) — if so, the block's type is converted on
+    /// the spot
     /// (`Planning_4_BlockCreateFlow`'s "Markdown Syntax → Markdown parser가
     /// 타입 감지" branch, §5.4) and saved immediately rather than going
     /// through the debounce, since a type change is a structural edit
@@ -136,6 +137,17 @@ final class DetailViewModel {
             return
         }
 
+        if blocks[index].type == .paragraph, let blockquote = Self.blockquoteConversion(forTypedText: text) {
+            blocks[index].type = .blockquote
+            blocks[index].contentJSON = BlockContent.blockquoteJSON(text: blockquote.text)
+            blocks[index].markdownSource = blockquote.markdownSource
+
+            pendingSaveTasks[blockId]?.cancel()
+            pendingSaveTasks[blockId] = nil
+            persistBlock(blockId)
+            return
+        }
+
         if blocks[index].type == .heading {
             let level = Self.headingLevel(forContentJSON: blocks[index].contentJSON)
             blocks[index].markdownSource = Self.headingMarkdownSource(level: level, text: text)
@@ -151,6 +163,9 @@ final class DetailViewModel {
             let checked = blocks[index].isChecked
             blocks[index].markdownSource = Self.checklistMarkdownSource(checked: checked, text: text)
             blocks[index].contentJSON = BlockContent.checklistItemJSON(checked: checked, text: text)
+        } else if blocks[index].type == .blockquote {
+            blocks[index].markdownSource = Self.blockquoteMarkdownSource(text: text)
+            blocks[index].contentJSON = BlockContent.blockquoteJSON(text: text)
         } else {
             blocks[index].markdownSource = text
             blocks[index].contentJSON = BlockContent.paragraphJSON(text: text)
@@ -417,184 +432,5 @@ final class DetailViewModel {
     /// so each block is a single unstyled text span for now.
     private static func contentJSON(forText text: String) -> String {
         BlockContent.paragraphJSON(text: text)
-    }
-
-    /// A detected Markdown heading prefix, ready to apply to a block.
-    private struct HeadingConversion {
-        /// The heading level (1-3), from the number of leading `#`s.
-        let level: Int
-        /// The text after the prefix, shown in the editor and stored as
-        /// the heading's `RichTextSpan`.
-        let text: String
-        /// The full literal Markdown (`"# Title"`, …) to keep as
-        /// `markdownSource` for round-tripping (§8.1 comment).
-        let markdownSource: String
-    }
-
-    /// Detects whether `text` (the block's full text right after this
-    /// keystroke) now starts with a complete Markdown heading prefix —
-    /// 1-3 `#`s followed by a space — per §7.1/§7.3's
-    /// `# Title` / `## Title` / `### Title` → Heading 1/2/3 syntax.
-    ///
-    /// Returns `nil` if `text` doesn't start with such a prefix, so the
-    /// caller leaves the block as a paragraph.
-    private static func headingConversion(forTypedText text: String) -> HeadingConversion? {
-        var hashCount = 0
-        for character in text {
-            if character == "#" {
-                hashCount += 1
-                if hashCount > 3 { return nil }
-            } else {
-                break
-            }
-        }
-        guard hashCount >= 1, hashCount <= 3 else { return nil }
-
-        let afterHashes = text.dropFirst(hashCount)
-        guard afterHashes.first == " " else { return nil }
-
-        let remainder = String(afterHashes.dropFirst())
-        return HeadingConversion(level: hashCount, text: remainder, markdownSource: text)
-    }
-
-    /// Reads the `level` (1-3) out of a `.heading` block's `contentJSON`,
-    /// defaulting to 1 if it's missing/malformed.
-    private static func headingLevel(forContentJSON json: String) -> Int {
-        if case .heading(let content) = BlockContent.decode(from: json, type: .heading) {
-            return content.level
-        }
-        return 1
-    }
-
-    /// Rebuilds the literal Markdown `markdownSource` (`"# Title"`, …) for
-    /// a heading block at `level` holding `text`, so further edits keep
-    /// round-tripping correctly.
-    private static func headingMarkdownSource(level: Int, text: String) -> String {
-        String(repeating: "#", count: level) + " " + text
-    }
-
-    /// A detected Markdown list-item prefix (`- ` or `<n>. `), ready to
-    /// apply to a block.
-    private struct ListConversion {
-        /// The block type to convert to (`.bulletedListItem` or
-        /// `.numberedListItem`).
-        let type: BlockType
-        /// The text after the prefix, shown in the editor and stored as
-        /// the list item's `RichTextSpan`.
-        let text: String
-        /// The full literal Markdown (`"- item"`, `"1. item"`) to keep as
-        /// `markdownSource` for round-tripping (§8.1 comment).
-        let markdownSource: String
-
-        /// Builds this conversion's `contentJSON` for `text`, matching
-        /// `type`.
-        func contentJSON(text: String) -> String {
-            switch type {
-            case .numberedListItem: return BlockContent.numberedListItemJSON(text: text)
-            default: return BlockContent.bulletedListItemJSON(text: text)
-            }
-        }
-    }
-
-    /// Detects whether `text` (the block's full text right after this
-    /// keystroke) now starts with a complete Markdown list-item prefix —
-    /// `- ` (a hyphen + a space) for a bulleted list, or `<digits>. ` (one
-    /// or more digits + a period + a space) for a numbered list — per
-    /// §7.1/§7.3's `- item` / `1. item` → Bulleted/Numbered List syntax.
-    ///
-    /// Returns `nil` if `text` doesn't start with such a prefix, so the
-    /// caller leaves the block as a paragraph. `"-item"` (no space) and
-    /// `"-- item"` (a second `-` instead of the item text) don't match
-    /// §7.3's literal `- item` syntax and so don't convert. `"- [ ] task"`/
-    /// `"- [x] task"` (checklist syntax, §7.3) also don't match here —
-    /// `checklistConversion(forTypedText:)` runs before this and takes
-    /// precedence for those, so this never sees them in practice, but the
-    /// explicit exclusion keeps this function correct on its own.
-    private static func listConversion(forTypedText text: String) -> ListConversion? {
-        if text.hasPrefix("- "), checklistConversion(forTypedText: text) == nil {
-            let remainder = String(text.dropFirst(2))
-            return ListConversion(type: .bulletedListItem, text: remainder, markdownSource: text)
-        }
-
-        var digitCount = 0
-        for character in text {
-            if character.isNumber {
-                digitCount += 1
-            } else {
-                break
-            }
-        }
-        guard digitCount >= 1 else { return nil }
-
-        let afterDigits = text.dropFirst(digitCount)
-        guard afterDigits.first == ".", afterDigits.dropFirst().first == " " else { return nil }
-
-        let remainder = String(afterDigits.dropFirst(2))
-        return ListConversion(type: .numberedListItem, text: remainder, markdownSource: text)
-    }
-
-    /// Rebuilds the literal Markdown `markdownSource` (`"- item"`) for a
-    /// bulleted list item holding `text`, so further edits keep
-    /// round-tripping correctly.
-    private static func bulletedListMarkdownSource(text: String) -> String {
-        "- " + text
-    }
-
-    /// Rebuilds the literal Markdown `markdownSource` (`"<n>. item"`) for a
-    /// numbered list item at `number` holding `text`, so further edits keep
-    /// round-tripping correctly.
-    private static func numberedListMarkdownSource(number: Int, text: String) -> String {
-        "\(number). " + text
-    }
-
-    /// A detected Markdown checklist-item prefix (`- [ ] ` or `- [x] `),
-    /// ready to apply to a block.
-    private struct ChecklistConversion {
-        /// Whether the task starts checked (`- [x] `) or unchecked
-        /// (`- [ ] `).
-        let checked: Bool
-        /// The text after the prefix, shown in the editor and stored as
-        /// the checklist item's `RichTextSpan`.
-        let text: String
-        /// The full literal Markdown (`"- [ ] task"`, `"- [x] task"`) to
-        /// keep as `markdownSource` for round-tripping (§8.1 comment).
-        let markdownSource: String
-    }
-
-    /// Detects whether `text` (the block's full text right after this
-    /// keystroke) now starts with a complete Markdown checklist-item
-    /// prefix — `- [ ] ` (unchecked) or `- [x] ` (checked) — per
-    /// §7.1/§7.3's `- [ ] task` / `- [x] task` → Checklist syntax.
-    ///
-    /// Returns `nil` if `text` doesn't start with either prefix, so the
-    /// caller leaves the block as a paragraph (or falls through to
-    /// `listConversion(forTypedText:)`'s plain `- item` bulleted-list
-    /// check). This check runs BEFORE that bulleted-list check in
-    /// `updateBlockText`, so `"- [ ] task"`/`"- [x] task"` convert to
-    /// `.checklistItem` rather than `.bulletedListItem` with a literal
-    /// `"[ ] task"`/`"[x] task"` as their text.
-    ///
-    /// Per §7.3's literal syntax table, only the lowercase `x` marks a
-    /// checked task — `"- [X] task"` (uppercase) and `"- [] task"` (no
-    /// space inside the brackets) don't match either prefix and so don't
-    /// convert.
-    private static func checklistConversion(forTypedText text: String) -> ChecklistConversion? {
-        if text.hasPrefix("- [ ] ") {
-            let remainder = String(text.dropFirst("- [ ] ".count))
-            return ChecklistConversion(checked: false, text: remainder, markdownSource: text)
-        }
-        if text.hasPrefix("- [x] ") {
-            let remainder = String(text.dropFirst("- [x] ".count))
-            return ChecklistConversion(checked: true, text: remainder, markdownSource: text)
-        }
-        return nil
-    }
-
-    /// Rebuilds the literal Markdown `markdownSource` (`"- [ ] task"` /
-    /// `"- [x] task"`) for a checklist item holding `text`, based on its
-    /// current `checked` state, so further edits and toggles keep
-    /// round-tripping correctly.
-    private static func checklistMarkdownSource(checked: Bool, text: String) -> String {
-        (checked ? "- [x] " : "- [ ] ") + text
     }
 }

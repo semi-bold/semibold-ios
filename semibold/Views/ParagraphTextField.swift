@@ -18,6 +18,13 @@ struct ParagraphTextField: UIViewRepresentable {
     /// Defaults to `.body` so existing call sites don't need to change.
     var textStyle: TextStyleToken = AppTheme.Typography.body
 
+    /// The text color this block's content is shown in —
+    /// `AppTheme.Colors.text1` for most blocks, or `.text2` for a
+    /// `.blockquote` block's dimmed quote text (§7.1/§7.3's `> quote`
+    /// syntax). Defaults to `.text1` so existing call sites don't need to
+    /// change.
+    var textColor: Color = AppTheme.Colors.text1
+
     /// Called as the user edits this block's text, so the document
     /// editor can save the change.
     var onTextChange: (String) -> Void
@@ -45,7 +52,7 @@ struct ParagraphTextField: UIViewRepresentable {
         textView.delegate = context.coordinator
         textView.font = UIFont.systemFont(ofSize: textStyle.size, weight: textStyle.weight.uiFontWeight)
         textView.backgroundColor = .clear
-        textView.textColor = UIColor(AppTheme.Colors.text1)
+        textView.textColor = UIColor(textColor)
         textView.isScrollEnabled = false
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
@@ -61,6 +68,11 @@ struct ParagraphTextField: UIViewRepresentable {
         let font = UIFont.systemFont(ofSize: textStyle.size, weight: textStyle.weight.uiFontWeight)
         if uiView.font != font {
             uiView.font = font
+        }
+
+        let color = UIColor(textColor)
+        if uiView.textColor != color {
+            uiView.textColor = color
         }
 
         if let offset = cursorOffsetToApply {
