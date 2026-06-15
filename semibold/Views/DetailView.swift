@@ -154,9 +154,11 @@ struct DetailView: View {
 /// a text input for the block's content with a divider below
 /// (`Block_Editing`'s cursor when focused — callout ②).
 ///
-/// Block-type-specific styling (headings, lists, checklists, quotes,
-/// code) is `markdown-phase4` scope — this row renders every block as a
-/// plain paragraph input for now.
+/// `.bulletedListItem`/`.numberedListItem` blocks show a `•`/`<n>.` marker
+/// before the editable text (§7.1/§7.3's `- item` / `1. item` syntax).
+/// Checklist/blockquote/code-block styling is still `markdown-phase4`
+/// follow-up scope — those block types render as a plain paragraph input
+/// for now.
 private struct BlockRow: View {
     let block: DocumentBlock
     var focusedBlockId: FocusState<String?>.Binding
@@ -201,24 +203,45 @@ private struct BlockRow: View {
         }
     }
 
+    /// The marker shown before a list item's text — a bullet for
+    /// `.bulletedListItem`, the item's number followed by a period for
+    /// `.numberedListItem` (§7.1/§7.3's `- item` / `1. item` syntax). `nil`
+    /// for every other block type, which shows no marker.
+    private var listMarker: String? {
+        switch block.type {
+        case .bulletedListItem: return "•"
+        case .numberedListItem: return "\(block.numberedListNumber ?? 1)."
+        default: return nil
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            ParagraphTextField(
-                text: $text,
-                textStyle: textStyle,
-                onTextChange: onTextChange,
-                onEnter: { cursorOffset in
-                    onEnter(text, cursorOffset)
-                },
-                onBackspaceAtStart: {
-                    onBackspaceAtStart(text)
-                },
-                cursorOffsetToApply: focusedBlockId.wrappedValue == block.id ? $cursorOffsetToApply : .constant(nil)
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                if let listMarker {
+                    Text(listMarker)
+                        .appTextStyle(textStyle)
+                        .foregroundStyle(AppTheme.Colors.text1)
+                        .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+                }
+
+                ParagraphTextField(
+                    text: $text,
+                    textStyle: textStyle,
+                    onTextChange: onTextChange,
+                    onEnter: { cursorOffset in
+                        onEnter(text, cursorOffset)
+                    },
+                    onBackspaceAtStart: {
+                        onBackspaceAtStart(text)
+                    },
+                    cursorOffsetToApply: focusedBlockId.wrappedValue == block.id ? $cursorOffsetToApply : .constant(nil)
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .focused(focusedBlockId, equals: block.id)
+            }
             .padding(.horizontal, AppTheme.Spacing.md)
             .padding(.vertical, AppTheme.Spacing.md)
-            .focused(focusedBlockId, equals: block.id)
 
             Rectangle()
                 .fill(AppTheme.Colors.divider)

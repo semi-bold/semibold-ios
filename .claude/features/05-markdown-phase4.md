@@ -105,11 +105,72 @@ wireframe/flow artifact. Block type model comes from PLANNING.md §8.
   operate on `markdownSource`/`displayText` regardless of type), but there
   is no "type a heading down to empty and it becomes a paragraph again"
   behavior. A future AC/brief can add this once it's needed.
+- **List item content model** (`semibold/Models/BlockContent.swift`):
+  added `ListItemContent` (`{ type: String, text: [RichTextSpan] }`) —
+  shared by `.bulletedListItem` and `.numberedListItem` since §8.1's two
+  union members have an identical `{ type, text }` shape, differing only
+  in their literal `type` string (`"bulleted_list_item"` /
+  `"numbered_list_item"`). `BlockContent` gained matching
+  `.bulletedListItem`/`.numberedListItem` cases and
+  `bulletedListItemJSON(text:)`/`numberedListItemJSON(text:)` builder
+  helpers, following AC1's `headingJSON(level:text:)` pattern.
+- **Applied AC1's swift-reviewer suggestion**: `BlockContent
+  .decode(from:type:)`, `.text`, and `encodeJSON()`'s switches are now
+  exhaustive over `BlockType` (one arm per case) rather than relying on a
+  `default: .paragraph` fallback. `.paragraph`/`.heading`/
+  `.bulletedListItem`/`.numberedListItem` are real cases;
+  `.checklistItem`/`.blockquote`/`.codeBlock`/`.divider` (not yet modeled)
+  are grouped into a single `case .checklistItem, .blockquote, .codeBlock,
+  .divider:` arm that still falls back to `.paragraph` — adding any of
+  those as a real case in a later AC will force the compiler to flag this
+  switch.
+- **Detection & conversion** (`DetailViewModel.updateBlockText`): if the
+  block is currently `.paragraph` and its new full text matches `^- `
+  (hyphen + space) or `^\d+\. ` (one or more digits + `. `), the block
+  converts to `.bulletedListItem`/`.numberedListItem` respectively, with
+  `contentJSON.text` = the text after the prefix, persisted immediately
+  (same immediate-persist precedent as AC1's heading conversion).
+  - **Negative cases per §7.3's literal `- item` syntax**: `"-item"` (no
+    space) and `"-- item"` (a second `-` instead of item text, since after
+    consuming `- ` the remaining text is `"- item"` which doesn't itself
+    start with `- ` again on the *original* string's prefix check — more
+    precisely, `"-- item"` doesn't match `^- ` because its 2nd character is
+    `-`, not a space) do NOT convert, and stay `.paragraph`. Similarly
+    `"1 item"` (space instead of `.`) and `"1.item"` (no space after `.`)
+    do NOT convert. All four are covered by new
+    `DetailViewModelTests` cases.
+  - **`markdownSource` maintenance**: analogous to AC1's
+    `headingMarkdownSource(level:text:)` — `bulletedListMarkdownSource
+    (text:)` rebuilds `"- <text>"` on every edit.
+    `numberedListMarkdownSource(number:text:)` rebuilds `"<n>. <text>"`,
+    where `<n>` is read back from the block's *existing* `markdownSource`
+    via the new `BlockContent.leadingNumber(forMarkdownSource:)` helper —
+    so editing a numbered item's text keeps the number the user originally
+    typed. Per the AC's explicit scope note, auto-incrementing `<n>` across
+    a list's items is NOT implemented here (deferred to
+    `quality-phase5`-style follow-up); literal `1. `/`42. `/etc. converting
+    to a numbered-list block with that literal number is sufficient.
+- **Rendering** (`BlockRow` in `DetailView.swift`): added a `listMarker`
+  computed property — `"•"` for `.bulletedListItem`, `"<n>."` (from the new
+  `DocumentBlock.numberedListNumber`, itself reading
+  `BlockContent.leadingNumber(forMarkdownSource:)`) for
+  `.numberedListItem`, `nil` (no marker) otherwise. The marker, when
+  present, renders in an `HStack` to the left of the `ParagraphTextField`,
+  using the same `textStyle` as the row's text and a `minWidth:
+  AppTheme.Spacing.lg` (24pt) leading column so multi-digit numbers don't
+  shift the text's left edge. **Deviation**: no `Screen_*`/`Planning_*`
+  wireframe artifact exists for list items (checked `wireframe.py`/
+  `planning.py` — only `iOS_Editor`'s generic block rows are defined, with
+  no `Block_List`/list-marker layer), so the marker spacing/column width is
+  a new convention using existing `AppTheme.Spacing` tokens (`sm` = 8pt gap
+  between marker and text, `lg` = 24pt marker column) rather than inventing
+  a new token. Flagged below for design follow-up if a dedicated list-item
+  wireframe is added later.
 
 ## Acceptance Criteria
 
 - [x] Heading conversion (per §7.1/§7.3 syntax)
-- [ ] List conversion (ordered/unordered per §7.1/§7.3)
+- [x] List conversion (ordered/unordered per §7.1/§7.3)
 - [ ] Checklist conversion
 - [ ] Blockquote conversion
 - [ ] Code block conversion
@@ -130,13 +191,39 @@ wireframe/flow artifact. Block type model comes from PLANNING.md §8.
     revisiting once list/checklist/blockquote conversions (AC2-AC4) land,
     since they'll likely want the same kind of reversion behavior and a
     shared approach may emerge.
-  - swift-reviewer (AC1) suggested making `BlockContent.decode(from:type:)`
-    /`.text`/`encodeJSON()`'s switches exhaustive (one arm per `BlockType`)
-    instead of a `default: .paragraph` fallback, so each of AC2-AC5's new
-    `BlockContent` cases forces a compiler error at every switch site
-    instead of silently falling back. Worth applying when AC2 (List
-    conversion) adds its first new case, rather than reworking all switches
-    at once now.
   - swift-reviewer (AC1) also noted: when AC6 adds `marks`/`href` to
     `RichTextSpan`, declare them `Optional` so existing persisted
     `contentJSON` (encoded without those keys) still decodes correctly.
+
+- List conversion (this AC):
+  - Applied the AC1 swift-reviewer suggestion: `BlockContent.decode
+    (from:type:)`/`.text`/`encodeJSON()`'s switches are now exhaustive over
+    `BlockType`, with `.checklistItem`/`.blockquote`/`.codeBlock`/
+    `.divider` grouped into one fallback arm. AC3 (Checklist)/AC4
+    (Blockquote)/AC5 (Code block) should each move their type from that
+    fallback arm into a real `BlockContent` case as they're implemented —
+    the compiler will flag the switch as non-exhaustive until they do.
+  - List-item → paragraph reversion (Backspace-ing `- `/`<n>. ` back out,
+    or Backspace-at-start of an empty list item) is unimplemented, same
+    deferral rationale as AC1's heading reversion. A shared
+    "structural-prefix reversion" approach for heading/list/(future
+    checklist/blockquote) may be worth designing once AC3/AC4 land.
+  - Numbered-list auto-increment/renumbering across a list's items (e.g.
+    typing `1. `, `1. `, `1. ` on consecutive blocks auto-becoming `1.`,
+    `2.`, `3.`, or renumbering after a reorder/delete) is NOT implemented —
+    explicitly out of scope per this AC's instructions
+    (`quality-phase5`-style nice-to-have). Each numbered list item
+    currently keeps the literal number the user typed in `markdownSource`,
+    read back via `BlockContent.leadingNumber(forMarkdownSource:)`.
+  - No `Screen_*`/`Planning_*` wireframe artifact defines a list-item
+    marker layout — `BlockRow`'s `•`/`<n>.` marker column
+    (`AppTheme.Spacing.sm` gap, `AppTheme.Spacing.lg` minWidth) is a new
+    convention, not traced from a wireframe. Worth a design pass once a
+    dedicated list wireframe exists.
+  - swift-reviewer (AC2) flagged a precedence issue for AC3: `listConversion`'s
+    `^- ` check runs unconditionally, so `"- [ ] task"`/`"- [x] task"`
+    (checklist syntax, §7.3) would currently match `^- ` first and
+    misconvert to a bulleted list item with `displayText == "[ ] task"`.
+    AC3's checklist-prefix check (`^- \[[ x]\] `) must run *before* (or be
+    excluded from) the `^- ` bulleted-list check in `listConversion`/
+    `updateBlockText`.

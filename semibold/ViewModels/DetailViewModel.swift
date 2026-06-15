@@ -94,12 +94,12 @@ final class DetailViewModel {
     /// timer, so rapid typing only writes once the user pauses.
     ///
     /// Before applying a plain text edit, checks whether `text` now starts
-    /// with a supported Markdown prefix (`# `, `## `, `### `) — if so, the
-    /// block's type is converted on the spot (`Planning_4_BlockCreateFlow`'s
-    /// "Markdown Syntax → Markdown parser가 타입 감지" branch, §5.4) and
-    /// saved immediately rather than going through the debounce, since a
-    /// type change is a structural edit (§11.2 "블록 생성/삭제/순서 변경:
-    /// 즉시 저장").
+    /// with a supported Markdown prefix (`# `/`## `/`### `, `- `, `<n>. `)
+    /// — if so, the block's type is converted on the spot
+    /// (`Planning_4_BlockCreateFlow`'s "Markdown Syntax → Markdown parser가
+    /// 타입 감지" branch, §5.4) and saved immediately rather than going
+    /// through the debounce, since a type change is a structural edit
+    /// (§11.2 "블록 생성/삭제/순서 변경: 즉시 저장").
     func updateBlockText(_ blockId: String, text: String) {
         guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
 
@@ -114,10 +114,28 @@ final class DetailViewModel {
             return
         }
 
+        if blocks[index].type == .paragraph, let list = Self.listConversion(forTypedText: text) {
+            blocks[index].type = list.type
+            blocks[index].contentJSON = list.contentJSON(text: list.text)
+            blocks[index].markdownSource = list.markdownSource
+
+            pendingSaveTasks[blockId]?.cancel()
+            pendingSaveTasks[blockId] = nil
+            persistBlock(blockId)
+            return
+        }
+
         if blocks[index].type == .heading {
             let level = Self.headingLevel(forContentJSON: blocks[index].contentJSON)
             blocks[index].markdownSource = Self.headingMarkdownSource(level: level, text: text)
             blocks[index].contentJSON = BlockContent.headingJSON(level: level, text: text)
+        } else if blocks[index].type == .bulletedListItem {
+            blocks[index].markdownSource = Self.bulletedListMarkdownSource(text: text)
+            blocks[index].contentJSON = BlockContent.bulletedListItemJSON(text: text)
+        } else if blocks[index].type == .numberedListItem {
+            let number = BlockContent.leadingNumber(forMarkdownSource: blocks[index].markdownSource)
+            blocks[index].markdownSource = Self.numberedListMarkdownSource(number: number, text: text)
+            blocks[index].contentJSON = BlockContent.numberedListItemJSON(text: text)
         } else {
             blocks[index].markdownSource = text
             blocks[index].contentJSON = BlockContent.paragraphJSON(text: text)
@@ -416,4 +434,75 @@ final class DetailViewModel {
     private static func headingMarkdownSource(level: Int, text: String) -> String {
         String(repeating: "#", count: level) + " " + text
     }
+
+    /// A detected Markdown list-item prefix (`- ` or `<n>. `), ready to
+    /// apply to a block.
+    private struct ListConversion {
+        /// The block type to convert to (`.bulletedListItem` or
+        /// `.numberedListItem`).
+        let type: BlockType
+        /// The text after the prefix, shown in the editor and stored as
+        /// the list item's `RichTextSpan`.
+        let text: String
+        /// The full literal Markdown (`"- item"`, `"1. item"`) to keep as
+        /// `markdownSource` for round-tripping (§8.1 comment).
+        let markdownSource: String
+
+        /// Builds this conversion's `contentJSON` for `text`, matching
+        /// `type`.
+        func contentJSON(text: String) -> String {
+            switch type {
+            case .numberedListItem: return BlockContent.numberedListItemJSON(text: text)
+            default: return BlockContent.bulletedListItemJSON(text: text)
+            }
+        }
+    }
+
+    /// Detects whether `text` (the block's full text right after this
+    /// keystroke) now starts with a complete Markdown list-item prefix —
+    /// `- ` (a hyphen + a space) for a bulleted list, or `<digits>. ` (one
+    /// or more digits + a period + a space) for a numbered list — per
+    /// §7.1/§7.3's `- item` / `1. item` → Bulleted/Numbered List syntax.
+    ///
+    /// Returns `nil` if `text` doesn't start with such a prefix, so the
+    /// caller leaves the block as a paragraph. `"-item"` (no space) and
+    /// `"-- item"` (a second `-` instead of the item text) don't match
+    /// §7.3's literal `- item` syntax and so don't convert.
+    private static func listConversion(forTypedText text: String) -> ListConversion? {
+        if text.hasPrefix("- ") {
+            let remainder = String(text.dropFirst(2))
+            return ListConversion(type: .bulletedListItem, text: remainder, markdownSource: text)
+        }
+
+        var digitCount = 0
+        for character in text {
+            if character.isNumber {
+                digitCount += 1
+            } else {
+                break
+            }
+        }
+        guard digitCount >= 1 else { return nil }
+
+        let afterDigits = text.dropFirst(digitCount)
+        guard afterDigits.first == ".", afterDigits.dropFirst().first == " " else { return nil }
+
+        let remainder = String(afterDigits.dropFirst(2))
+        return ListConversion(type: .numberedListItem, text: remainder, markdownSource: text)
+    }
+
+    /// Rebuilds the literal Markdown `markdownSource` (`"- item"`) for a
+    /// bulleted list item holding `text`, so further edits keep
+    /// round-tripping correctly.
+    private static func bulletedListMarkdownSource(text: String) -> String {
+        "- " + text
+    }
+
+    /// Rebuilds the literal Markdown `markdownSource` (`"<n>. item"`) for a
+    /// numbered list item at `number` holding `text`, so further edits keep
+    /// round-tripping correctly.
+    private static func numberedListMarkdownSource(number: Int, text: String) -> String {
+        "\(number). " + text
+    }
+
 }
