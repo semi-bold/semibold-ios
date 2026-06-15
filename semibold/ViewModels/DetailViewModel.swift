@@ -485,6 +485,55 @@ final class DetailViewModel {
         }
     }
 
+    /// Moves the blocks at `fromOffsets` to just before `toOffset` in
+    /// display order (`Planning_5_MacOSMainFlow` / §12.3's drag & drop
+    /// block reordering), matching SwiftUI's `List.onMove(perform:)`
+    /// signature so it can also back a drag handle if one is ever added.
+    ///
+    /// After reordering the in-memory array, every block's `sortOrder` is
+    /// recomputed to match its new index (0, 1, 2, …) and any block whose
+    /// `sortOrder` actually changed is saved immediately — like
+    /// `moveBlock(id:direction:)` above, reordering is a structural change
+    /// that bypasses the debounce (PLANNING §11.2 "블록 생성/삭제/순서 변경:
+    /// 즉시 저장").
+    func reorderBlocks(fromOffsets source: IndexSet, toOffset destination: Int) {
+        guard !source.isEmpty else { return }
+
+        let previousSortOrders = Dictionary(uniqueKeysWithValues: blocks.map { ($0.id, $0.sortOrder) })
+        blocks.move(fromOffsets: source, toOffset: destination)
+
+        for index in blocks.indices where blocks[index].sortOrder != index {
+            blocks[index].sortOrder = index
+        }
+
+        for block in blocks where previousSortOrders[block.id] != block.sortOrder {
+            persistBlock(block.id)
+        }
+    }
+
+    /// Moves `draggedBlockId` so it sits immediately before `targetBlockId`
+    /// in display order — the persistence-layer counterpart to a
+    /// `.dropDestination` drop in `DetailView` (§12.3 drag & drop block
+    /// reordering). Does nothing if either id can't be found, or if
+    /// `draggedBlockId` is already immediately before `targetBlockId`.
+    func moveBlock(id draggedBlockId: String, beforeBlockId targetBlockId: String) {
+        guard let fromIndex = blocks.firstIndex(where: { $0.id == draggedBlockId }),
+              let targetIndex = blocks.firstIndex(where: { $0.id == targetBlockId }),
+              draggedBlockId != targetBlockId else {
+            return
+        }
+
+        // `move(fromOffsets:toOffset:)` interprets `toOffset` as an index
+        // into the array *before* the moved element is removed, and then
+        // inserts the moved element just before whatever ends up at that
+        // index post-removal. When the dragged block starts above the
+        // target, removing it shifts the target (and everything between
+        // them) up by one — so `toOffset == targetIndex` lands the dragged
+        // block directly above the target either way.
+        let destination = targetIndex
+        reorderBlocks(fromOffsets: IndexSet(integer: fromIndex), toOffset: destination)
+    }
+
     /// Builds the `contentJSON` for a plain paragraph block holding
     /// `text` (§8.1's `{ type: "paragraph", text: RichTextSpan[] }` shape).
     /// Inline formatting marks are `markdown-phase4` follow-up scope (AC6),
