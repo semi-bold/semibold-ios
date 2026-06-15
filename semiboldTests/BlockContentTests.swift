@@ -170,6 +170,66 @@ struct BlockContentTests {
         #expect(blockquote.headingLevel == nil)
     }
 
+    @Test("Code block content round-trips through contentJSON, carrying its language")
+    func codeBlockRoundTrips() throws {
+        let json = BlockContent.codeBlockJSON(language: "swift", code: "let x = 1")
+
+        #expect(json.contains("\"type\":\"code_block\""))
+        #expect(json.contains("\"language\":\"swift\""))
+        #expect(json.contains("let x = 1"))
+
+        let decoded = BlockContent.decode(from: json, type: .codeBlock)
+        #expect(decoded == .codeBlock(CodeBlockContent(language: "swift", code: "let x = 1")))
+        #expect(decoded.text.map(\.text) == ["let x = 1"])
+    }
+
+    @Test("Code block content with no language round-trips, decoding 'language' as nil")
+    func codeBlockWithNoLanguageRoundTrips() throws {
+        let json = BlockContent.codeBlockJSON(language: nil, code: "echo hi")
+
+        #expect(json.contains("\"type\":\"code_block\""))
+        #expect(!json.contains("\"language\""))
+        #expect(json.contains("echo hi"))
+
+        let decoded = BlockContent.decode(from: json, type: .codeBlock)
+        #expect(decoded == .codeBlock(CodeBlockContent(language: nil, code: "echo hi")))
+        #expect(decoded.text.map(\.text) == ["echo hi"])
+    }
+
+    @Test("DocumentBlock.displayText/codeLanguage reflect code-block contentJSON/markdownSource")
+    func displayTextAndLanguageReflectCodeBlock() throws {
+        let withLanguage = DocumentBlock(
+            documentId: "doc",
+            type: .codeBlock,
+            contentJSON: BlockContent.codeBlockJSON(language: "swift", code: "let x = 1"),
+            markdownSource: "```swift\nlet x = 1\n```"
+        )
+
+        #expect(withLanguage.displayText == "let x = 1")
+        #expect(withLanguage.codeLanguage == "swift")
+        #expect(withLanguage.headingLevel == nil)
+
+        let withoutLanguage = DocumentBlock(
+            documentId: "doc",
+            type: .codeBlock,
+            contentJSON: BlockContent.codeBlockJSON(language: nil, code: "echo hi"),
+            markdownSource: "```\necho hi\n```"
+        )
+
+        #expect(withoutLanguage.displayText == "echo hi")
+        #expect(withoutLanguage.codeLanguage == nil)
+
+        // Non-code blocks always read as having no code language.
+        let paragraph = DocumentBlock(
+            documentId: "doc",
+            type: .paragraph,
+            contentJSON: BlockContent.paragraphJSON(text: "Plain text"),
+            markdownSource: "Plain text"
+        )
+
+        #expect(paragraph.codeLanguage == nil)
+    }
+
     @Test("DocumentBlock.displayText/numberedListNumber reflect list-item contentJSON/markdownSource")
     func displayTextAndNumberReflectListItems() throws {
         let bulleted = DocumentBlock(
