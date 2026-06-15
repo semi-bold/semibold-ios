@@ -12,6 +12,12 @@ import UIKit
 struct ParagraphTextField: UIViewRepresentable {
     @Binding var text: String
 
+    /// The typography this block's text is shown in — `AppTheme.Typography
+    /// .body` for a plain paragraph, or `.heading1`/`.heading2`/`.heading3`
+    /// for a `.heading` block (§7.1/§7.3's `# `/`## `/`### ` conversions).
+    /// Defaults to `.body` so existing call sites don't need to change.
+    var textStyle: TextStyleToken = AppTheme.Typography.body
+
     /// Called as the user edits this block's text, so the document
     /// editor can save the change.
     var onTextChange: (String) -> Void
@@ -37,8 +43,7 @@ struct ParagraphTextField: UIViewRepresentable {
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
         textView.delegate = context.coordinator
-        let bodyStyle = AppTheme.Typography.body
-        textView.font = UIFont.systemFont(ofSize: bodyStyle.size, weight: bodyStyle.weight.uiFontWeight)
+        textView.font = UIFont.systemFont(ofSize: textStyle.size, weight: textStyle.weight.uiFontWeight)
         textView.backgroundColor = .clear
         textView.textColor = UIColor(AppTheme.Colors.text1)
         textView.isScrollEnabled = false
@@ -51,6 +56,11 @@ struct ParagraphTextField: UIViewRepresentable {
     func updateUIView(_ uiView: UITextView, context: Context) {
         if uiView.text != text {
             uiView.text = text
+        }
+
+        let font = UIFont.systemFont(ofSize: textStyle.size, weight: textStyle.weight.uiFontWeight)
+        if uiView.font != font {
+            uiView.font = font
         }
 
         if let offset = cursorOffsetToApply {
