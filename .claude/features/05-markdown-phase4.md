@@ -172,7 +172,7 @@ wireframe/flow artifact. Block type model comes from PLANNING.md §8.
 - [x] Heading conversion (per §7.1/§7.3 syntax)
 - [x] List conversion (ordered/unordered per §7.1/§7.3)
 - [x] Checklist conversion
-- [ ] Blockquote conversion
+- [x] Blockquote conversion
 - [ ] Code block conversion
 - [ ] Inline marks: bold, italic, strike, inline code, link
 - [ ] Block type model matches PLANNING §8.1/§8.2 (Swift types named per
@@ -220,6 +220,73 @@ wireframe/flow artifact. Block type model comes from PLANNING.md §8.
     (`AppTheme.Spacing.sm` gap, `AppTheme.Spacing.lg` minWidth) is a new
     convention, not traced from a wireframe. Worth a design pass once a
     dedicated list wireframe exists.
+
+- Blockquote conversion (this AC):
+  - **Blockquote content model** (`semibold/Models/BlockContent.swift`):
+    added `BlockquoteContent` (`{ type: "blockquote", text: RichTextSpan[]
+    }`, §8.1) — a dedicated struct (not reusing `ParagraphContent`/
+    `ListItemContent`) so its `type` literal (`"blockquote"`) matches its
+    own `BlockType`, following `HeadingContent`/`ChecklistItemContent`'s
+    precedent of one struct per case even when the shape is otherwise
+    identical. Added a matching `BlockContent.blockquote` case with a
+    `blockquoteJSON(text:)` builder. `.blockquote` is moved out of AC2's
+    grouped fallback arm in `decode(from:type:)`/`.text`/`encodeJSON()`
+    into its own real case (falling back to `BlockquoteContent(text: [])`
+    on malformed JSON); the remaining fallback arm is now `.codeBlock,
+    .divider` only, keeping the switches exhaustive over `BlockType` per
+    AC1-AC3's convention. AC5 (code block) should move `.codeBlock` out of
+    that arm next.
+  - **Detection & conversion** (`DetailViewModel.updateBlockText`): a new
+    `blockquoteConversion(forTypedText:)` check runs after the list check
+    (no precedence conflict — `> ` doesn't overlap with `#`/`-`/`<n>. `/
+    `- [ ] `/`- [x] `'s leading characters). If the typed text matches
+    `^> ` (greater-than + space, §7.1/§7.3's `> quote` syntax), the
+    `.paragraph` block converts to `.blockquote` with `contentJSON.text` =
+    the text after the prefix, persisted immediately (same
+    immediate-persist precedent as AC1-AC3).
+  - **`markdownSource` maintenance**: analogous to AC1-AC3 —
+    `blockquoteMarkdownSource(text:)` rebuilds `"> <text>"` on every edit,
+    keeping the literal Markdown for round-tripping.
+  - **Negative cases per §7.3's literal `> quote` syntax**: `">quote"` (no
+    space) and `">> quote"` (2nd character is `>`, not a space) do NOT
+    convert and stay `.paragraph` — same precedent as AC2's `"-item"`/
+    `"-- item"` not matching `"- "`. Both covered by new
+    `BlockquoteConversionTests` cases, plus a precedence test confirming
+    `"# Title"`/`"- item"`/`"1. item"`/`"- [ ] task"` never convert to
+    `.blockquote`.
+  - **Rendering** (`BlockRow`/`ParagraphTextField` in `DetailView.swift`/
+    `ParagraphTextField.swift`): `.blockquote` blocks show a vertical rule
+    (`AppTheme.Colors.border`, `AppTheme.Spacing.xs` wide) in the same
+    leading column AC2/AC3's `listMarker`/checkbox use, sized to
+    `AppTheme.Spacing.lg` minWidth for the same left-edge alignment. The
+    quote's text itself is dimmed to `AppTheme.Colors.text2` (vs. the
+    default `.text1`) to read visually as a quote. `ParagraphTextField`
+    gained a `textColor: Color` parameter (default `.text1`, applied to the
+    underlying `UITextView`'s `textColor` in both `makeUIView` and
+    `updateUIView`), mirroring AC1's `textStyle` parameter precedent.
+    **Deviation**: no `Screen_*`/`Planning_*` wireframe artifact defines a
+    blockquote layout (checked `wireframe.py`/`planning.py` — only
+    `iOS_Editor`'s generic block rows exist, same gap AC2/AC3 found), so
+    this leading vertical-rule + dimmed-text treatment is a new convention
+    reusing AC2's column width/spacing tokens rather than inventing new
+    ones. Worth a design pass once a dedicated blockquote wireframe exists.
+  - **`DetailViewModel` file split** (per swift-reviewer/AC3's
+    suggested-not-blocking follow-up): extracted all Markdown
+    prefix-detection/`markdownSource`-builder helpers (heading/list/
+    checklist/blockquote — `headingConversion`/`listConversion`/
+    `checklistConversion`/`blockquoteConversion` and their `*MarkdownSource`
+    builders/private content structs) into a new
+    `semibold/ViewModels/DetailViewModel+MarkdownConversion.swift`
+    extension. This dropped `DetailViewModel.swift` from ~600 lines to 436
+    (still slightly over SwiftLint's 400-line `file_length` warning
+    threshold, but the `type_body_length` warning the class body previously
+    had is now resolved). The extracted helpers changed from `private
+    static` to internal `static` (Swift's `private` is file-scoped, so
+    `updateBlockText` in the main file couldn't call file-scoped-private
+    members in the extension file) — still implementation details of
+    `DetailViewModel`, just not enforced at the file level. AC5 (code block)
+    should add its conversion helpers to this new extension file rather than
+    back to `DetailViewModel.swift`.
   - swift-reviewer (AC2) flagged a precedence issue for AC3: `listConversion`'s
     `^- ` check runs unconditionally, so `"- [ ] task"`/`"- [x] task"`
     (checklist syntax, §7.3) would currently match `^- ` first and
@@ -238,6 +305,30 @@ wireframe/flow artifact. Block type model comes from PLANNING.md §8.
     `markdownSource` builders) into a separate extension file (e.g.
     `DetailViewModel+MarkdownConversion.swift`) once AC4/AC5 land, the same
     way the conversion *tests* were just split out below.
+    **Resolved in AC4**: split into
+    `DetailViewModel+MarkdownConversion.swift`, bringing `DetailViewModel
+    .swift` down to 436 lines. Still a `file_length` warning (not an error)
+    — AC5 (code block) should keep adding its conversion helpers to the new
+    extension file rather than `DetailViewModel.swift` to avoid growing it
+    further.
+
+- Blockquote conversion (this AC):
+  - `BlockContent.decode(from:type:)`'s switch is now complexity 14
+    (SwiftLint's `cyclomatic_complexity` warning threshold is 10; this was
+    already a pre-existing warning at complexity 12 before this AC).
+    `updateBlockText` is now complexity 12 / 70 lines (also a pre-existing
+    `function_body_length`/`cyclomatic_complexity` warning, previously 12 /
+    58 lines). Both are warnings only (not errors) and follow the exhaustive
+    `BlockType`-switch / per-type-branch conventions AC1-AC3 established —
+    AC5 (code block) will add one more arm/branch to each. If these warnings
+    become a priority, the natural follow-up is extracting `BlockContent
+    .decode`'s per-type branches into smaller helper functions, and/or
+    restructuring `updateBlockText`'s conversion checks into a small
+    ordered-list-of-conversions loop — neither attempted here to avoid
+    scope creep on this AC.
+  - Blockquote → paragraph reversion (Backspace-ing the `> ` back out, or
+    Backspace-at-start of an empty blockquote) is unimplemented, same
+    deferral rationale as AC1/AC2's heading/list-item reversion follow-ups.
 
 - Checklist conversion (this AC):
   - **Checklist item content model** (`semibold/Models/BlockContent.swift`):

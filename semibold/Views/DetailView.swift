@@ -161,8 +161,10 @@ struct DetailView: View {
 /// before the editable text (§7.1/§7.3's `- item` / `1. item` syntax).
 /// `.checklistItem` blocks show a tappable checkbox in that same leading
 /// column — tapping it toggles the task's done/not-done state (§7.1).
-/// Blockquote/code-block styling is still `markdown-phase4` follow-up
-/// scope — those block types render as a plain paragraph input for now.
+/// `.blockquote` blocks show a vertical rule in that same leading column and
+/// dim the quoted text, marking it as a quote (§7.1/§7.3's `> quote`
+/// syntax). Code-block styling is still `markdown-phase4` follow-up scope —
+/// that block type renders as a plain paragraph input for now.
 private struct BlockRow: View {
     let block: DocumentBlock
     var focusedBlockId: FocusState<String?>.Binding
@@ -214,14 +216,22 @@ private struct BlockRow: View {
     /// `.bulletedListItem`, the item's number followed by a period for
     /// `.numberedListItem` (§7.1/§7.3's `- item` / `1. item` syntax). `nil`
     /// for every other block type, which shows no marker. `.checklistItem`
-    /// blocks show a checkbox instead, in the same leading column — see
-    /// `body`.
+    /// blocks show a checkbox instead, and `.blockquote` blocks show a
+    /// vertical rule, in the same leading column — see `body`.
     private var listMarker: String? {
         switch block.type {
         case .bulletedListItem: return "•"
         case .numberedListItem: return "\(block.numberedListNumber ?? 1)."
         default: return nil
         }
+    }
+
+    /// The color this block's text is shown in — `.blockquote` text is
+    /// dimmed (`AppTheme.Colors.text2`) to read as a quote, distinct from
+    /// the surrounding paragraph text; every other block type uses the
+    /// primary text color.
+    private var textColor: Color {
+        block.type == .blockquote ? AppTheme.Colors.text2 : AppTheme.Colors.text1
     }
 
     var body: some View {
@@ -240,11 +250,17 @@ private struct BlockRow: View {
                     .buttonStyle(.plain)
                     .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
                     .frame(height: textStyle.lineHeight, alignment: .center)
+                } else if block.type == .blockquote {
+                    Rectangle()
+                        .fill(AppTheme.Colors.border)
+                        .frame(width: AppTheme.Spacing.xs)
+                        .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
                 }
 
                 ParagraphTextField(
                     text: $text,
                     textStyle: textStyle,
+                    textColor: textColor,
                     onTextChange: onTextChange,
                     onEnter: { cursorOffset in
                         onEnter(text, cursorOffset)

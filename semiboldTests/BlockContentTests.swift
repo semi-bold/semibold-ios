@@ -144,6 +144,32 @@ struct BlockContentTests {
         #expect(paragraph.isChecked == false)
     }
 
+    @Test("Blockquote content round-trips through contentJSON")
+    func blockquoteRoundTrips() throws {
+        let json = BlockContent.blockquoteJSON(text: "A wise quote")
+
+        #expect(json.contains("\"type\":\"blockquote\""))
+        #expect(json.contains("A wise quote"))
+
+        let decoded = BlockContent.decode(from: json, type: .blockquote)
+        #expect(decoded == .blockquote(BlockquoteContent(text: [RichTextSpan(text: "A wise quote")])))
+        #expect(decoded.text.map(\.text) == ["A wise quote"])
+    }
+
+    @Test("DocumentBlock.displayText reflects blockquote contentJSON/markdownSource")
+    func displayTextReflectsBlockquote() throws {
+        let blockquote = DocumentBlock(
+            documentId: "doc",
+            type: .blockquote,
+            contentJSON: BlockContent.blockquoteJSON(text: "A wise quote"),
+            markdownSource: "> A wise quote"
+        )
+
+        #expect(blockquote.displayText == "A wise quote")
+        #expect(blockquote.markdownSource == "> A wise quote")
+        #expect(blockquote.headingLevel == nil)
+    }
+
     @Test("DocumentBlock.displayText/numberedListNumber reflect list-item contentJSON/markdownSource")
     func displayTextAndNumberReflectListItems() throws {
         let bulleted = DocumentBlock(

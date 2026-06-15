@@ -17,8 +17,8 @@ struct RichTextSpan: Codable, Equatable {
 /// `BlockContent.encodeJSON()` / `BlockContent.decode(from:type:)`.
 ///
 /// Only the shapes implemented so far (`paragraph`, `heading`,
-/// `bulletedListItem`, `numberedListItem`, `checklistItem`) are modeled as
-/// real cases — blockquote/code/divider shapes are added as later
+/// `bulletedListItem`, `numberedListItem`, `checklistItem`, `blockquote`)
+/// are modeled as real cases — code/divider shapes are added as later
 /// `markdown-phase4` acceptance criteria implement those conversions, and
 /// fall back to `.paragraph` in `decode(from:type:)` until then.
 enum BlockContent: Equatable {
@@ -27,6 +27,7 @@ enum BlockContent: Equatable {
     case bulletedListItem(ListItemContent)
     case numberedListItem(ListItemContent)
     case checklistItem(ChecklistItemContent)
+    case blockquote(BlockquoteContent)
 
     /// The plain text shared by every case modeled so far. Block types
     /// without a `text` field (e.g. a future `code_block`/`divider`) would
@@ -38,6 +39,7 @@ enum BlockContent: Equatable {
         case .bulletedListItem(let content): return content.text
         case .numberedListItem(let content): return content.text
         case .checklistItem(let content): return content.text
+        case .blockquote(let content): return content.text
         }
     }
 
@@ -50,6 +52,7 @@ enum BlockContent: Equatable {
         case .bulletedListItem(let content): data = try? JSONEncoder().encode(content)
         case .numberedListItem(let content): data = try? JSONEncoder().encode(content)
         case .checklistItem(let content): data = try? JSONEncoder().encode(content)
+        case .blockquote(let content): data = try? JSONEncoder().encode(content)
         }
         guard let data, let json = String(data: data, encoding: .utf8) else {
             return "{\"type\":\"paragraph\",\"text\":[]}"
@@ -60,8 +63,8 @@ enum BlockContent: Equatable {
     /// Decodes `json` according to `type`, falling back to an empty
     /// paragraph if the JSON is missing or malformed (e.g. a block created
     /// before this shape existed). Block types not modeled as a case yet
-    /// (`blockquote`/`codeBlock`/`divider`) also fall back to `.paragraph`
-    /// until a later AC adds their case.
+    /// (`codeBlock`/`divider`) also fall back to `.paragraph` until a later
+    /// AC adds their case.
     static func decode(from json: String, type: BlockType) -> BlockContent {
         let data = Data(json.utf8)
         switch type {
@@ -90,7 +93,12 @@ enum BlockContent: Equatable {
                 return .checklistItem(content)
             }
             return .checklistItem(ChecklistItemContent(checked: false, text: []))
-        case .blockquote, .codeBlock, .divider:
+        case .blockquote:
+            if let content = try? JSONDecoder().decode(BlockquoteContent.self, from: data) {
+                return .blockquote(content)
+            }
+            return .blockquote(BlockquoteContent(text: []))
+        case .codeBlock, .divider:
             if let content = try? JSONDecoder().decode(ParagraphContent.self, from: data) {
                 return .paragraph(content)
             }
@@ -139,6 +147,13 @@ enum BlockContent: Equatable {
             ChecklistItemContent(checked: checked, text: [RichTextSpan(text: text)])
         ).encodeJSON()
     }
+
+    /// Builds the `contentJSON` for a blockquote block holding `text` as a
+    /// single unstyled span (§8.1 `{ type: "blockquote", text:
+    /// RichTextSpan[] }`).
+    static func blockquoteJSON(text: String) -> String {
+        BlockContent.blockquote(BlockquoteContent(text: [RichTextSpan(text: text)])).encodeJSON()
+    }
 }
 
 /// The `contentJSON` shape for a `.paragraph` block (§8.1
@@ -173,6 +188,17 @@ struct ListItemContent: Codable, Equatable {
 struct ChecklistItemContent: Codable, Equatable {
     var type = "checklist_item"
     var checked: Bool
+    var text: [RichTextSpan]
+}
+
+/// The `contentJSON` shape for a `.blockquote` block (§8.1
+/// `{ type: "blockquote", text: RichTextSpan[] }`). Identical in shape to
+/// `ParagraphContent`/`ListItemContent`, but kept as its own type (rather
+/// than reused) so each `BlockContent` case's `type` literal matches its
+/// own `BlockType` — following `HeadingContent`/`ChecklistItemContent`'s
+/// precedent of a dedicated struct per case.
+struct BlockquoteContent: Codable, Equatable {
+    var type = "blockquote"
     var text: [RichTextSpan]
 }
 
