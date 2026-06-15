@@ -140,6 +140,9 @@ struct DetailView: View {
                         },
                         onBackspaceAtStart: { text in
                             viewModel.mergeOrDeleteBlock(block.id, currentText: text)
+                        },
+                        onToggleChecklist: {
+                            viewModel.toggleChecklistItem(blockId: block.id)
                         }
                     )
                 }
@@ -156,9 +159,10 @@ struct DetailView: View {
 ///
 /// `.bulletedListItem`/`.numberedListItem` blocks show a `•`/`<n>.` marker
 /// before the editable text (§7.1/§7.3's `- item` / `1. item` syntax).
-/// Checklist/blockquote/code-block styling is still `markdown-phase4`
-/// follow-up scope — those block types render as a plain paragraph input
-/// for now.
+/// `.checklistItem` blocks show a tappable checkbox in that same leading
+/// column — tapping it toggles the task's done/not-done state (§7.1).
+/// Blockquote/code-block styling is still `markdown-phase4` follow-up
+/// scope — those block types render as a plain paragraph input for now.
 private struct BlockRow: View {
     let block: DocumentBlock
     var focusedBlockId: FocusState<String?>.Binding
@@ -166,6 +170,7 @@ private struct BlockRow: View {
     let onTextChange: (String) -> Void
     let onEnter: (String, Int) -> Void
     let onBackspaceAtStart: (String) -> Void
+    let onToggleChecklist: () -> Void
 
     @State private var text: String
 
@@ -175,7 +180,8 @@ private struct BlockRow: View {
         cursorOffsetToApply: Binding<Int?>,
         onTextChange: @escaping (String) -> Void,
         onEnter: @escaping (String, Int) -> Void,
-        onBackspaceAtStart: @escaping (String) -> Void
+        onBackspaceAtStart: @escaping (String) -> Void,
+        onToggleChecklist: @escaping () -> Void
     ) {
         self.block = block
         self.focusedBlockId = focusedBlockId
@@ -183,6 +189,7 @@ private struct BlockRow: View {
         self.onTextChange = onTextChange
         self.onEnter = onEnter
         self.onBackspaceAtStart = onBackspaceAtStart
+        self.onToggleChecklist = onToggleChecklist
         _text = State(initialValue: block.displayText)
     }
 
@@ -206,7 +213,9 @@ private struct BlockRow: View {
     /// The marker shown before a list item's text — a bullet for
     /// `.bulletedListItem`, the item's number followed by a period for
     /// `.numberedListItem` (§7.1/§7.3's `- item` / `1. item` syntax). `nil`
-    /// for every other block type, which shows no marker.
+    /// for every other block type, which shows no marker. `.checklistItem`
+    /// blocks show a checkbox instead, in the same leading column — see
+    /// `body`.
     private var listMarker: String? {
         switch block.type {
         case .bulletedListItem: return "•"
@@ -223,6 +232,14 @@ private struct BlockRow: View {
                         .appTextStyle(textStyle)
                         .foregroundStyle(AppTheme.Colors.text1)
                         .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+                } else if block.type == .checklistItem {
+                    Button(action: onToggleChecklist) {
+                        Image(systemName: block.isChecked ? "checkmark.square" : "square")
+                            .foregroundStyle(block.isChecked ? AppTheme.Colors.primary : AppTheme.Colors.text2)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+                    .frame(height: textStyle.lineHeight, alignment: .center)
                 }
 
                 ParagraphTextField(
