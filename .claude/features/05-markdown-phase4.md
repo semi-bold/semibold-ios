@@ -167,6 +167,103 @@ wireframe/flow artifact. Block type model comes from PLANNING.md §8.
   a new token. Flagged below for design follow-up if a dedicated list-item
   wireframe is added later.
 
+- **Inline marks conversion (this AC)**:
+  - **`RichTextSpan` gains `marks`/`href`**
+    (`semibold/Models/BlockContent.swift`): added a new `RichTextMark` enum
+    (`.bold`/`.italic`/`.strike`/`.inlineCode` = `"inline_code"`/`.link`,
+    matching §8.1's `RichTextSpan.marks` union exactly) and two new
+    `RichTextSpan` properties, `marks: [RichTextMark]?` and `href: String?`,
+    both `Optional` per the AC1 swift-reviewer note (Open Questions below) —
+    `contentJSON` written before this AC (`{"text": "..."}` with neither key)
+    still decodes via `Codable`'s default missing-key→`nil` behavior for
+    `Optional` properties, and `JSONEncoder`'s synthesized
+    `encodeIfPresent`-based encoding omits `marks`/`href` entirely when
+    `nil` (verified by `BlockContentTests
+    .richTextSpanDecodesOldFormatJSON`/`.decodeOldFormatParagraphContentJSON`,
+    which decode a literal `{"text":"Hello world"}`/
+    `{"type":"paragraph","text":[{"text":"Hello world"}]}` blob with no
+    `marks`/`href` keys and confirm both decode to `nil`).
+  - **Chosen approach: data-model parsing, NOT WYSIWYG rendering** — per the
+    brief's two offered interpretations, this AC implements the simpler one:
+    `contentJSON.text`'s `[RichTextSpan]` is parsed to carry correct
+    `marks`/`href` (satisfying §8.1/AC7's data model), but
+    `ParagraphTextField`/`BlockRow` are UNCHANGED — no `NSAttributedString`
+    rendering of bold/italic/strikethrough/monospace/links yet. Editing
+    remains plain-text in a `UITextView`, with the literal `**`/`*`/`~~`/
+    `` ` ``/`[]()` syntax visible while typing. Visual rendering of marks
+    (bold text actually appearing bold, etc.) is explicitly deferred to
+    `quality-phase5`, per the brief's own framing of this as the
+    not-over-built fallback. See Open Questions below.
+  - **New parsing helper**
+    (`semibold/Models/BlockContent+InlineMarks.swift`, new file, following
+    AC4's extension-file convention): `RichTextSpan.parse(markdownText:) ->
+    [RichTextSpan]` scans `markdownText` left-to-right, trying `[text](url)`
+    (link) first, then delimiter-based syntax in the order `**` (bold), `~~`
+    (strike), `` ` `` (inline code), `*` (italic) — `**` before `*` so
+    `**word**` isn't first read as italic. A delimiter only produces a marked
+    span if BOTH an opening and a matching closing delimiter are found with
+    non-empty content between them; otherwise (unterminated syntax, e.g.
+    `"**bold"` with no closing `**`) those characters fall through as plain
+    text — same "must match the full pattern" precedent as AC1-AC5's prefix
+    conversions. Doesn't aim for full CommonMark compliance (e.g. nested
+    marks like `**bold *and italic***` aren't specially recognized — the
+    inner `*...*` is literal text inside the bold span) — §7.3's literal
+    examples are the bar.
+  - **DEVIATION — marked spans' `text` keeps its Markdown delimiters**: the
+    brief's own illustrative example for AC end-to-end behavior shows
+    `RichTextSpan(text:"bold", marks:["bold"])` (delimiters stripped). This
+    AC instead produces `RichTextSpan(text:"**bold**", marks:["bold"])`
+    (delimiters KEPT). Reason: `DocumentBlock.displayText` —
+    `contentJSON.text.map(\.text).joined()` — is the exact text
+    `ParagraphTextField`'s `UITextView` shows/edits, and `BlockRow` re-syncs
+    its `@State text` from `displayText` on every `contentJSON` change. If
+    spans stripped delimiters, `displayText` for `"**bold** text"` would
+    become `"bold text"` — the view-model would silently rewrite what the
+    user just typed on every keystroke, making `**`/`*`/`~~`/`` ` ``/`[]()`
+    impossible to type (each keystroke immediately strips the delimiters
+    again). Keeping delimiters in `text` makes `marks`/`href` correctly
+    describe *which run of the literal text* is bold/italic/etc., while
+    `displayText` stays exactly what the user typed — preserving the
+    existing single-`UITextView` edit loop with NO changes to
+    `ParagraphTextField`/`BlockRow`. A future `quality-phase5` WYSIWYG pass
+    (rendering `NSAttributedString` with delimiters hidden) is the natural
+    place to revisit this and strip delimiters from `text`, once
+    `displayText` no longer needs to be delimiter-literal. Flagged below for
+    `swift-reviewer` as the most significant deviation in this AC.
+  - **Wired into all seven `BlockContent.*JSON(text:)` builders except
+    `codeBlockJSON`** (`paragraphJSON`/`headingJSON`/
+    `bulletedListItemJSON`/`numberedListItemJSON`/`checklistItemJSON`/
+    `blockquoteJSON` in `semibold/Models/BlockContent.swift`): each now calls
+    `RichTextSpan.parse(markdownText: text)` instead of wrapping `text` in a
+    single unstyled `RichTextSpan`. Because `DetailViewModel.updateBlockText`
+    and all of AC1-AC5's conversion paths already funnel through these
+    builders with the block's current full text, inline-mark parsing
+    automatically composes with every existing block-type conversion with NO
+    changes to `DetailViewModel.swift`/`DetailViewModel
+    +MarkdownConversion.swift` — e.g. typing `"# **bold** title"` converts to
+    `.heading` (AC1) AND produces `contentJSON.text = [{"**bold**",
+    marks:["bold"]}, {" title"}]` (this AC), verified end-to-end by
+    `InlineMarksConversionTests
+    .inlineMarksComposeWithHeadingConversion`. `codeBlockJSON` is
+    deliberately NOT touched — `CodeBlockContent.code` is plain `String` per
+    §8.1, not subject to inline marks.
+  - **No visual rendering changes** (`ParagraphTextField.swift`/
+    `DetailView.swift` UNCHANGED): see "Chosen approach" above. `BlockRow`'s
+    existing `textStyle`/`textColor`/`isMonospaced` params (from AC1/AC4/AC5)
+    are untouched; this AC is purely `Models/BlockContent*.swift`-side.
+  - **Tests**: `BlockContentTests.swift` gained 3 new tests
+    (`richTextSpanRoundTripsWithMarksAndHref`,
+    `richTextSpanDecodesOldFormatJSON`,
+    `decodeOldFormatParagraphContentJSON`). New
+    `semiboldTests/InlineMarksTests.swift` (17 tests) covers
+    `RichTextSpan.parse(markdownText:)` directly: each of the five mark
+    types, mixed/adjacent/combined marks, unterminated syntax for all five
+    syntaxes, and empty-delimiter edge cases (`"****"`, `"[]()"`). New
+    `semiboldTests/InlineMarksConversionTests.swift` (4 tests) covers
+    end-to-end `DetailViewModel.updateBlockText` behavior: bold+plain in a
+    paragraph, all five marks combined in one block, inline marks composing
+    with AC1's heading conversion, and plain text staying unmarked.
+
 ## Acceptance Criteria
 
 - [x] Heading conversion (per §7.1/§7.3 syntax)
@@ -174,7 +271,7 @@ wireframe/flow artifact. Block type model comes from PLANNING.md §8.
 - [x] Checklist conversion
 - [x] Blockquote conversion
 - [x] Code block conversion
-- [ ] Inline marks: bold, italic, strike, inline code, link
+- [x] Inline marks: bold, italic, strike, inline code, link
 - [ ] Block type model matches PLANNING §8.1/§8.2 (Swift types named per
       the TS example, mapped to `contentJSON`/`markdownSource`)
 
@@ -524,3 +621,39 @@ wireframe/flow artifact. Block type model comes from PLANNING.md §8.
     correctly fall through to stay `.paragraph` here (covered by
     `CodeBlockConversionTests.oneBacktickDoesNotConvert`/
     `.twoBackticksDoesNotConvert`).
+
+- Inline marks conversion (this AC):
+  - **Visual rendering of marks is NOT implemented** — `ParagraphTextField`/
+    `BlockRow` are plain-text and unchanged; bold/italic/strikethrough/
+    inline-code/link spans don't yet appear visually distinct while editing
+    or viewing a block. `contentJSON.text` correctly carries `marks`/`href`
+    for future use (export, a read-only rendered view, etc.), but a
+    `quality-phase5`-style pass is needed to render `NSAttributedString`
+    (bold/italic font traits via `UIFontDescriptor.SymbolicTraits`,
+    `NSAttributedString.Key.strikethroughStyle`, a monospace font for
+    `.inlineCode` spans, and `NSAttributedString.Key.link` + underline for
+    `href` spans with tap-to-open behavior).
+  - **Marked spans' `text` retains Markdown delimiters** (`"**bold**"`, not
+    `"bold"`) — see the DEVIATION note in Decisions & Deviations above. If a
+    future WYSIWYG pass wants "clean" text in `RichTextSpan.text` (delimiters
+    hidden, marks rendered), `displayText`'s relationship to `contentJSON`
+    needs to be redesigned at the same time (e.g. `displayText` sourced from
+    `markdownSource` minus structural prefix, rather than from
+    `contentJSON.text` joined) — these two changes are coupled and should
+    land together.
+  - **Nested/overlapping marks are not specially handled** (e.g. `**bold
+    *and italic***`, `` `code with **bold** inside` ``) — `RichTextSpan.parse`
+    tries one delimiter type at a time and doesn't recurse into matched
+    spans, so any inner delimiters are literal text within the outer marked
+    span's `text`. §7.3 doesn't specify nested-mark syntax, so this is left
+    as-is; full CommonMark-style nesting would need a recursive/precedence-
+    aware parser if a future spec requires it.
+  - **Link-tap-to-open behavior** is unimplemented (follows from "visual
+    rendering not implemented" above) — `href` is captured in `contentJSON`
+    but nothing in the UI currently makes a link span tappable/openable. Part
+    of the same `quality-phase5` rendering pass.
+  - **`*` vs `_` for italic/bold, and other CommonMark delimiter variants**
+    (e.g. `_italic_`, `__bold__`) are not recognized — §7.3's literal syntax
+    table only shows `**`/`*`/`~~`/`` ` ``/`[]()`, so only those are
+    implemented. Worth revisiting if markdown import (`quality-phase5`) needs
+    to round-trip documents using underscore-style emphasis.

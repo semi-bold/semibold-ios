@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import semibold
@@ -7,6 +8,42 @@ import Testing
 /// shapes from `tasks/NO-001.md` §8.1, used by `DetailViewModel` to build
 /// and read back a block's `contentJSON`.
 struct BlockContentTests {
+    @Test("RichTextSpan round-trips with marks and href populated")
+    func richTextSpanRoundTripsWithMarksAndHref() throws {
+        let span = RichTextSpan(text: "[example](https://example.com)", marks: [.link, .bold], href: "https://example.com")
+
+        let data = try JSONEncoder().encode(span)
+        let json = try #require(String(data: data, encoding: .utf8))
+        #expect(json.contains("\"marks\""))
+        #expect(json.contains("\"href\""))
+        #expect(json.contains("\"link\""))
+        #expect(json.contains("\"bold\""))
+
+        let decoded = try JSONDecoder().decode(RichTextSpan.self, from: data)
+        #expect(decoded == span)
+    }
+
+    @Test("RichTextSpan decodes old-format JSON (no marks/href keys) with marks/href as nil")
+    func richTextSpanDecodesOldFormatJSON() throws {
+        let oldFormatJSON = "{\"text\":\"Hello world\"}"
+        let data = Data(oldFormatJSON.utf8)
+
+        let decoded = try JSONDecoder().decode(RichTextSpan.self, from: data)
+        #expect(decoded.text == "Hello world")
+        #expect(decoded.marks == nil)
+        #expect(decoded.href == nil)
+    }
+
+    @Test("A pre-AC6 paragraph contentJSON blob (no marks/href keys) decodes correctly")
+    func decodeOldFormatParagraphContentJSON() throws {
+        let oldFormatJSON = "{\"type\":\"paragraph\",\"text\":[{\"text\":\"Hello world\"}]}"
+
+        let decoded = BlockContent.decode(from: oldFormatJSON, type: .paragraph)
+        #expect(decoded == .paragraph(ParagraphContent(text: [RichTextSpan(text: "Hello world")])))
+        #expect(decoded.text.first?.marks == nil)
+        #expect(decoded.text.first?.href == nil)
+    }
+
     @Test("Paragraph content round-trips through contentJSON")
     func paragraphRoundTrips() throws {
         let json = BlockContent.paragraphJSON(text: "Hello world")
