@@ -231,6 +231,32 @@ struct DetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(AppTheme.Colors.background)
+        .overlay(alignment: .topLeading) {
+            if viewModel.showsEmptyContentPlaceholder {
+                emptyContentPlaceholder
+            }
+        }
+    }
+
+    /// Empty-state hint shown over the document's single empty paragraph
+    /// block (§15.1, "문서 내용이 없을 때": "Markdown으로 작성하거나 / 를 눌러
+    /// 블록을 추가하세요.").
+    ///
+    /// Positioned like a text field's placeholder text — sitting on top of
+    /// that block's (currently empty) input at the same padding/typography
+    /// it uses, so it reads as "type here" rather than a separate message.
+    /// `allowsHitTesting(false)` lets taps pass through to the block's text
+    /// input underneath, and it disappears as soon as the user types
+    /// anything (Markdown) or presses `/` (which opens the Slash Command
+    /// sheet from the previous AC).
+    private var emptyContentPlaceholder: some View {
+        Text("Markdown으로 작성하거나 / 를 눌러 블록을 추가하세요.")
+            .appTextStyle(AppTheme.Typography.body)
+            .foregroundStyle(AppTheme.Colors.text2)
+            .padding(.horizontal, AppTheme.Spacing.md)
+            .padding(.vertical, AppTheme.Spacing.md)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

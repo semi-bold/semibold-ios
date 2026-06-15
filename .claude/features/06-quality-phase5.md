@@ -196,13 +196,65 @@ detail/editor view from earlier phases — no new dedicated screen.
   drop-onto-self no-op), each asserting both the in-memory `blocks` order/
   `sortOrder` and the persisted rows via `DocumentBlockRepository`.
 
+### Empty states (§15.1)
+
+- **Three empty states, three different spots.** §15.1 defines three
+  messages, each shown where its corresponding list/content is empty:
+  - "첫 폴더를 만들어보세요." ("폴더가 없을 때") — `HomeView.folderSection`,
+    when `viewModel.folders.isEmpty`.
+  - "이 폴더에 첫 문서를 만들어보세요." ("문서가 없을 때") —
+    `HomeView.documentSection`, when `viewModel.documents.isEmpty`.
+  - "Markdown으로 작성하거나 / 를 눌러 블록을 추가하세요." ("문서 내용이 없을
+    때") — `DetailView.blockList`, when `viewModel.showsEmptyContentPlaceholder`.
+- **No dedicated empty-state component in `sketch-autokit`.** Checked
+  `wireframe.py`/`planning.py`/`atoms.py` for an "empty state" pattern — the
+  closest match is `screen_template`'s generic `"Add your content here"`
+  centered placeholder text (`text_layer(..., align=2)`, `#8c8c91`, 16px),
+  used as a stand-in for not-yet-built screens rather than a documented
+  empty-state component. Per CLAUDE.md §0 step 3, this is documented here
+  rather than treated as a real wireframe reference: both `HomeView`'s two
+  empty rows and `DetailView`'s placeholder reuse the existing `emptyRow`/new
+  `emptyContentPlaceholder` views, styled with `AppTheme.Typography.body` +
+  `AppTheme.Colors.text2` (a close match for that placeholder's gray/16px
+  look) — no new design tokens needed.
+- **Folder/document empty rows (`HomeView`).** `folderSection` and
+  `documentSection` already had a placeholder row for the empty case
+  (previously "No folders yet" / "No documents yet", English filler text from
+  earlier ACs) — swapped their text for §15.1's Korean copy. No structural
+  change: still a single centered-ish `Text` row using `emptyRow(text:)`,
+  `AppTheme.Typography.body` / `Colors.text2`, inside the existing `Section`.
+- **Empty document content (`DetailView`).** "문서 내용이 없을 때" — checked
+  how a brand-new document is initialized: `DetailViewModel.load()` (from
+  `block-editor-phase3`) guarantees every document has **at least one**
+  block, creating a single empty `.paragraph` block if none exist. So "no
+  content" here means exactly that bootstrap state: one block, type
+  `.paragraph`, `displayText.isEmpty` — not "zero blocks" (which never
+  happens). Added `DetailViewModel.showsEmptyContentPlaceholder: Bool`
+  encoding this check.
+- **Overlay placeholder, not a replacement block.** Per the brief's own
+  suggestion, the hint is shown as an `.overlay(alignment: .topLeading)` on
+  `blockList`, positioned with the same `Spacing.md` horizontal/vertical
+  padding `BlockRow`'s editable body uses — so it visually sits where the
+  first block's text would start, like a text field's placeholder. It's
+  `allowsHitTesting(false)` and `accessibilityHidden(true)` so taps/VoiceOver
+  go straight to the real (empty) `ParagraphTextField` underneath; typing
+  anything (including the `/` that opens AC2's Slash Command sheet) changes
+  `blocks` and `showsEmptyContentPlaceholder` becomes `false` on the next
+  view update, hiding the overlay. No separate "dismiss" interaction needed.
+- **Tests.** Added to `DetailViewModelTests.swift`: `showsEmptyContentPlaceholder`
+  is `true` for a brand-new document's bootstrap block, becomes `false` after
+  `updateBlockText` gives that block any text, stays `false` once the block is
+  split into two (via `insertBlock`, even though both halves are empty), and
+  is `false` when loading a document whose single existing block already has
+  text.
+
 ## Acceptance Criteria
 
 - [x] macOS keyboard shortcuts implemented per PLANNING §13.2 and
       `Planning_5_MacOSMainFlow`
 - [x] iOS slash-command bottom sheet for inserting block types
 - [x] Drag & drop block reordering (§12.3)
-- [ ] Empty states implemented per §15.1
+- [x] Empty states implemented per §15.1
 - [ ] Error states implemented per §15.2
 - [ ] Markdown export implemented per §10.3
 
