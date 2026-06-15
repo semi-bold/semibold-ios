@@ -298,4 +298,38 @@ struct BlockContentTests {
 
         #expect(numberedFive.numberedListNumber == 5)
     }
+
+    @Test("Divider content round-trips through contentJSON with no extra fields")
+    func dividerRoundTrips() throws {
+        let json = BlockContent.dividerJSON()
+
+        #expect(json == "{\"type\":\"divider\"}")
+
+        let decoded = BlockContent.decode(from: json, type: .divider)
+        #expect(decoded == .divider(DividerContent()))
+        #expect(decoded.text == [])
+    }
+
+    @Test("decode falls back to an empty divider for malformed divider JSON")
+    func dividerDecodeFallsBackOnMalformedJSON() throws {
+        let decoded = BlockContent.decode(from: "not json", type: .divider)
+        #expect(decoded == .divider(DividerContent()))
+        #expect(decoded.text == [])
+    }
+
+    @Test("DocumentBlock.displayText is empty for a divider block")
+    func displayTextIsEmptyForDivider() throws {
+        let divider = DocumentBlock(
+            documentId: "doc",
+            type: .divider,
+            contentJSON: BlockContent.dividerJSON(),
+            markdownSource: "---"
+        )
+
+        #expect(divider.displayText == "")
+        #expect(divider.headingLevel == nil)
+        #expect(divider.isChecked == false)
+        #expect(divider.codeLanguage == nil)
+        #expect(divider.numberedListNumber == nil)
+    }
 }

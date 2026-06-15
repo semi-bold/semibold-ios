@@ -272,10 +272,28 @@ wireframe/flow artifact. Block type model comes from PLANNING.md §8.
 - [x] Blockquote conversion
 - [x] Code block conversion
 - [x] Inline marks: bold, italic, strike, inline code, link
-- [ ] Block type model matches PLANNING §8.1/§8.2 (Swift types named per
+- [x] Block type model matches PLANNING §8.1/§8.2 (Swift types named per
       the TS example, mapped to `contentJSON`/`markdownSource`)
 
 ## Open Questions / Follow-ups
+
+- Block type model verification (this AC):
+  - **`---` → `.divider` conversion is NOT implemented** — `BlockContent`
+    now has a real `.divider`/`DividerContent` case (matching §8.1's `{
+    type: "divider" }`), but `DetailViewModel.updateBlockText` /
+    `+MarkdownConversion.swift` have no `dividerConversion(forTypedText:)`
+    check for `^---$` (or `^---`), unlike AC1-AC5's heading/list/checklist/
+    blockquote/code-block prefix conversions. A future AC should add: (1) a
+    `dividerConversion` check (probably exact-match `"---"` rather than a
+    prefix, since `---` has no trailing text/content), (2) `BlockRow`
+    rendering for `.divider` (a horizontal rule, likely `AppTheme.Colors
+    .border` similar to the blockquote's vertical rule), and (3) decide
+    whether a divider block is ever "edited" again afterward (it has no
+    text — `ParagraphTextField` probably shouldn't even render for it).
+  - All other §8.1/§8.2 model details (content structs' field names/types,
+    `RichTextSpan`/`RichTextMark`, `DocumentBlock`'s fields/`BlockType` raw
+    values, `parentId`/`sortOrder` block-tree querying) were verified to
+    already match exactly — no further follow-up needed for those.
 
 - Heading conversion (this AC):
   - No `TYPE_HEADING3` token exists in `tokens.py`/`AppTheme.Typography` —
@@ -621,6 +639,73 @@ wireframe/flow artifact. Block type model comes from PLANNING.md §8.
     correctly fall through to stay `.paragraph` here (covered by
     `CodeBlockConversionTests.oneBacktickDoesNotConvert`/
     `.twoBackticksDoesNotConvert`).
+
+- **Block type model verification (this AC)** — full §8.1/§8.2 cross-check:
+  - **`.divider` now has a real `BlockContent` case**
+    (`semibold/Models/BlockContent.swift`): added `DividerContent { var type
+    = "divider" }` (§8.1 `{ type: "divider" }` — no other fields) and a
+    matching `BlockContent.divider(DividerContent)` case with a
+    `dividerJSON()` builder. `decode(from:type:)`/`.text`/`encodeJSON()` are
+    now fully exhaustive over all 8 `BlockType` cases with NO fallback arm
+    (AC1's original swift-reviewer goal, finally realized — adding a 9th
+    `BlockType` will now force the compiler to flag these three switches as
+    incomplete). Previously `.divider` fell back to being decoded/encoded as
+    `ParagraphContent` (`{"type":"paragraph","text":[...]}`), which mismatched
+    both its own `type` field and §8.1's no-fields shape — this was the bug
+    this AC fixes.
+  - **`BlockContent.text` for `.divider` returns `[]`** — a divider has no
+    text content per §8.1, so `DocumentBlock.displayText` for a `.divider`
+    block is `""` (verified by `BlockContentTests
+    .displayTextIsEmptyForDivider`, which also confirms `headingLevel`,
+    `isChecked`, `codeLanguage`, `numberedListNumber` are all `nil`/`false`
+    for a divider, same as any other non-matching block type).
+  - **Cross-checked every other `BlockType` case's content struct against
+    §8.1's exact field names/types — all match, no fixes needed**:
+    `ParagraphContent { type: "paragraph", text: [RichTextSpan] }`,
+    `HeadingContent { type: "heading", level: Int, text: [RichTextSpan] }`,
+    `ListItemContent { type: String, text: [RichTextSpan] }` (shared by
+    `bulletedListItem`/`numberedListItem`, `type` literal distinguishes the
+    two on disk), `ChecklistItemContent { type: "checklist_item", checked:
+    Bool, text: [RichTextSpan] }`, `BlockquoteContent { type: "blockquote",
+    text: [RichTextSpan] }`, `CodeBlockContent { type: "code_block",
+    language: String?, code: String }`, `RichTextSpan { text: String, marks:
+    [RichTextMark]?, href: String? }`, `RichTextMark` (`.bold`/`.italic`/
+    `.strike`/`.inlineCode = "inline_code"`/`.link`) — all field names/types/
+    optionality match §8.1's TS union exactly.
+  - **Cross-checked `DocumentBlock` (`semibold/Models/DocumentBlock.swift`)
+    against §8.1's `DocumentBlock` type — all match, no fixes needed**: `id:
+    String`, `documentId: String`, `parentId: String?`, `sortOrder: Int`,
+    `type: BlockType`, `contentJSON: String` (Swift's persisted form of TS's
+    `content: BlockContent`), `markdownSource: String?`, `createdAt`/
+    `updatedAt: Date` (TS `string`/ISO timestamps, stored as GRDB `Date`).
+    `BlockType`'s raw values (`"bulleted_list_item"`, `"numbered_list_item"`,
+    `"checklist_item"`, `"code_block"`, plus bare `paragraph`/`heading`/
+    `blockquote`/`divider`) match §8.1's `BlockType` union string literals
+    exactly — all 8 members present, none extra.
+  - **Cross-checked §8.2's block-tree model — matches, no fixes needed**:
+    `DocumentBlock.parentId: String?` (top-level blocks have `parentId ==
+    nil`, children reference their parent's `id`) and `sortOrder: Int`
+    (ordering within a parent) are present and used correctly.
+    `DocumentBlockRepository.blocks(documentId:parentId:)` filters by
+    `parentId == nil` for top-level or `parentId == <id>` for a parent's
+    children, ordered by `sortOrder`; `allBlocks(documentId:)` orders by
+    `(parentId, sortOrder)` for loading a whole document's tree at once. The
+    `document_blocks` table (`AppMigrations.swift`) matches §9.3's schema
+    (`parent_id`/`sort_order` columns via GRDB's camelCase
+    `parentId`/`sortOrder`, with `idx_blocks_parent_id`/
+    `idx_blocks_sort_order` indexes per §9.4). This was all built in
+    block-editor-phase3 (briefs 02-04) — confirmed correct, no rework.
+  - **Divider conversion/rendering — OUT OF SCOPE for this AC, see Open
+    Questions**: this AC's title is "Block type model matches §8.1/§8.2" —
+    the MODEL (Swift types + JSON shape) is now correct and exhaustive.
+    `---` → `.divider` conversion detection (§7.1's 1차 지원 list includes
+    `---` → Divider, §7.3's syntax table) and `.divider` rendering (a
+    horizontal rule in `BlockRow`) are NOT implemented here — AC1-AC5's
+    conversion work (`DetailViewModel.updateBlockText` /
+    `+MarkdownConversion.swift`) never included `.divider`, and adding it now
+    would be new conversion/rendering work outside "the block type model
+    matches §8.1/§8.2". Tracked as an Open Question/Follow-up below for a
+    future AC (likely `quality-phase5` or a dedicated divider AC).
 
 - Inline marks conversion (this AC):
   - **Visual rendering of marks is NOT implemented** — `ParagraphTextField`/
