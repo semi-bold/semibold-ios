@@ -20,7 +20,13 @@ final class DetailViewModel {
 
     /// The document's top-level blocks, in display order, excluding
     /// soft-deleted ones.
-    private(set) var blocks: [DocumentBlock] = []
+    ///
+    /// The setter isn't `private` (unlike most other `private(set)`
+    /// properties here) because `DetailViewModel+KeyboardShortcuts.swift`
+    /// (Cmd+B/I/K/Option+1-3, §13.2) edits the focused block's content the
+    /// same way `updateBlockText` does, in its own file — Swift's `private`
+    /// is file-scoped. Still `internal` (module-only), not `public`.
+    var blocks: [DocumentBlock] = []
 
     /// The id of the block the editor should move keyboard focus to next,
     /// e.g. right after a new block is created by pressing Enter. The view
@@ -33,7 +39,10 @@ final class DetailViewModel {
     /// wherever the text view puts it by default."
     private(set) var focusedBlockCursorOffset: Int?
 
-    private let documentBlockRepository: DocumentBlockRepository
+    /// Not `private` for the same cross-file-access reason as `blocks`
+    /// above — `DetailViewModel+KeyboardShortcuts.swift` persists its
+    /// shortcut-driven edits through this same repository.
+    let documentBlockRepository: DocumentBlockRepository
 
     /// How long to wait after the last keystroke before writing a block's
     /// text to the database (PLANNING §11.2 "블록 입력: 300~800ms debounce
@@ -44,7 +53,12 @@ final class DetailViewModel {
     /// In-flight debounce timers, one per block currently being typed
     /// into. A new keystroke cancels and replaces the previous timer for
     /// that block so only the latest edit is written once typing pauses.
-    private var pendingSaveTasks: [String: Task<Void, Never>] = [:]
+    ///
+    /// Not `private` for the same cross-file-access reason as `blocks`
+    /// above — keyboard-shortcut edits cancel any pending debounced save
+    /// for the block they apply to, like `updateBlockText`'s structural
+    /// conversions do.
+    var pendingSaveTasks: [String: Task<Void, Never>] = [:]
 
     init(
         document: Document,
