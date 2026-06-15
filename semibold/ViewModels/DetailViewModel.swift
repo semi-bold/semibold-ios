@@ -39,6 +39,13 @@ final class DetailViewModel {
     /// wherever the text view puts it by default."
     private(set) var focusedBlockCursorOffset: Int?
 
+    /// The id of the block whose Slash Command bottom sheet should be
+    /// shown (§12.2 "Slash Command는 bottom sheet 가능", §13.1 "/: Slash
+    /// Command 열기"), or `nil` if no sheet should be shown. Set by
+    /// `updateBlockText` when the user types a lone `/` into an empty
+    /// paragraph block; `DetailView` observes this to present the sheet.
+    private(set) var slashCommandBlockId: String?
+
     /// Not `private` for the same cross-file-access reason as `blocks`
     /// above — `DetailViewModel+KeyboardShortcuts.swift` persists its
     /// shortcut-driven edits through this same repository.
@@ -117,6 +124,20 @@ final class DetailViewModel {
     /// (§11.2 "블록 생성/삭제/순서 변경: 즉시 저장").
     func updateBlockText(_ blockId: String, text: String) {
         guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
+
+        if Self.isSlashCommandTrigger(forTypedText: text, currentType: blocks[index].type) {
+            // The `/` itself is consumed (cleared back to an empty
+            // paragraph) — the Slash Command sheet lets the user pick the
+            // block's new type, then they type its real content fresh.
+            blocks[index].markdownSource = ""
+            blocks[index].contentJSON = BlockContent.paragraphJSON(text: "")
+
+            pendingSaveTasks[blockId]?.cancel()
+            pendingSaveTasks[blockId] = nil
+            persistBlock(blockId)
+            slashCommandBlockId = blockId
+            return
+        }
 
         if blocks[index].type == .paragraph, let heading = Self.headingConversion(forTypedText: text) {
             blocks[index].type = .heading
@@ -337,6 +358,15 @@ final class DetailViewModel {
     func focusHandled() {
         focusedBlockId = nil
         focusedBlockCursorOffset = nil
+    }
+
+    /// Closes the Slash Command bottom sheet without converting the block —
+    /// either the user picked an option (handled by
+    /// `convertBlock(_:toSlashCommandOption:)`, which also calls this) or
+    /// dismissed the sheet by swiping it away, leaving the block as an
+    /// empty paragraph.
+    func dismissSlashCommand() {
+        slashCommandBlockId = nil
     }
 
     /// Handles pressing Backspace with the caret at the very start of
