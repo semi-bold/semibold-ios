@@ -1,6 +1,6 @@
 ---
 name: work
-description: Run the semi:bold iOS feature pipeline for one work code — for the next not-done `.claude/features/<brief>.md` (in order), create/resume a relay branch `feature/<work-code>/<brief>` off `dev` (or the previous brief's branch), implement its unchecked Acceptance Criteria via feature-implementer + swift-reviewer, and open a chained PR. Once every brief is `done`, clean up `.claude/features/` on `dev`.
+description: Run the semi:bold iOS feature pipeline for one work code — for the next not-done `.claude/features/<brief>.md` (in order), create/resume a relay branch `feature/<work-code>/<brief>` off `feature/<work-code>/base` (or the previous brief's branch), implement its unchecked Acceptance Criteria via feature-implementer + swift-reviewer, and open a chained PR. Once every brief is `done`, clean up `.claude/features/` on `feature/<work-code>/base`.
 ---
 
 You are the work orchestrator for semi:bold iOS development.
@@ -13,26 +13,30 @@ PR.
 
 ## Branch Model
 
-- `main` ← `dev` ← `feature/<work-code>/<NN-slug>` (relay chain): one
-  branch per brief, each branched from the **previous brief's branch** in
-  `.claude/features/` order — or from `dev` for the first brief
-  processed.
+- `main` ← `dev` ← `feature/<work-code>/base` ← `feature/<work-code>/<NN-slug>`
+  (relay chain): one branch per brief, each branched from the **previous
+  brief's branch** in `.claude/features/` order — or from
+  `feature/<work-code>/base` for the first brief processed.
+- `feature/<work-code>/base` is a single shared root branch created from
+  `dev` once at the start of each batch. It's never worked on directly —
+  its sole purpose is to be the relay-chain anchor and the target of the
+  Completion cleanup commit.
 - `<work-code>` is a single identifier shared by **every** brief in the
   current `.claude/features/` batch (assigned once, like a Feature ID —
   not per-brief). `<NN-slug>` is the brief's own filename (without
   `.md`), e.g. `01-project-structure-theming`.
-- One PR per brief: base = the branch it was created from (`dev` for the
-  first brief, the previous brief's branch otherwise). The user merges
-  these PRs **in order**; each merge updates the next PR's diff down to
-  just that brief's own changes.
+- One PR per brief: base = the branch it was created from
+  (`feature/<work-code>/base` for the first brief, the previous brief's
+  branch otherwise). The user merges these PRs **in order**; each merge
+  updates the next PR's diff down to just that brief's own changes.
 - Once **every** brief in `.claude/features/` (excluding `TEMPLATE.md`)
-  is `Status: done`, check out `dev`, remove all `.claude/features/*.md`
-  except `TEMPLATE.md`, and commit + push that to `dev` directly. The
-  user then opens the final `dev` → `main` PR manually.
-- **⛔ Never push to or merge `main` directly.** Pushing the Completion
-  cleanup commit straight to `dev` is the one exception to "always work
-  on a feature branch" — it happens after all per-brief PRs already
-  exist.
+  is `Status: done`, check out `feature/<work-code>/base`, remove all
+  `.claude/features/*.md` except `TEMPLATE.md`, and commit + push that
+  to `feature/<work-code>/base`. The user then creates and merges the
+  final `feature/<work-code>/base` → `dev` PR manually.
+- **⛔ Never push to `dev` or `main` directly.** This skill never merges
+  or pushes to `dev` — the user controls when `feature/<work-code>/base`
+  lands into `dev`.
 
 ## Before Starting
 
@@ -73,6 +77,19 @@ PR.
      namespaced under it.
    - **More than one** → ask the user which one is active for this batch.
 
+2.5. **Ensure `feature/<work-code>/base` exists**:
+   ```bash
+   git branch -r | grep "origin/feature/<work-code>/base"
+   ```
+   - If it exists, nothing to do.
+   - If it doesn't exist, create it from `dev` and push:
+     ```bash
+     git checkout dev && git pull origin dev
+     git checkout -b feature/<work-code>/base
+     git push -u origin feature/<work-code>/base
+     git checkout dev
+     ```
+
 3. **Resolve the spec source for this work code**:
    ```bash
    ls ../sketch-autokit/docs/tasks/<work-code>.md
@@ -104,7 +121,7 @@ PR.
    - The base is the branch of the most recent preceding brief that has a
      `feature/<work-code>/<NN-slug>` branch on `origin`
      (`git branch -r | grep "origin/feature/<work-code>/"`).
-   - If none of the preceding briefs have a branch yet, base = `dev`.
+   - If none of the preceding briefs have a branch yet, base = `feature/<work-code>/base`.
 
 6. **Create or resume the brief's branch**:
    - If `feature/<work-code>/<NN-slug>` already exists on `origin`
@@ -209,7 +226,7 @@ user instead of guessing — don't continue to the next item.
 ## Completion (every brief is `done`)
 
 ```bash
-git checkout dev && git pull origin dev
+git checkout feature/<work-code>/base && git pull origin feature/<work-code>/base
 find .claude/features/ -maxdepth 1 -name "*.md" ! -name "TEMPLATE.md" -delete
 git add -A
 git commit -m "chore: remove completed feature briefs"
@@ -221,12 +238,12 @@ Report:
 ```
 🎉 모든 feature brief 완료! (작업 코드: <work-code>)
 
-✅ 01-project-structure-theming — PR #N (base: dev)
+✅ 01-project-structure-theming — PR #N (base: feature/<work-code>/base)
 ✅ 02-local-db-phase1 — PR #M (base: feature/<work-code>/01-project-structure-theming)
 ...
 
-각 PR을 base 순서대로 머지해 주세요 (dev까지 도달).
-완료 후 dev → main Final PR은 직접 생성해 주세요.
+각 PR을 base 순서대로 머지해 주세요 (feature/<work-code>/base까지 도달).
+완료 후 feature/<work-code>/base → dev PR은 직접 생성해 주세요.
 ```
 
 ## Agent Definitions
@@ -290,12 +307,14 @@ Acceptance criteria: 3/3 met
 - Execute Acceptance Criteria items **sequentially**, one at a time — not
   in parallel.
 - One branch + one PR per brief, **chained via relay** under a single
-  shared work code (base = previous brief's branch, or `dev` for the
-  first): `feature/<work-code>/<NN-slug>`.
-- `.claude/features/*.md` (except `TEMPLATE.md`) are removed from `dev`
-  only once **every** brief is `done` — git history retains their content
-  for reference.
+  shared work code (base = previous brief's branch, or
+  `feature/<work-code>/base` for the first):
+  `feature/<work-code>/<NN-slug>`.
+- `.claude/features/*.md` (except `TEMPLATE.md`) are removed from
+  `feature/<work-code>/base` only once **every** brief is `done` — git
+  history retains their content for reference.
 - Don't edit a brief's Scope/Decisions/Screens & Flows sections — only
   `Status` and the Acceptance Criteria checkboxes.
-- **⛔ Never push to or merge `main` directly.** The user merges PRs
-  (in relay order) and opens the final `dev` → `main` PR manually.
+- **⛔ Never push to `dev` or `main` directly.** The user merges PRs
+  (in relay order) and creates the final `feature/<work-code>/base` →
+  `dev` PR manually.
