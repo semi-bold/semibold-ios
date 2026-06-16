@@ -140,6 +140,9 @@ struct DetailView: View {
                         },
                         onBackspaceAtStart: { text in
                             viewModel.mergeOrDeleteBlock(block.id, currentText: text)
+                        },
+                        onToggleChecklist: {
+                            viewModel.toggleChecklistItem(blockId: block.id)
                         }
                     )
                 }
@@ -154,9 +157,15 @@ struct DetailView: View {
 /// a text input for the block's content with a divider below
 /// (`Block_Editing`'s cursor when focused — callout ②).
 ///
-/// Block-type-specific styling (headings, lists, checklists, quotes,
-/// code) is `markdown-phase4` scope — this row renders every block as a
-/// plain paragraph input for now.
+/// `.bulletedListItem`/`.numberedListItem` blocks show a `•`/`<n>.` marker
+/// before the editable text (§7.1/§7.3's `- item` / `1. item` syntax).
+/// `.checklistItem` blocks show a tappable checkbox in that same leading
+/// column — tapping it toggles the task's done/not-done state (§7.1).
+/// `.blockquote` blocks show a vertical rule in that same leading column and
+/// dim the quoted text, marking it as a quote (§7.1/§7.3's `> quote`
+/// syntax). `.codeBlock` blocks show their code in a monospaced font on a
+/// distinguishing surface background, with the fence's language identifier
+/// (if any) as a small label above the code (§7.1/§7.3's ` ```lang ` syntax).
 private struct BlockRow: View {
     let block: DocumentBlock
     var focusedBlockId: FocusState<String?>.Binding
@@ -164,6 +173,7 @@ private struct BlockRow: View {
     let onTextChange: (String) -> Void
     let onEnter: (String, Int) -> Void
     let onBackspaceAtStart: (String) -> Void
+    let onToggleChecklist: () -> Void
 
     @State private var text: String
 
@@ -173,7 +183,8 @@ private struct BlockRow: View {
         cursorOffsetToApply: Binding<Int?>,
         onTextChange: @escaping (String) -> Void,
         onEnter: @escaping (String, Int) -> Void,
-        onBackspaceAtStart: @escaping (String) -> Void
+        onBackspaceAtStart: @escaping (String) -> Void,
+        onToggleChecklist: @escaping () -> Void
     ) {
         self.block = block
         self.focusedBlockId = focusedBlockId
@@ -181,38 +192,121 @@ private struct BlockRow: View {
         self.onTextChange = onTextChange
         self.onEnter = onEnter
         self.onBackspaceAtStart = onBackspaceAtStart
-        _text = State(initialValue: block.markdownSource ?? "")
+        self.onToggleChecklist = onToggleChecklist
+        _text = State(initialValue: block.displayText)
+    }
+
+    /// The typography this block's text is shown in — heading levels 1-3
+    /// map to `AppTheme.Typography.heading1`/`.heading2`/`.heading3`
+    /// (§7.1/§7.3's `# `/`## `/`### ` conversions); every other block type
+    /// uses `.body`.
+    private var textStyle: TextStyleToken {
+        switch block.type {
+        case .heading:
+            switch block.headingLevel {
+            case 1: return AppTheme.Typography.heading1
+            case 2: return AppTheme.Typography.heading2
+            default: return AppTheme.Typography.title
+            }
+        default:
+            return AppTheme.Typography.body
+        }
+    }
+
+    /// The marker shown before a list item's text — a bullet for
+    /// `.bulletedListItem`, the item's number followed by a period for
+    /// `.numberedListItem` (§7.1/§7.3's `- item` / `1. item` syntax). `nil`
+    /// for every other block type, which shows no marker. `.checklistItem`
+    /// blocks show a checkbox instead, and `.blockquote` blocks show a
+    /// vertical rule, in the same leading column — see `body`.
+    private var listMarker: String? {
+        switch block.type {
+        case .bulletedListItem: return "•"
+        case .numberedListItem: return "\(block.numberedListNumber ?? 1)."
+        default: return nil
+        }
+    }
+
+    /// The color this block's text is shown in — `.blockquote` text is
+    /// dimmed (`AppTheme.Colors.text2`) to read as a quote, distinct from
+    /// the surrounding paragraph text; every other block type uses the
+    /// primary text color.
+    private var textColor: Color {
+        block.type == .blockquote ? AppTheme.Colors.text2 : AppTheme.Colors.text1
+    }
+
+    /// Whether this row's text is shown in a monospaced font — `true` for
+    /// `.codeBlock` blocks (§7.1/§7.3's ` ```lang ` syntax), so code reads
+    /// distinctly from prose.
+    private var isCodeBlock: Bool {
+        block.type == .codeBlock
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            ParagraphTextField(
-                text: $text,
-                onTextChange: onTextChange,
-                onEnter: { cursorOffset in
-                    onEnter(text, cursorOffset)
-                },
-                onBackspaceAtStart: {
-                    onBackspaceAtStart(text)
-                },
-                cursorOffsetToApply: focusedBlockId.wrappedValue == block.id ? $cursorOffsetToApply : .constant(nil)
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                if isCodeBlock, let codeLanguage = block.codeLanguage {
+                    Text(codeLanguage)
+                        .appTextStyle(AppTheme.Typography.caption)
+                        .foregroundStyle(AppTheme.Colors.text2)
+                }
+
+                HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                    if let listMarker {
+                        Text(listMarker)
+                            .appTextStyle(textStyle)
+                            .foregroundStyle(AppTheme.Colors.text1)
+                            .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+                    } else if block.type == .checklistItem {
+                        Button(action: onToggleChecklist) {
+                            Image(systemName: block.isChecked ? "checkmark.square" : "square")
+                                .foregroundStyle(block.isChecked ? AppTheme.Colors.primary : AppTheme.Colors.text2)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+                        .frame(height: textStyle.lineHeight, alignment: .center)
+                    } else if block.type == .blockquote {
+                        Rectangle()
+                            .fill(AppTheme.Colors.border)
+                            .frame(width: AppTheme.Spacing.xs)
+                            .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+                    }
+
+                    ParagraphTextField(
+                        text: $text,
+                        textStyle: textStyle,
+                        textColor: textColor,
+                        isMonospaced: isCodeBlock,
+                        onTextChange: onTextChange,
+                        onEnter: { cursorOffset in
+                            onEnter(text, cursorOffset)
+                        },
+                        onBackspaceAtStart: {
+                            onBackspaceAtStart(text)
+                        },
+                        cursorOffsetToApply: focusedBlockId.wrappedValue == block.id ? $cursorOffsetToApply : .constant(nil)
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .focused(focusedBlockId, equals: block.id)
+                }
+            }
             .padding(.horizontal, AppTheme.Spacing.md)
             .padding(.vertical, AppTheme.Spacing.md)
-            .focused(focusedBlockId, equals: block.id)
+            .background(isCodeBlock ? AppTheme.Colors.surface2 : AppTheme.Colors.background)
 
             Rectangle()
                 .fill(AppTheme.Colors.divider)
                 .frame(height: 1)
         }
         .background(AppTheme.Colors.background)
-        .onChange(of: block.markdownSource) { _, newValue in
+        .onChange(of: block.contentJSON) { _, _ in
             // Keep this row's text in sync when the view model changes
             // `block`'s content without the user typing here directly —
             // e.g. a later block's Backspace-at-start merge appends its
-            // text onto the end of this block.
-            let newText = newValue ?? ""
+            // text onto the end of this block, or this same block just
+            // converted from paragraph to heading (its displayed text
+            // drops the `#` prefix).
+            let newText = block.displayText
             if text != newText {
                 text = newText
             }
