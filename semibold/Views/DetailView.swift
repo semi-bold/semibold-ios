@@ -40,7 +40,7 @@ struct DetailView: View {
         }
         .background(AppTheme.Colors.background)
         .background(keyboardShortcuts)
-        .navigationBarBackButtonHidden()
+        .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             viewModel.load()
         }
