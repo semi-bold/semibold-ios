@@ -159,14 +159,19 @@ struct HomeView: View {
     private var documentSection: some View {
         Section {
             if viewModel.documents.isEmpty {
-                // §15.1 "문서가 없을 때" — encourages creating the first
-                // document via the "+" button in `navBar`.
-                emptyRow(text: "이 폴더에 첫 문서를 만들어보세요.")
+                // §15.1 "문서가 없을 때" — root level has no folder context,
+                // so omit "이 폴더에".
+                emptyRow(text: "첫 문서를 만들어보세요.")
             } else {
                 ForEach(viewModel.documents) { document in
                     NavigationLink(value: document) {
                         DocumentRow(document: document, isSelected: document.id == viewModel.selectedDocumentId)
                     }
+                    .listRowBackground(
+                        document.id == viewModel.selectedDocumentId
+                            ? AppTheme.Colors.surface2
+                            : AppTheme.Colors.background
+                    )
                 }
             }
         } header: {
@@ -266,7 +271,6 @@ private struct DocumentRow: View {
             Spacer()
         }
         .padding(.vertical, AppTheme.Spacing.sm)
-        .listRowBackground(isSelected ? AppTheme.Colors.surface2 : AppTheme.Colors.background)
     }
 }
 
