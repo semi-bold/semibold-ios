@@ -20,7 +20,29 @@ final class DetailViewModel {
 
     /// The document's top-level blocks, in display order, excluding
     /// soft-deleted ones.
-    private(set) var blocks: [DocumentBlock] = []
+    ///
+    /// The setter isn't `private` (unlike most other `private(set)`
+    /// properties here) because `DetailViewModel+KeyboardShortcuts.swift`
+    /// (Cmd+B/I/K/Option+1-3, §13.2) edits the focused block's content the
+    /// same way `updateBlockText` does, in its own file — Swift's `private`
+    /// is file-scoped. Still `internal` (module-only), not `public`.
+    var blocks: [DocumentBlock] = []
+
+    /// Whether the editor should show the "Markdown으로 작성하거나 / 를 눌러
+    /// 블록을 추가하세요." empty-state placeholder (§15.1, third case —
+    /// "문서 내용이 없을 때").
+    ///
+    /// `load()` guarantees every document has at least one block, so a
+    /// document "with no content" is the single-paragraph,
+    /// no-text-typed-yet case: exactly one block, of type `.paragraph`,
+    /// whose `displayText` is empty. The placeholder is an overlay shown
+    /// alongside that block's (empty) input — like a text field's
+    /// placeholder text — not a replacement for it, so the user can start
+    /// typing Markdown or press `/` right where the hint appears.
+    var showsEmptyContentPlaceholder: Bool {
+        guard blocks.count == 1, let onlyBlock = blocks.first else { return false }
+        return onlyBlock.type == .paragraph && onlyBlock.displayText.isEmpty
+    }
 
     /// The id of the block the editor should move keyboard focus to next,
     /// e.g. right after a new block is created by pressing Enter. The view
@@ -33,7 +55,23 @@ final class DetailViewModel {
     /// wherever the text view puts it by default."
     private(set) var focusedBlockCursorOffset: Int?
 
-    private let documentBlockRepository: DocumentBlockRepository
+    /// The id of the block whose Slash Command bottom sheet should be
+    /// shown (§12.2 "Slash Command는 bottom sheet 가능", §13.1 "/: Slash
+    /// Command 열기"), or `nil` if no sheet should be shown. Set by
+    /// `updateBlockText` when the user types a lone `/` into an empty
+    /// paragraph block; `DetailView` observes this to present the sheet.
+    private(set) var slashCommandBlockId: String?
+
+    /// Set when a block save or delete fails to persist (§15.2 "저장
+    /// 실패"/"삭제 실패"), so `DetailView` can show the corresponding
+    /// message. `nil` once the message has been shown/dismissed, or after
+    /// the next successful save/delete.
+    var errorMessage: String?
+
+    /// Not `private` for the same cross-file-access reason as `blocks`
+    /// above — `DetailViewModel+KeyboardShortcuts.swift` persists its
+    /// shortcut-driven edits through this same repository.
+    let documentBlockRepository: DocumentBlockRepository
 
     /// How long to wait after the last keystroke before writing a block's
     /// text to the database (PLANNING §11.2 "블록 입력: 300~800ms debounce
@@ -44,7 +82,12 @@ final class DetailViewModel {
     /// In-flight debounce timers, one per block currently being typed
     /// into. A new keystroke cancels and replaces the previous timer for
     /// that block so only the latest edit is written once typing pauses.
-    private var pendingSaveTasks: [String: Task<Void, Never>] = [:]
+    ///
+    /// Not `private` for the same cross-file-access reason as `blocks`
+    /// above — keyboard-shortcut edits cancel any pending debounced save
+    /// for the block they apply to, like `updateBlockText`'s structural
+    /// conversions do.
+    var pendingSaveTasks: [String: Task<Void, Never>] = [:]
 
     init(
         document: Document,
@@ -103,6 +146,20 @@ final class DetailViewModel {
     /// (§11.2 "블록 생성/삭제/순서 변경: 즉시 저장").
     func updateBlockText(_ blockId: String, text: String) {
         guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
+
+        if Self.isSlashCommandTrigger(forTypedText: text, currentType: blocks[index].type) {
+            // The `/` itself is consumed (cleared back to an empty
+            // paragraph) — the Slash Command sheet lets the user pick the
+            // block's new type, then they type its real content fresh.
+            blocks[index].markdownSource = ""
+            blocks[index].contentJSON = BlockContent.paragraphJSON(text: "")
+
+            pendingSaveTasks[blockId]?.cancel()
+            pendingSaveTasks[blockId] = nil
+            persistBlock(blockId)
+            slashCommandBlockId = blockId
+            return
+        }
 
         if blocks[index].type == .paragraph, let heading = Self.headingConversion(forTypedText: text) {
             blocks[index].type = .heading
@@ -214,9 +271,11 @@ final class DetailViewModel {
         do {
             blocks[index] = try documentBlockRepository.update(blocks[index])
         } catch {
-            // Local-only edit if the save fails; the next successful save
-            // (or app relaunch reload) reconciles it. Nothing actionable
-            // for the user to do here.
+            // §15.2 "저장 실패" — the edit stays in memory (so the user
+            // doesn't lose what they typed) but didn't reach the database;
+            // the next successful save (or app relaunch reload) reconciles
+            // it.
+            errorMessage = AppErrorMessages.saveFailed
         }
     }
 
@@ -312,8 +371,10 @@ final class DetailViewModel {
             blocks.insert(created, at: index + 1)
             focusedBlockId = created.id
         } catch {
-            // Local-only state if the save fails; reloading the document
-            // reconciles it. Nothing actionable for the user to do here.
+            // §15.2 "저장 실패" — the new block stays local-only; reloading
+            // the document reconciles it once the database is reachable
+            // again.
+            errorMessage = AppErrorMessages.saveFailed
         }
     }
 
@@ -323,6 +384,15 @@ final class DetailViewModel {
     func focusHandled() {
         focusedBlockId = nil
         focusedBlockCursorOffset = nil
+    }
+
+    /// Closes the Slash Command bottom sheet without converting the block —
+    /// either the user picked an option (handled by
+    /// `convertBlock(_:toSlashCommandOption:)`, which also calls this) or
+    /// dismissed the sheet by swiping it away, leaving the block as an
+    /// empty paragraph.
+    func dismissSlashCommand() {
+        slashCommandBlockId = nil
     }
 
     /// Handles pressing Backspace with the caret at the very start of
@@ -395,8 +465,10 @@ final class DetailViewModel {
             focusedBlockId = previousBlock.id
             focusedBlockCursorOffset = cursorOffset
         } catch {
-            // Local-only state if the delete fails; reloading the document
-            // reconciles it. Nothing actionable for the user to do here.
+            // §15.2 "삭제 실패" — the block stays in the database
+            // un-deleted; reloading the document reconciles the in-memory
+            // list with it.
+            errorMessage = AppErrorMessages.deleteFailed
         }
     }
 
@@ -435,10 +507,61 @@ final class DetailViewModel {
             blocks[neighborIndex] = try documentBlockRepository.update(neighbor)
             blocks.swapAt(index, neighborIndex)
         } catch {
-            // Leave the in-memory order as-is (still reflecting the
-            // original `sortOrder` values) if the save fails, so the
-            // editor's order keeps matching what's persisted.
+            // §15.2 "저장 실패" — leave the in-memory order as-is (still
+            // reflecting the original `sortOrder` values) if the save
+            // fails, so the editor's order keeps matching what's
+            // persisted.
+            errorMessage = AppErrorMessages.saveFailed
         }
+    }
+
+    /// Moves the blocks at `fromOffsets` to just before `toOffset` in
+    /// display order (`Planning_5_MacOSMainFlow` / §12.3's drag & drop
+    /// block reordering), matching SwiftUI's `List.onMove(perform:)`
+    /// signature so it can also back a drag handle if one is ever added.
+    ///
+    /// After reordering the in-memory array, every block's `sortOrder` is
+    /// recomputed to match its new index (0, 1, 2, …) and any block whose
+    /// `sortOrder` actually changed is saved immediately — like
+    /// `moveBlock(id:direction:)` above, reordering is a structural change
+    /// that bypasses the debounce (PLANNING §11.2 "블록 생성/삭제/순서 변경:
+    /// 즉시 저장").
+    func reorderBlocks(fromOffsets source: IndexSet, toOffset destination: Int) {
+        guard !source.isEmpty else { return }
+
+        let previousSortOrders = Dictionary(uniqueKeysWithValues: blocks.map { ($0.id, $0.sortOrder) })
+        blocks.move(fromOffsets: source, toOffset: destination)
+
+        for index in blocks.indices where blocks[index].sortOrder != index {
+            blocks[index].sortOrder = index
+        }
+
+        for block in blocks where previousSortOrders[block.id] != block.sortOrder {
+            persistBlock(block.id)
+        }
+    }
+
+    /// Moves `draggedBlockId` so it sits immediately before `targetBlockId`
+    /// in display order — the persistence-layer counterpart to a
+    /// `.dropDestination` drop in `DetailView` (§12.3 drag & drop block
+    /// reordering). Does nothing if either id can't be found, or if
+    /// `draggedBlockId` is already immediately before `targetBlockId`.
+    func moveBlock(id draggedBlockId: String, beforeBlockId targetBlockId: String) {
+        guard let fromIndex = blocks.firstIndex(where: { $0.id == draggedBlockId }),
+              let targetIndex = blocks.firstIndex(where: { $0.id == targetBlockId }),
+              draggedBlockId != targetBlockId else {
+            return
+        }
+
+        // `move(fromOffsets:toOffset:)` interprets `toOffset` as an index
+        // into the array *before* the moved element is removed, and then
+        // inserts the moved element just before whatever ends up at that
+        // index post-removal. When the dragged block starts above the
+        // target, removing it shifts the target (and everything between
+        // them) up by one — so `toOffset == targetIndex` lands the dragged
+        // block directly above the target either way.
+        let destination = targetIndex
+        reorderBlocks(fromOffsets: IndexSet(integer: fromIndex), toOffset: destination)
     }
 
     /// Builds the `contentJSON` for a plain paragraph block holding

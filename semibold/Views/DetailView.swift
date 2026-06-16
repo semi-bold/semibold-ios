@@ -39,6 +39,7 @@ struct DetailView: View {
             blockList
         }
         .background(AppTheme.Colors.background)
+        .background(keyboardShortcuts)
         .navigationBarBackButtonHidden()
         .onAppear {
             viewModel.load()
@@ -64,6 +65,101 @@ struct DetailView: View {
             // its debounce timer is still pending.
             viewModel.flushPendingChanges()
         }
+        .sheet(isPresented: slashCommandSheetPresented) {
+            SlashCommandSheet { option in
+                if let blockId = viewModel.slashCommandBlockId {
+                    viewModel.convertBlock(blockId, toSlashCommandOption: option)
+                }
+            }
+        }
+        .alert(
+            "Error",
+            isPresented: errorAlertPresented,
+            presenting: viewModel.errorMessage
+        ) { _ in
+            Button("OK") {
+                viewModel.errorMessage = nil
+            }
+        } message: { message in
+            // §15.2 "저장 실패"/"삭제 실패" — shown when a block edit,
+            // create, or delete couldn't be persisted.
+            Text(message)
+        }
+    }
+
+    /// Whether the §15.2 save/delete-failure alert is shown — driven by
+    /// `viewModel.errorMessage`. Dismissing the alert (the "OK" button, or
+    /// swiping it away) clears the message so it doesn't reappear.
+    private var errorAlertPresented: Binding<Bool> {
+        Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    viewModel.errorMessage = nil
+                }
+            }
+        )
+    }
+
+    /// Whether the Slash Command bottom sheet (§12.2/§13.1) is shown —
+    /// driven by `viewModel.slashCommandBlockId`, set when the user types a
+    /// lone `/` into an empty paragraph block. Swiping the sheet away (the
+    /// `false` write below) clears that id via `dismissSlashCommand()` so
+    /// it doesn't reopen.
+    private var slashCommandSheetPresented: Binding<Bool> {
+        Binding(
+            get: { viewModel.slashCommandBlockId != nil },
+            set: { isPresented in
+                if !isPresented {
+                    viewModel.dismissSlashCommand()
+                }
+            }
+        )
+    }
+
+    // MARK: - macOS keyboard shortcuts
+
+    /// Invisible buttons that exist only to register the macOS
+    /// keyboard shortcuts from §13.2 — Cmd+B/I/K and Cmd+Option+1/2/3 — and
+    /// apply them to whichever block currently has keyboard focus.
+    ///
+    /// `ParagraphTextField` is a `UITextView` wrapper that doesn't surface
+    /// these key combinations to SwiftUI directly, so `.keyboardShortcut()`
+    /// on buttons scoped to this screen is the standard SwiftUI pattern for
+    /// "while the editor is visible, this key combo does X." The buttons
+    /// are zero-sized and hidden from accessibility — they're never seen or
+    /// tapped, only triggered by their shortcut.
+    private var keyboardShortcuts: some View {
+        Group {
+            Button("Bold") {
+                guard let blockId = focusedBlockId else { return }
+                viewModel.toggleBoldOnBlock(blockId)
+            }
+            .keyboardShortcut("b", modifiers: [.command])
+
+            Button("Italic") {
+                guard let blockId = focusedBlockId else { return }
+                viewModel.toggleItalicOnBlock(blockId)
+            }
+            .keyboardShortcut("i", modifiers: [.command])
+
+            Button("Link") {
+                guard let blockId = focusedBlockId else { return }
+                viewModel.toggleLinkOnBlock(blockId)
+            }
+            .keyboardShortcut("k", modifiers: [.command])
+
+            ForEach(1...3, id: \.self) { level in
+                Button("Heading \(level)") {
+                    guard let blockId = focusedBlockId else { return }
+                    viewModel.convertBlockToHeading(blockId, level: level)
+                }
+                .keyboardShortcut(KeyEquivalent(Character("\(level)")), modifiers: [.command, .option])
+            }
+        }
+        .frame(width: 0, height: 0)
+        .hidden()
+        .accessibilityHidden(true)
     }
 
     // MARK: - Nav bar
@@ -74,6 +170,13 @@ struct DetailView: View {
     /// (`DocLockBtn`) — that's Secret Lock, explicitly out of this
     /// planning's scope (callout ④ of `Planning_4_BlockCreateFlow`,
     /// PLANNING §1.2), so it's omitted here.
+    ///
+    /// A trailing share button (§10.3 "파일 저장 또는 공유") is added on the
+    /// opposite side from the back button — no `Screen_*`/`Planning_N_*Flow`
+    /// artboard defines an export affordance for `iOS_Editor` (only the
+    /// "잠금" button is shown there, and that's the out-of-scope Secret Lock
+    /// button above), so this reuses the back button's row/typography and a
+    /// standard SF Symbol share icon rather than inventing new layout.
     private var navBar: some View {
         VStack(spacing: 0) {
             HStack {
@@ -86,6 +189,8 @@ struct DetailView: View {
                 }
 
                 Spacer()
+
+                exportShareLink
             }
             .padding(.horizontal, AppTheme.Spacing.md)
             .frame(height: 52)
@@ -95,6 +200,31 @@ struct DetailView: View {
                 .frame(height: 1)
         }
         .background(AppTheme.Colors.surface)
+    }
+
+    /// "파일 저장 또는 공유" (§10.3's final step): shares the document's
+    /// blocks as a Markdown `.md` file, using `ShareLink`'s standard sheet —
+    /// which already covers both "Save to Files" and sharing to other apps
+    /// from one control.
+    ///
+    /// `ShareLink(item:)` takes a `MarkdownDocumentExport` (a `Transferable`
+    /// wrapping this document's title and current blocks) rather than a
+    /// pre-rendered file `URL`. That defers `MarkdownExporter.render` and the
+    /// temporary-file write to `MarkdownDocumentExport`'s `exporting` closure,
+    /// which only runs when the user taps this button and the system actually
+    /// requests the export — not on every `body` re-evaluation (e.g. every
+    /// keystroke).
+    private var exportShareLink: some View {
+        let export = MarkdownDocumentExport(documentTitle: viewModel.document.title, blocks: viewModel.blocks)
+        return ShareLink(
+            item: export,
+            preview: SharePreview(
+                MarkdownDocumentExport.fileName(forDocumentTitle: viewModel.document.title)
+            )
+        ) {
+            Image(systemName: "square.and.arrow.up")
+                .foregroundStyle(AppTheme.Colors.primary)
+        }
     }
 
     // MARK: - Title area
@@ -145,11 +275,49 @@ struct DetailView: View {
                             viewModel.toggleChecklistItem(blockId: block.id)
                         }
                     )
+                    // Drag & drop block reordering (§12.3): dropping
+                    // another block onto this row moves it to this row's
+                    // position (PLANNING §11.2 "블록 생성/삭제/순서 변경: 즉시
+                    // 저장" — `moveBlock(id:beforeBlockId:)` persists the new
+                    // `sortOrder`s right away, no debounce). The drag itself
+                    // starts from `BlockRow`'s trailing grip handle, so it
+                    // doesn't conflict with tapping into the row to edit.
+                    .dropDestination(for: String.self) { droppedIds, _ in
+                        guard let draggedBlockId = droppedIds.first else { return false }
+                        viewModel.moveBlock(id: draggedBlockId, beforeBlockId: block.id)
+                        return true
+                    }
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(AppTheme.Colors.background)
+        .overlay(alignment: .topLeading) {
+            if viewModel.showsEmptyContentPlaceholder {
+                emptyContentPlaceholder
+            }
+        }
+    }
+
+    /// Empty-state hint shown over the document's single empty paragraph
+    /// block (§15.1, "문서 내용이 없을 때": "Markdown으로 작성하거나 / 를 눌러
+    /// 블록을 추가하세요.").
+    ///
+    /// Positioned like a text field's placeholder text — sitting on top of
+    /// that block's (currently empty) input at the same padding/typography
+    /// it uses, so it reads as "type here" rather than a separate message.
+    /// `allowsHitTesting(false)` lets taps pass through to the block's text
+    /// input underneath, and it disappears as soon as the user types
+    /// anything (Markdown) or presses `/` (which opens the Slash Command
+    /// sheet from the previous AC).
+    private var emptyContentPlaceholder: some View {
+        Text("Markdown으로 작성하거나 / 를 눌러 블록을 추가하세요.")
+            .appTextStyle(AppTheme.Typography.body)
+            .foregroundStyle(AppTheme.Colors.text2)
+            .padding(.horizontal, AppTheme.Spacing.md)
+            .padding(.vertical, AppTheme.Spacing.md)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
@@ -242,7 +410,55 @@ private struct BlockRow: View {
         block.type == .codeBlock
     }
 
+    /// Whether this block is a `.divider` — rendered as a horizontal rule
+    /// with no editable text (the Slash Command "Divider" option, §12.2).
+    private var isDivider: Bool {
+        block.type == .divider
+    }
+
     var body: some View {
+        if isDivider {
+            dividerBody
+        } else {
+            editableBody
+        }
+    }
+
+    /// A `.divider` block's row: a horizontal rule, matching the visual
+    /// language of a Markdown `---` divider. Not editable — there's no
+    /// `ParagraphTextField` for a divider since it has no text content
+    /// (§8.1 `{ type: "divider" }`).
+    private var dividerBody: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: AppTheme.Spacing.sm) {
+                Rectangle()
+                    .fill(AppTheme.Colors.border)
+                    .frame(height: 1)
+
+                dragHandle
+            }
+            .padding(.horizontal, AppTheme.Spacing.md)
+            .padding(.vertical, AppTheme.Spacing.lg)
+
+            Rectangle()
+                .fill(AppTheme.Colors.divider)
+                .frame(height: 1)
+        }
+        .background(AppTheme.Colors.background)
+    }
+
+    /// A small grip icon at the trailing edge of a block row — the drag
+    /// source for §12.3's drag & drop reordering. Long-pressing it and
+    /// dragging onto another row moves this block to that row's position
+    /// (`DetailView.blockList`'s `.dropDestination` handles the drop).
+    private var dragHandle: some View {
+        Image(systemName: "line.3.horizontal")
+            .foregroundStyle(AppTheme.Colors.text2)
+            .frame(width: AppTheme.Spacing.lg, height: AppTheme.Spacing.lg)
+            .draggable(block.id)
+    }
+
+    private var editableBody: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                 if isCodeBlock, let codeLanguage = block.codeLanguage {
@@ -288,6 +504,9 @@ private struct BlockRow: View {
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .focused(focusedBlockId, equals: block.id)
+
+                    dragHandle
+                        .padding(.top, (textStyle.lineHeight - AppTheme.Spacing.lg) / 2)
                 }
             }
             .padding(.horizontal, AppTheme.Spacing.md)

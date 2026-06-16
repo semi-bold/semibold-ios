@@ -13,13 +13,13 @@ import Testing
 /// `ChecklistConversionTests` precedent.
 @MainActor
 struct BlockquoteConversionTests {
-    private func makeDatabaseManager() -> DatabaseManager {
-        DatabaseManager(path: ":memory:")
+    private func makeDatabaseManager() throws -> DatabaseManager {
+        try DatabaseManager(path: ":memory:")
     }
 
     @Test("Typing '> quote' converts the block to a blockquote, saved immediately")
     func typingBlockquotePrefixConvertsBlockToBlockquote() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -56,7 +56,7 @@ struct BlockquoteConversionTests {
 
     @Test("Editing a blockquote keeps it a blockquote and rebuilds markdownSource with the '> ' prefix")
     func editingBlockquoteRebuildsMarkdownSource() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -83,7 +83,7 @@ struct BlockquoteConversionTests {
 
     @Test("'>quote' (no space) does NOT convert to a blockquote")
     func noSpaceAfterAngleBracketDoesNotConvert() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -101,7 +101,7 @@ struct BlockquoteConversionTests {
 
     @Test("'>> quote' (second character isn't a space) does NOT convert to a blockquote")
     func doubleAngleBracketDoesNotConvert() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -122,7 +122,7 @@ struct BlockquoteConversionTests {
 
     @Test("'> ' blockquote prefix doesn't conflict with heading/list/checklist prefixes")
     func blockquotePrefixDoesNotConflictWithOtherPrefixes() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 

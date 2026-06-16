@@ -11,6 +11,10 @@ import SwiftUI
 struct HomeView: View {
     @State private var viewModel = HomeViewModel()
 
+    /// Shared trigger point for the macOS "New Document"/"New Folder" menu
+    /// commands (Cmd+N / Cmd+Shift+N, §13.2) — see `AppCommandCenter`.
+    @Environment(AppCommandCenter.self) private var commandCenter
+
     /// Whether the "+" menu (`iOS_AddMenu`) is showing, offering "New
     /// Folder" / "New Document" / "Cancel" (callouts ④/⑤ of
     /// `Planning_2_FolderCreateFlow` / `Planning_3_DocumentCreateFlow`).
@@ -41,6 +45,14 @@ struct HomeView: View {
         }
         .onAppear {
             viewModel.load()
+        }
+        .onChange(of: commandCenter.newDocumentRequestCount) {
+            // Cmd+N (§13.2) — open the same sheet as "+" → "New Document".
+            isNewDocumentSheetPresented = true
+        }
+        .onChange(of: commandCenter.newFolderRequestCount) {
+            // Cmd+Shift+N (§13.2) — open the same sheet as "+" → "New Folder".
+            isNewFolderSheetPresented = true
         }
         .confirmationDialog("Add", isPresented: $isAddMenuPresented, titleVisibility: .hidden) {
             Button("New Folder") {
@@ -129,7 +141,9 @@ struct HomeView: View {
     private var folderSection: some View {
         Section {
             if viewModel.folders.isEmpty {
-                emptyRow(text: "No folders yet")
+                // §15.1 "폴더가 없을 때" — encourages creating the first
+                // folder via the "+" button in `navBar`.
+                emptyRow(text: "첫 폴더를 만들어보세요.")
             } else {
                 ForEach(viewModel.folders) { folder in
                     FolderRow(folder: folder, isSelected: folder.id == viewModel.selectedFolderId)
@@ -145,7 +159,9 @@ struct HomeView: View {
     private var documentSection: some View {
         Section {
             if viewModel.documents.isEmpty {
-                emptyRow(text: "No documents yet")
+                // §15.1 "문서가 없을 때" — encourages creating the first
+                // document via the "+" button in `navBar`.
+                emptyRow(text: "이 폴더에 첫 문서를 만들어보세요.")
             } else {
                 ForEach(viewModel.documents) { document in
                     NavigationLink(value: document) {
@@ -256,4 +272,5 @@ private struct DocumentRow: View {
 
 #Preview {
     HomeView()
+        .environment(AppCommandCenter())
 }

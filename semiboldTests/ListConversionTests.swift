@@ -12,13 +12,13 @@ import Testing
 /// within SwiftLint's `type_body_length`.
 @MainActor
 struct ListConversionTests {
-    private func makeDatabaseManager() -> DatabaseManager {
-        DatabaseManager(path: ":memory:")
+    private func makeDatabaseManager() throws -> DatabaseManager {
+        try DatabaseManager(path: ":memory:")
     }
 
     @Test("Typing '- item' converts the block to a bulleted list item, saved immediately")
     func typingHyphenSpacePrefixConvertsBlockToBulletedListItem() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -55,7 +55,7 @@ struct ListConversionTests {
 
     @Test("Typing '1. item' converts the block to a numbered list item, saved immediately")
     func typingNumberDotSpacePrefixConvertsBlockToNumberedListItem() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -86,7 +86,7 @@ struct ListConversionTests {
 
     @Test("A multi-digit numbered list prefix keeps its literal number")
     func multiDigitNumberedListPrefixKeepsLiteralNumber() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -106,7 +106,7 @@ struct ListConversionTests {
 
     @Test("Editing a bulleted list item keeps its type and rebuilds markdownSource with the '- ' prefix")
     func editingBulletedListItemKeepsTypeAndPrefix() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -132,7 +132,7 @@ struct ListConversionTests {
 
     @Test("Editing a numbered list item keeps its number and rebuilds markdownSource with the '<n>. ' prefix")
     func editingNumberedListItemKeepsNumberAndPrefix() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -157,7 +157,7 @@ struct ListConversionTests {
 
     @Test("'-item' without a space doesn't trigger bulleted list conversion")
     func hyphenWithoutSpaceDoesNotConvertToBulletedList() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -175,7 +175,7 @@ struct ListConversionTests {
 
     @Test("'-- item' doesn't trigger bulleted list conversion")
     func doubleHyphenDoesNotConvertToBulletedList() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -193,7 +193,7 @@ struct ListConversionTests {
 
     @Test("A digit without '. ' doesn't trigger numbered list conversion")
     func digitWithoutDotSpaceDoesNotConvertToNumberedList() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -211,7 +211,7 @@ struct ListConversionTests {
 
     @Test("'1.item' without a space after the period doesn't trigger numbered list conversion")
     func digitDotWithoutSpaceDoesNotConvertToNumberedList() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
