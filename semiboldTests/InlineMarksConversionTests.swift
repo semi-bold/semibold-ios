@@ -16,13 +16,13 @@ import Testing
 /// checklist, blockquote), not just one type conversion.
 @MainActor
 struct InlineMarksConversionTests {
-    private func makeDatabaseManager() -> DatabaseManager {
-        DatabaseManager(path: ":memory:")
+    private func makeDatabaseManager() throws -> DatabaseManager {
+        try DatabaseManager(path: ":memory:")
     }
 
     @Test("Typing '**bold** text' into a paragraph block produces a bold span and a plain span")
     func boldTextInParagraphProducesMarkedSpans() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -53,7 +53,7 @@ struct InlineMarksConversionTests {
 
     @Test("Typing inline marks (italic, strike, inline code, link) produces the matching marked spans")
     func variousInlineMarksProduceMatchingSpans() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -83,7 +83,7 @@ struct InlineMarksConversionTests {
 
     @Test("Inline marks compose with heading conversion — typing '# **bold** title' produces a heading with a bold span")
     func inlineMarksComposeWithHeadingConversion() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -112,7 +112,7 @@ struct InlineMarksConversionTests {
 
     @Test("Typing 'plain' (no Markdown syntax) keeps a single unmarked span")
     func plainTextStaysUnmarked() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 

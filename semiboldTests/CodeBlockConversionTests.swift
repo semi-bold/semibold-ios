@@ -13,13 +13,13 @@ import Testing
 /// `ChecklistConversionTests`/`BlockquoteConversionTests` precedent.
 @MainActor
 struct CodeBlockConversionTests {
-    private func makeDatabaseManager() -> DatabaseManager {
-        DatabaseManager(path: ":memory:")
+    private func makeDatabaseManager() throws -> DatabaseManager {
+        try DatabaseManager(path: ":memory:")
     }
 
     @Test("Typing '```swift' converts the block to a code block with language 'swift', saved immediately")
     func typingFenceWithLanguageConvertsBlockToCodeBlock() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -57,7 +57,7 @@ struct CodeBlockConversionTests {
 
     @Test("Typing '```' alone converts the block to a code block with no language")
     func typingBareFenceConvertsBlockToCodeBlockWithNoLanguage() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -82,7 +82,7 @@ struct CodeBlockConversionTests {
 
     @Test("Typing '```swift extra' keeps 'extra' as the code block's initial code")
     func typingFenceWithTrailingTextKeepsItAsInitialCode() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -106,7 +106,7 @@ struct CodeBlockConversionTests {
 
     @Test("Editing a code block keeps it a code block and rebuilds markdownSource with the fence")
     func editingCodeBlockRebuildsMarkdownSource() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -135,7 +135,7 @@ struct CodeBlockConversionTests {
 
     @Test("'``' (two backticks) does NOT convert to a code block")
     func twoBackticksDoesNotConvert() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -153,7 +153,7 @@ struct CodeBlockConversionTests {
 
     @Test("'`' (one backtick) does NOT convert to a code block")
     func oneBacktickDoesNotConvert() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
@@ -171,7 +171,7 @@ struct CodeBlockConversionTests {
 
     @Test("'```' code-fence prefix doesn't conflict with heading/list/checklist/blockquote prefixes")
     func codeFencePrefixDoesNotConflictWithOtherPrefixes() throws {
-        let database = makeDatabaseManager()
+        let database = try makeDatabaseManager()
         let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
         let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
 
