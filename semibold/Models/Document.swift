@@ -6,7 +6,7 @@ import GRDB
 /// A document lives inside a folder (or at the top level when
 /// `folderId` is `nil`) and is made up of an ordered tree of
 /// `DocumentBlock`s that hold its actual content.
-struct Document: Identifiable, Equatable, Codable {
+struct Document: Identifiable, Equatable, Hashable, Codable {
     var id: String
     var folderId: String?
     var title: String
