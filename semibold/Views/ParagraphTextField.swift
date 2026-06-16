@@ -12,6 +12,25 @@ import UIKit
 struct ParagraphTextField: UIViewRepresentable {
     @Binding var text: String
 
+    /// The typography this block's text is shown in — `AppTheme.Typography
+    /// .body` for a plain paragraph, or `.heading1`/`.heading2`/`.heading3`
+    /// for a `.heading` block (§7.1/§7.3's `# `/`## `/`### ` conversions).
+    /// Defaults to `.body` so existing call sites don't need to change.
+    var textStyle: TextStyleToken = AppTheme.Typography.body
+
+    /// The text color this block's content is shown in —
+    /// `AppTheme.Colors.text1` for most blocks, or `.text2` for a
+    /// `.blockquote` block's dimmed quote text (§7.1/§7.3's `> quote`
+    /// syntax). Defaults to `.text1` so existing call sites don't need to
+    /// change.
+    var textColor: Color = AppTheme.Colors.text1
+
+    /// Whether this block's text is shown in a monospaced font — `true`
+    /// for a `.codeBlock` block's code (§7.1/§7.3's ` ```lang ` syntax), so
+    /// code reads distinctly from prose. Defaults to `false` so existing
+    /// call sites don't need to change.
+    var isMonospaced: Bool = false
+
     /// Called as the user edits this block's text, so the document
     /// editor can save the change.
     var onTextChange: (String) -> Void
@@ -34,13 +53,22 @@ struct ParagraphTextField: UIViewRepresentable {
     /// to `nil` once it's been applied.
     @Binding var cursorOffsetToApply: Int?
 
+    /// The `UIFont` for this field's current `textStyle`/`isMonospaced` —
+    /// a monospaced font for `.codeBlock` blocks, or the system font at
+    /// `textStyle`'s size/weight otherwise.
+    private var font: UIFont {
+        if isMonospaced {
+            return UIFont.monospacedSystemFont(ofSize: textStyle.size, weight: textStyle.weight.uiFontWeight)
+        }
+        return UIFont.systemFont(ofSize: textStyle.size, weight: textStyle.weight.uiFontWeight)
+    }
+
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
         textView.delegate = context.coordinator
-        let bodyStyle = AppTheme.Typography.body
-        textView.font = UIFont.systemFont(ofSize: bodyStyle.size, weight: bodyStyle.weight.uiFontWeight)
+        textView.font = font
         textView.backgroundColor = .clear
-        textView.textColor = UIColor(AppTheme.Colors.text1)
+        textView.textColor = UIColor(textColor)
         textView.isScrollEnabled = false
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
@@ -51,6 +79,16 @@ struct ParagraphTextField: UIViewRepresentable {
     func updateUIView(_ uiView: UITextView, context: Context) {
         if uiView.text != text {
             uiView.text = text
+        }
+
+        let font = font
+        if uiView.font != font {
+            uiView.font = font
+        }
+
+        let color = UIColor(textColor)
+        if uiView.textColor != color {
+            uiView.textColor = color
         }
 
         if let offset = cursorOffsetToApply {

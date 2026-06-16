@@ -92,11 +92,99 @@ final class DetailViewModel {
     /// 저장 원칙, §11.2 "블록 입력: 300~800ms debounce 후 저장"). A new
     /// keystroke cancels the previous block's pending save and restarts the
     /// timer, so rapid typing only writes once the user pauses.
+    ///
+    /// Before applying a plain text edit, checks whether `text` now starts
+    /// with a supported Markdown prefix (`# `/`## `/`### `, `- `, `<n>. `,
+    /// `- [ ] `/`- [x] `, `> `, ` ``` `/` ```<lang> `) — if so, the block's
+    /// type is converted on the spot
+    /// (`Planning_4_BlockCreateFlow`'s "Markdown Syntax → Markdown parser가
+    /// 타입 감지" branch, §5.4) and saved immediately rather than going
+    /// through the debounce, since a type change is a structural edit
+    /// (§11.2 "블록 생성/삭제/순서 변경: 즉시 저장").
     func updateBlockText(_ blockId: String, text: String) {
         guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
 
-        blocks[index].markdownSource = text
-        blocks[index].contentJSON = Self.contentJSON(forText: text)
+        if blocks[index].type == .paragraph, let heading = Self.headingConversion(forTypedText: text) {
+            blocks[index].type = .heading
+            blocks[index].contentJSON = BlockContent.headingJSON(level: heading.level, text: heading.text)
+            blocks[index].markdownSource = heading.markdownSource
+
+            pendingSaveTasks[blockId]?.cancel()
+            pendingSaveTasks[blockId] = nil
+            persistBlock(blockId)
+            return
+        }
+
+        if blocks[index].type == .paragraph, let checklist = Self.checklistConversion(forTypedText: text) {
+            blocks[index].type = .checklistItem
+            blocks[index].contentJSON = BlockContent.checklistItemJSON(checked: checklist.checked, text: checklist.text)
+            blocks[index].markdownSource = checklist.markdownSource
+
+            pendingSaveTasks[blockId]?.cancel()
+            pendingSaveTasks[blockId] = nil
+            persistBlock(blockId)
+            return
+        }
+
+        if blocks[index].type == .paragraph, let list = Self.listConversion(forTypedText: text) {
+            blocks[index].type = list.type
+            blocks[index].contentJSON = list.contentJSON(text: list.text)
+            blocks[index].markdownSource = list.markdownSource
+
+            pendingSaveTasks[blockId]?.cancel()
+            pendingSaveTasks[blockId] = nil
+            persistBlock(blockId)
+            return
+        }
+
+        if blocks[index].type == .paragraph, let blockquote = Self.blockquoteConversion(forTypedText: text) {
+            blocks[index].type = .blockquote
+            blocks[index].contentJSON = BlockContent.blockquoteJSON(text: blockquote.text)
+            blocks[index].markdownSource = blockquote.markdownSource
+
+            pendingSaveTasks[blockId]?.cancel()
+            pendingSaveTasks[blockId] = nil
+            persistBlock(blockId)
+            return
+        }
+
+        if blocks[index].type == .paragraph, let codeBlock = Self.codeBlockConversion(forTypedText: text) {
+            blocks[index].type = .codeBlock
+            blocks[index].contentJSON = BlockContent.codeBlockJSON(language: codeBlock.language, code: codeBlock.code)
+            blocks[index].markdownSource = Self.codeBlockMarkdownSource(language: codeBlock.language, code: codeBlock.code)
+
+            pendingSaveTasks[blockId]?.cancel()
+            pendingSaveTasks[blockId] = nil
+            persistBlock(blockId)
+            return
+        }
+
+        if blocks[index].type == .heading {
+            let level = Self.headingLevel(forContentJSON: blocks[index].contentJSON)
+            blocks[index].markdownSource = Self.headingMarkdownSource(level: level, text: text)
+            blocks[index].contentJSON = BlockContent.headingJSON(level: level, text: text)
+        } else if blocks[index].type == .bulletedListItem {
+            blocks[index].markdownSource = Self.bulletedListMarkdownSource(text: text)
+            blocks[index].contentJSON = BlockContent.bulletedListItemJSON(text: text)
+        } else if blocks[index].type == .numberedListItem {
+            let number = BlockContent.leadingNumber(forMarkdownSource: blocks[index].markdownSource)
+            blocks[index].markdownSource = Self.numberedListMarkdownSource(number: number, text: text)
+            blocks[index].contentJSON = BlockContent.numberedListItemJSON(text: text)
+        } else if blocks[index].type == .checklistItem {
+            let checked = blocks[index].isChecked
+            blocks[index].markdownSource = Self.checklistMarkdownSource(checked: checked, text: text)
+            blocks[index].contentJSON = BlockContent.checklistItemJSON(checked: checked, text: text)
+        } else if blocks[index].type == .blockquote {
+            blocks[index].markdownSource = Self.blockquoteMarkdownSource(text: text)
+            blocks[index].contentJSON = BlockContent.blockquoteJSON(text: text)
+        } else if blocks[index].type == .codeBlock {
+            let language = blocks[index].codeLanguage
+            blocks[index].markdownSource = Self.codeBlockMarkdownSource(language: language, code: text)
+            blocks[index].contentJSON = BlockContent.codeBlockJSON(language: language, code: text)
+        } else {
+            blocks[index].markdownSource = text
+            blocks[index].contentJSON = BlockContent.paragraphJSON(text: text)
+        }
 
         pendingSaveTasks[blockId]?.cancel()
         pendingSaveTasks[blockId] = Task { @MainActor [weak self, autosaveDebounceInterval] in
@@ -130,6 +218,29 @@ final class DetailViewModel {
             // (or app relaunch reload) reconciles it. Nothing actionable
             // for the user to do here.
         }
+    }
+
+    /// Toggles a `.checklistItem` block's done/not-done state (§7.1's
+    /// checkbox tap). Flips `contentJSON.checked`, rebuilds
+    /// `markdownSource` to match (`"- [ ] task"` ↔ `"- [x] task"`), and
+    /// persists immediately — like the prefix conversions above, this is a
+    /// structural edit rather than a text edit, so it bypasses the
+    /// debounce (PLANNING §11.2 "블록 생성/삭제/순서 변경: 즉시 저장").
+    ///
+    /// Does nothing if `blockId` isn't a `.checklistItem` block.
+    func toggleChecklistItem(blockId: String) {
+        guard let index = blocks.firstIndex(where: { $0.id == blockId }), blocks[index].type == .checklistItem else {
+            return
+        }
+
+        let newChecked = !blocks[index].isChecked
+        let text = blocks[index].displayText
+        blocks[index].contentJSON = BlockContent.checklistItemJSON(checked: newChecked, text: text)
+        blocks[index].markdownSource = Self.checklistMarkdownSource(checked: newChecked, text: text)
+
+        pendingSaveTasks[blockId]?.cancel()
+        pendingSaveTasks[blockId] = nil
+        persistBlock(blockId)
     }
 
     /// Writes every block with a pending debounced save right away
@@ -331,27 +442,10 @@ final class DetailViewModel {
     }
 
     /// Builds the `contentJSON` for a plain paragraph block holding
-    /// `text` (PLANNING §8.1's `{ type: "paragraph", text: RichTextSpan[] }`
-    /// shape). Inline formatting marks are `markdown-phase4` scope, so each
-    /// block is a single unstyled text span for now.
+    /// `text` (§8.1's `{ type: "paragraph", text: RichTextSpan[] }` shape).
+    /// Inline formatting marks are `markdown-phase4` follow-up scope (AC6),
+    /// so each block is a single unstyled text span for now.
     private static func contentJSON(forText text: String) -> String {
-        let span = ParagraphContent(text: [ParagraphContent.Span(text: text)])
-        guard let data = try? JSONEncoder().encode(span),
-              let json = String(data: data, encoding: .utf8) else {
-            return "{\"type\":\"paragraph\",\"text\":[]}"
-        }
-        return json
-    }
-}
-
-/// The `contentJSON` shape for a `.paragraph` block (PLANNING §8.1).
-/// Inline formatting marks (`bold`, `italic`, …) are `markdown-phase4`
-/// scope, so `Span` only carries plain text for now.
-private struct ParagraphContent: Codable {
-    let type = "paragraph"
-    var text: [Span]
-
-    struct Span: Codable {
-        var text: String
+        BlockContent.paragraphJSON(text: text)
     }
 }
