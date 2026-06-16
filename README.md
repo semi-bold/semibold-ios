@@ -20,6 +20,19 @@
 The `.xcodeproj` is generated from `project.yml` and is not committed to
 git — re-run `xcodegen generate` after pulling changes to `project.yml`.
 
+## Running in Simulator
+
+1. Select a scheme (`semibold`) and an iPhone simulator in Xcode
+2. Press `⌘R` to build and run
+
+To run the test suite from the terminal:
+
+```bash
+xcodebuild test \
+  -scheme semibold \
+  -destination 'platform=iOS Simulator,name=iPhone 16'
+```
+
 ## Dependencies
 
 - [GRDB.swift](https://github.com/groue/GRDB.swift) — local SQLite
