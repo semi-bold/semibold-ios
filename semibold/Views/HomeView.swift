@@ -167,11 +167,6 @@ struct HomeView: View {
                     NavigationLink(value: document) {
                         DocumentRow(document: document, isSelected: document.id == viewModel.selectedDocumentId)
                     }
-                    .listRowBackground(
-                        document.id == viewModel.selectedDocumentId
-                            ? AppTheme.Colors.surface2
-                            : AppTheme.Colors.background
-                    )
                 }
             }
         } header: {
@@ -271,6 +266,7 @@ private struct DocumentRow: View {
             Spacer()
         }
         .padding(.vertical, AppTheme.Spacing.sm)
+        .listRowBackground(isSelected ? AppTheme.Colors.surface2 : AppTheme.Colors.background)
     }
 }
 
