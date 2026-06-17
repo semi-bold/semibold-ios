@@ -164,16 +164,11 @@ struct HomeView: View {
                 emptyRow(text: "첫 문서를 만들어보세요.")
             } else {
                 ForEach(viewModel.documents) { document in
-                    NavigationLink(value: document) {
-                        DocumentRow(document: document, isSelected: document.id == viewModel.selectedDocumentId)
-                    }
+                    DocumentRow(document: document, isSelected: document.id == viewModel.selectedDocumentId)
                 }
             }
         } header: {
             sectionHeader("Documents")
-        }
-        .navigationDestination(for: Document.self) { document in
-            DetailView(document: document)
         }
     }
 
