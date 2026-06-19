@@ -120,7 +120,7 @@ Status: in-progress
 - [x] `FolderDocumentPersistenceTests.swift`, `DetailViewModelTests.swift`
       등 GRDB 의존 테스트가 Core Data in-memory 컨테이너 기준으로
       재작성되어 전체 테스트 스위트가 통과함
-- [ ] `project.yml`에서 GRDB SPM 패키지 의존성이 제거되고
+- [x] `project.yml`에서 GRDB SPM 패키지 의존성이 제거되고
       `xcodegen generate` 후 빌드가 정상 동작함
 
 ## Open Questions / Follow-ups

@@ -1,5 +1,4 @@
 import Foundation
-import GRDB
 
 /// The kind of content a `DocumentBlock` holds, mirroring the writing
 /// elements the editor offers (paragraph, heading, lists, quote, code,
@@ -57,8 +56,4 @@ struct DocumentBlock: Identifiable, Equatable, Codable {
         self.updatedAt = updatedAt
         self.deletedAt = deletedAt
     }
-}
-
-extension DocumentBlock: FetchableRecord, PersistableRecord {
-    static let databaseTableName = "document_blocks"
 }
