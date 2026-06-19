@@ -114,7 +114,7 @@ Status: in-progress
       `shared`/`sharedOrFallbackQueue`에 대응하는 접근 지점이 기존과
       동일한 실패 처리(열기 실패 시 `DatabaseUnavailableView` 분기)를
       유지함
-- [ ] `FolderRepository`, `DocumentRepository`, `DocumentBlockRepository`가
+- [x] `FolderRepository`, `DocumentRepository`, `DocumentBlockRepository`가
       Core Data로 재작성되고 기존 메서드 시그니처를 유지하며, soft
       delete(`deletedAt`) 동작이 기존과 동일하게 보존됨
 - [ ] `FolderDocumentPersistenceTests.swift`, `DetailViewModelTests.swift`
@@ -135,3 +135,9 @@ Status: in-progress
 - `AppMigrations.swift`가 더 이상 `DatabaseManager.init`에서 호출되지
   않아 죽은 코드가 됨 — GRDB 의존성 제거(5번 AC 항목)와 같은 패스에서
   함께 삭제할 것.
+- `hardDelete(id:)`(Folder/Document 양쪽)가 자식의 `deletedAt` 상태와
+  무관하게 하위 전체를 영구 삭제하도록 구현됨 — `Deny` 삭제 규칙을
+  만족시키기 위한 의도된 동작이며, 문서 주석에 경고를 명시함. 다만 현재
+  실제 호출부는 테스트뿐이고 UI에서 호출하는 곳은 없음 — 향후 "폴더/문서
+  영구 삭제" UI를 만들 때는 호출 전 반드시 소프트 삭제 확인 또는
+  사용자 확인을 거치도록 할 것.
