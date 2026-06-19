@@ -1,6 +1,6 @@
 # Feature: 01-coredata-migration
 
-Status: in-progress
+Status: done
 
 ## Source
 
