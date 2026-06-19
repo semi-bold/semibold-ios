@@ -1,6 +1,6 @@
 # Feature: 02-icloud-sync-branching
 
-Status: draft
+Status: in-progress
 
 ## Source
 
@@ -45,7 +45,11 @@ Status: draft
 ## Decisions & Deviations
 
 - CloudKit 컨테이너 식별자는 `iCloud.com.semibold.semibold`로 고정
-  (Developer Console에 등록된 식별자와 일치시킬 것 — TASKS 섹션 2 참고)
+  (Developer Console에 등록될 식별자와 일치시킬 것). 이 브리프 작업
+  시점에 `project.yml`의 `DEVELOPMENT_TEAM`이 아직 빈 값이고
+  `semibold.entitlements` 파일도 없음 — Apple Developer Console
+  설정(Team ID 발급)이 완료되지 않은 상태이므로, 분기 로직은 구현하되
+  실제 CloudKit 컨테이너 연동은 entitlements 설정 후로 미룸
 - iCloud 가용성 재확인 시점: 설정 화면 진입 시마다 재확인 (실시간 토글
   반응이 아니라 화면 재진입 시 갱신) — Team ID 미확정 상태에서도 분기
   로직 자체는 구현/테스트 가능하도록 설계
