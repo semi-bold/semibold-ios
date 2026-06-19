@@ -1,4 +1,3 @@
-import GRDB
 import Testing
 
 @testable import semibold
@@ -15,8 +14,8 @@ import Testing
 /// each suite's body within SwiftLint's `type_body_length`.
 @MainActor
 struct KeyboardShortcutConversionTests {
-    private func makeDatabaseManager() throws -> DatabaseManager {
-        try DatabaseManager(path: ":memory:")
+    private func makeStore() throws -> CoreDataTestStore {
+        try CoreDataTestStore()
     }
 
     // MARK: - Cmd+Option+1/2/3 (Heading conversion)
@@ -26,9 +25,9 @@ struct KeyboardShortcutConversionTests {
         arguments: [1, 2, 3]
     )
     func convertBlockToHeadingSetsLevelAndPersists(_ level: Int) throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -56,9 +55,9 @@ struct KeyboardShortcutConversionTests {
 
     @Test("Cmd+Option+2 on an already-heading block re-levels it, keeping its text")
     func convertHeadingToDifferentLevelKeepsText() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -78,9 +77,9 @@ struct KeyboardShortcutConversionTests {
 
     @Test("Cmd+B wraps the focused block's whole text in '**…**'")
     func toggleBoldWrapsWholeText() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -97,9 +96,9 @@ struct KeyboardShortcutConversionTests {
 
     @Test("Cmd+B a second time unwraps '**…**' back to plain text")
     func toggleBoldTwiceUnwraps() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -117,9 +116,9 @@ struct KeyboardShortcutConversionTests {
 
     @Test("Cmd+B on an empty block does nothing")
     func toggleBoldOnEmptyBlockDoesNothing() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -137,9 +136,9 @@ struct KeyboardShortcutConversionTests {
 
     @Test("Cmd+I wraps the focused block's whole text in '*…*'")
     func toggleItalicWrapsWholeText() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -156,9 +155,9 @@ struct KeyboardShortcutConversionTests {
 
     @Test("Cmd+I a second time unwraps '*…*' back to plain text")
     func toggleItalicTwiceUnwraps() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -175,9 +174,9 @@ struct KeyboardShortcutConversionTests {
 
     @Test("Cmd+B then Cmd+I wraps '**bold**' text in '*…*' rather than misreading it as already-italic")
     func toggleItalicAfterBoldWrapsAgain() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -196,9 +195,9 @@ struct KeyboardShortcutConversionTests {
 
     @Test("Cmd+K wraps the focused block's whole text as a Markdown link with an empty URL placeholder")
     func toggleLinkWrapsWholeText() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -215,9 +214,9 @@ struct KeyboardShortcutConversionTests {
 
     @Test("Cmd+K on an already-linked whole block unwraps it back to plain text")
     func toggleLinkTwiceUnwraps() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -234,9 +233,9 @@ struct KeyboardShortcutConversionTests {
 
     @Test("Cmd+K on an empty block does nothing")
     func toggleLinkOnEmptyBlockDoesNothing() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)

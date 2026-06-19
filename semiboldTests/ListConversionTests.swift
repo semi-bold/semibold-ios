@@ -1,4 +1,3 @@
-import GRDB
 import Testing
 
 @testable import semibold
@@ -12,15 +11,15 @@ import Testing
 /// within SwiftLint's `type_body_length`.
 @MainActor
 struct ListConversionTests {
-    private func makeDatabaseManager() throws -> DatabaseManager {
-        try DatabaseManager(path: ":memory:")
+    private func makeStore() throws -> CoreDataTestStore {
+        try CoreDataTestStore()
     }
 
     @Test("Typing '- item' converts the block to a bulleted list item, saved immediately")
     func typingHyphenSpacePrefixConvertsBlockToBulletedListItem() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -55,9 +54,9 @@ struct ListConversionTests {
 
     @Test("Typing '1. item' converts the block to a numbered list item, saved immediately")
     func typingNumberDotSpacePrefixConvertsBlockToNumberedListItem() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -86,9 +85,9 @@ struct ListConversionTests {
 
     @Test("A multi-digit numbered list prefix keeps its literal number")
     func multiDigitNumberedListPrefixKeepsLiteralNumber() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -106,9 +105,9 @@ struct ListConversionTests {
 
     @Test("Editing a bulleted list item keeps its type and rebuilds markdownSource with the '- ' prefix")
     func editingBulletedListItemKeepsTypeAndPrefix() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -132,9 +131,9 @@ struct ListConversionTests {
 
     @Test("Editing a numbered list item keeps its number and rebuilds markdownSource with the '<n>. ' prefix")
     func editingNumberedListItemKeepsNumberAndPrefix() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -157,9 +156,9 @@ struct ListConversionTests {
 
     @Test("'-item' without a space doesn't trigger bulleted list conversion")
     func hyphenWithoutSpaceDoesNotConvertToBulletedList() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -175,9 +174,9 @@ struct ListConversionTests {
 
     @Test("'-- item' doesn't trigger bulleted list conversion")
     func doubleHyphenDoesNotConvertToBulletedList() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -193,9 +192,9 @@ struct ListConversionTests {
 
     @Test("A digit without '. ' doesn't trigger numbered list conversion")
     func digitWithoutDotSpaceDoesNotConvertToNumberedList() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -211,9 +210,9 @@ struct ListConversionTests {
 
     @Test("'1.item' without a space after the period doesn't trigger numbered list conversion")
     func digitDotWithoutSpaceDoesNotConvertToNumberedList() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)

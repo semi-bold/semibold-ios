@@ -1,4 +1,3 @@
-import GRDB
 import Testing
 
 @testable import semibold
@@ -16,15 +15,15 @@ import Testing
 /// checklist, blockquote), not just one type conversion.
 @MainActor
 struct InlineMarksConversionTests {
-    private func makeDatabaseManager() throws -> DatabaseManager {
-        try DatabaseManager(path: ":memory:")
+    private func makeStore() throws -> CoreDataTestStore {
+        try CoreDataTestStore()
     }
 
     @Test("Typing '**bold** text' into a paragraph block produces a bold span and a plain span")
     func boldTextInParagraphProducesMarkedSpans() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -53,9 +52,9 @@ struct InlineMarksConversionTests {
 
     @Test("Typing inline marks (italic, strike, inline code, link) produces the matching marked spans")
     func variousInlineMarksProduceMatchingSpans() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -83,9 +82,9 @@ struct InlineMarksConversionTests {
 
     @Test("Inline marks compose with heading conversion — typing '# **bold** title' produces a heading with a bold span")
     func inlineMarksComposeWithHeadingConversion() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -112,9 +111,9 @@ struct InlineMarksConversionTests {
 
     @Test("Typing 'plain' (no Markdown syntax) keeps a single unmarked span")
     func plainTextStaysUnmarked() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(

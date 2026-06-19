@@ -40,6 +40,35 @@ final class DatabaseManager {
     /// through its view context (or background contexts derived from it).
     let persistentContainer: NSPersistentContainer
 
+    /// The app's compiled Core Data model, loaded once and reused by
+    /// every `NSPersistentContainer` in this process (the on-disk store
+    /// `shared` opens, any in-memory store a `DatabaseManager(storeURL:
+    /// nil)` fallback creates, and the in-memory stores
+    /// `CoreDataTestStore` creates per test).
+    ///
+    /// `NSPersistentContainer(name:)`'s default name-only lookup, and
+    /// even an explicit `NSManagedObjectModel(contentsOf:)` call repeated
+    /// per container, each produce a *new* `NSManagedObjectModel`
+    /// instance. Core Data then sees multiple model objects all claiming
+    /// the same `codeGenerationType="class"`-generated entity classes
+    /// (`FolderEntity`/`DocumentEntity`/`DocumentBlockEntity`), which is
+    /// what produces the "Failed to find a unique match for an
+    /// NSEntityDescription to a managed object subclass" warning.
+    /// Memoizing a single model instance here and handing it to every
+    /// container — across both the app target and `semiboldTests`, which
+    /// links against `semibold` — keeps that mapping unambiguous.
+    static let model: NSManagedObjectModel = {
+        guard let modelURL = Bundle(for: DatabaseManager.self).url(
+            forResource: "SemiboldModel",
+            withExtension: "momd"
+        ), let model = NSManagedObjectModel(contentsOf: modelURL) else {
+            // A missing/uncompilable model is a broken build product, not
+            // a normal runtime failure — there's no reasonable fallback.
+            fatalError("Couldn't load SemiboldModel.momd from \(Bundle(for: DatabaseManager.self))")
+        }
+        return model
+    }()
+
     /// Creates the manager, loading (or creating) the persistent store at
     /// `storeURL` and bringing it online.
     ///
@@ -50,7 +79,7 @@ final class DatabaseManager {
     /// - Throws: if the persistent store can't be loaded (§15.2 "DB 열기
     ///   실패").
     init(storeURL: URL?) throws {
-        let container = NSPersistentContainer(name: "SemiboldModel")
+        let container = NSPersistentContainer(name: "SemiboldModel", managedObjectModel: Self.model)
 
         if let description = container.persistentStoreDescriptions.first {
             if let storeURL {

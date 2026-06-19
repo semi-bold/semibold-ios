@@ -1,4 +1,3 @@
-import GRDB
 import Testing
 
 @testable import semibold
@@ -16,15 +15,15 @@ import Testing
 /// keeps each suite's body within SwiftLint's `type_body_length`.
 @MainActor
 struct SlashCommandConversionTests {
-    private func makeDatabaseManager() throws -> DatabaseManager {
-        try DatabaseManager(path: ":memory:")
+    private func makeStore() throws -> CoreDataTestStore {
+        try CoreDataTestStore()
     }
 
     @Test("Typing '/' into an empty paragraph block opens the Slash Command sheet and clears the '/'")
     func typingSlashOpensSheetAndClearsText() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -52,9 +51,9 @@ struct SlashCommandConversionTests {
 
     @Test("'/' typed mid-sentence in a non-empty block doesn't open the sheet")
     func slashMidSentenceDoesNotOpenSheet() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -71,9 +70,9 @@ struct SlashCommandConversionTests {
 
     @Test("'/' typed in a non-paragraph block doesn't open the sheet")
     func slashInNonParagraphBlockDoesNotOpenSheet() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -103,9 +102,9 @@ struct SlashCommandConversionTests {
         ]
     )
     func pickingHeadingOptionConvertsBlock(_ testCase: (option: SlashCommandOption, level: Int)) throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -142,9 +141,9 @@ struct SlashCommandConversionTests {
         ]
     )
     func pickingOtherOptionsConvertsBlock(_ option: SlashCommandOption) throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -179,9 +178,9 @@ struct SlashCommandConversionTests {
 
     @Test("Picking Divider converts the block to a divider with no text content")
     func pickingDividerConvertsBlock() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -206,9 +205,9 @@ struct SlashCommandConversionTests {
 
     @Test("Dismissing the sheet without picking an option leaves the block an empty paragraph")
     func dismissingSheetLeavesEmptyParagraph() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)

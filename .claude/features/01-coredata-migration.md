@@ -117,7 +117,7 @@ Status: in-progress
 - [x] `FolderRepository`, `DocumentRepository`, `DocumentBlockRepository`가
       Core Data로 재작성되고 기존 메서드 시그니처를 유지하며, soft
       delete(`deletedAt`) 동작이 기존과 동일하게 보존됨
-- [ ] `FolderDocumentPersistenceTests.swift`, `DetailViewModelTests.swift`
+- [x] `FolderDocumentPersistenceTests.swift`, `DetailViewModelTests.swift`
       등 GRDB 의존 테스트가 Core Data in-memory 컨테이너 기준으로
       재작성되어 전체 테스트 스위트가 통과함
 - [ ] `project.yml`에서 GRDB SPM 패키지 의존성이 제거되고
