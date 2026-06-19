@@ -59,7 +59,7 @@ Status: in-progress
 
 ## Acceptance Criteria
 
-- [ ] `DatabaseManager.makeContainer(syncEnabled:)`(또는 동등한 팩토리)가
+- [x] `DatabaseManager.makeContainer(syncEnabled:)`(또는 동등한 팩토리)가
       `syncEnabled`에 따라 `NSPersistentCloudKitContainer` /
       `NSPersistentContainer`를 반환함 (NO-002 §4.1)
 - [ ] iCloud 가용성 감지 유틸리티가 `FileManager.ubiquityIdentityToken`
