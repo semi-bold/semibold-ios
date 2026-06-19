@@ -56,10 +56,35 @@ Status: in-progress
   `NSFetchRequest`/`NSManagedObjectContext`로 교체. ViewModel 레이어
   (`HomeViewModel`, `DetailViewModel` 등)는 가능한 한 수정 없이 동작해야
   함 — Repository가 같은 계약을 지키는 한 ViewModel을 바꿀 필요는 없음.
+- FK(`parentId`/`folderId`/`documentId`)는 스칼라 컬럼이 아니라 Core
+  Data 관례에 따라 `NSRelationship`(`Folder.parent`/`children`,
+  `Document.folder`, `DocumentBlock.document`/`parent`)으로만 모델링함.
+  AC의 "1:1 컬럼 반영" 요구는 named 관계로 충족된 것으로 간주 — 기존
+  GRDB 저장소가 `Column("parentId")`/`Column("documentId")` 같은 플랫
+  컬럼에 직접 필터/정렬을 걸던 부분은, 이어지는 Repository 재작성 AC
+  항목에서 관계 keypath 기반 `NSFetchRequest` 술어(predicate)와
+  `NSSortDescriptor`로 옮겨 처리한다(예: `parentId == nil` →
+  `parent == nil`, `.order(Column("documentId"), Column("parentId"), …)`
+  → `NSSortDescriptor(keyPath: \DocumentBlockEntity.document.id, …)`
+  류). 관계와 중복되는 스칼라 FK 속성은 추가하지 않음.
+- 삭제 규칙(`deletionRule`): FK를 들고 있는 to-one 쪽
+  (`Document.folder`, `DocumentBlock.document`, `Folder.parent`,
+  `DocumentBlock.parent`)은 `Nullify`를 유지해 기존 GRDB가 갖고 있던
+  "자동 cascade 없음" 동작을 보존함. to-many 역방향 쪽
+  (`Folder.children`, `Folder.documents`, `Document.blocks`,
+  `DocumentBlock.children`)은 `Nullify` 대신 `Deny`로 설정함. Core
+  Data는 객체가 **삭제되는 쪽**에서 선언된 관계의 삭제 규칙을 따르므로
+  (예: `Folder`를 삭제할 때 적용되는 규칙은 `Folder.children`/
+  `Folder.documents`에 선언된 것이고, 그 역방향인 `DocumentBlock.parent`/
+  `Document.folder`의 규칙이 아님), 자식이 남아있는 상태로 부모를
+  삭제하면 `Deny`가 저장을 막아 "자동 cascade도, 묵시적 orphan도
+  없음"을 보장함. 이에 따라 Repository 재작성 AC에서 구현할
+  `hardDelete`는 부모를 삭제하기 전에 자식 행을 먼저 직접 삭제하거나
+  연결을 끊어야 함 — Core Data가 대신 cascade해주지 않음.
 
 ## Acceptance Criteria
 
-- [ ] `semibold/Data/SemiboldModel.xcdatamodeld`에 `Folder`/`Document`/
+- [x] `semibold/Data/SemiboldModel.xcdatamodeld`에 `Folder`/`Document`/
       `DocumentBlock` Entity가 기존 GRDB 스키마의 모든 컬럼
       (`id`, `parentId`/`folderId`, `name`/`title`, `sortOrder`,
       `createdAt`, `updatedAt`, `deletedAt`, block의 `type`,
