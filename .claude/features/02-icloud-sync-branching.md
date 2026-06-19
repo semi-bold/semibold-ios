@@ -64,7 +64,7 @@ Status: in-progress
       `NSPersistentContainer`를 반환함 (NO-002 §4.1)
 - [x] iCloud 가용성 감지 유틸리티가 `FileManager.ubiquityIdentityToken`
       기반으로 동작하며 단위 테스트로 가용/불가 두 경로 모두 검증됨
-- [ ] `SyncModeStore`(또는 동등 타입)가 `UserDefaults`의 `sync_mode` 키를
+- [x] `SyncModeStore`(또는 동등 타입)가 `UserDefaults`의 `sync_mode` 키를
       `"icloud"`/`"local"`/미설정 3가지 상태로 읽고 쓰며, 미설정 상태는
       "최초 실행"으로 간주됨 (NO-002 §4.3, §6)
 - [ ] 모드 전환 함수가 로컬→iCloud, iCloud→로컬 양방향으로 컨테이너를
