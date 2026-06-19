@@ -1,17 +1,22 @@
+import CoreData
 import Foundation
-import GRDB
 
-/// Owns the app's single SQLite connection and keeps its schema up to
-/// date.
+/// Owns the app's single Core Data persistent container and keeps its
+/// store loaded.
 ///
 /// semi:bold stores everything locally — folders, documents, and the
 /// blocks that make up a document's content — in one on-device database.
 /// `DatabaseManager` is the one place that knows where that database file
-/// lives and how its schema has evolved over time, so the rest of the app
-/// can read/write through GRDB without worrying about setup or upgrades.
+/// lives and how to load it, so the rest of the app can read/write
+/// through Core Data without worrying about setup.
+///
+/// This is the local-only (`NSPersistentContainer`) shape of the
+/// container. iCloud sync branching (`NSPersistentCloudKitContainer`) is
+/// layered on top of this in a later step — see
+/// `.claude/features/02-icloud-sync-branching.md`.
 final class DatabaseManager {
-    /// Shared instance used across the app, or `nil` if opening/migrating
-    /// the on-disk database failed at launch (§15.2 "DB 열기 실패").
+    /// Shared instance used across the app, or `nil` if loading the
+    /// on-disk persistent store failed at launch (§15.2 "DB 열기 실패").
     ///
     /// Computed once and cached: if this is `nil`, `openError` holds the
     /// underlying error and the root view shows the
@@ -19,58 +24,82 @@ final class DatabaseManager {
     /// (see `SemiboldApp`/`DatabaseUnavailableView`).
     static let shared: DatabaseManager? = {
         do {
-            return try DatabaseManager(path: DatabaseManager.defaultDatabasePath())
+            return try DatabaseManager(storeURL: DatabaseManager.defaultStoreURL())
         } catch {
             openError = error
             return nil
         }
     }()
 
-    /// The error from opening/migrating the on-disk database, if
-    /// `shared` is `nil`. `nil` while the database opened successfully
-    /// (the normal case).
+    /// The error from loading the on-disk persistent store, if `shared`
+    /// is `nil`. `nil` while the store loaded successfully (the normal
+    /// case).
     private(set) static var openError: Error?
 
-    /// The underlying GRDB connection. All repositories read/write
-    /// through this queue.
-    let dbQueue: DatabaseQueue
+    /// The underlying Core Data container. All repositories read/write
+    /// through its view context (or background contexts derived from it).
+    let persistentContainer: NSPersistentContainer
 
-    /// Creates the manager, opening (or creating) the database file at
-    /// `path` and bringing its schema up to the latest version.
+    /// Creates the manager, loading (or creating) the persistent store at
+    /// `storeURL` and bringing it online.
     ///
-    /// - Parameter path: Location of the SQLite file. Defaults to
-    ///   `semibold.sqlite` inside the app's Application Support
-    ///   directory. Pass an in-memory path (e.g. `":memory:"`) for tests
-    ///   and previews.
-    /// - Throws: if the database file can't be opened or its schema can't
-    ///   be migrated to the latest version (§15.2 "DB 열기 실패").
-    init(path: String = DatabaseManager.defaultDatabasePath()) throws {
-        dbQueue = try DatabaseQueue(path: path)
-        try AppMigrations.migrator.migrate(dbQueue)
+    /// - Parameter storeURL: Location of the SQLite store file. Defaults
+    ///   to `semibold.sqlite` inside the app's Application Support
+    ///   directory. Pass `nil` to use an in-memory store (for tests and
+    ///   previews).
+    /// - Throws: if the persistent store can't be loaded (§15.2 "DB 열기
+    ///   실패").
+    init(storeURL: URL?) throws {
+        let container = NSPersistentContainer(name: "SemiboldModel")
+
+        if let description = container.persistentStoreDescriptions.first {
+            if let storeURL {
+                description.url = storeURL
+            } else {
+                // In-memory store for tests/previews: never touches disk.
+                description.url = URL(fileURLWithPath: "/dev/null")
+            }
+        }
+
+        // `loadPersistentStores` is callback-based, but for a local SQLite
+        // (or in-memory) store it completes synchronously before
+        // returning, so capturing the result in `loadError` and checking
+        // it right after is safe — this preserves the previous
+        // `init(path:) throws` call shape the rest of the app relies on.
+        var loadError: Error?
+        container.loadPersistentStores { _, error in
+            loadError = error
+        }
+        if let loadError {
+            throw loadError
+        }
+
+        container.viewContext.automaticallyMergesChangesFromParent = true
+        persistentContainer = container
     }
 
-    /// The connection repositories should default to: `shared`'s queue
-    /// when the on-disk database opened successfully, or a throwaway
-    /// in-memory queue otherwise.
+    /// The managed object context repositories should default to:
+    /// `shared`'s view context when the on-disk store loaded
+    /// successfully, or a throwaway in-memory context otherwise.
     ///
     /// This only matters for repositories' default-argument expressions
     /// (`DocumentRepository()`, etc.) — when `shared` is `nil`, the root
     /// view shows `DatabaseUnavailableView` instead of any screen that
-    /// would construct a repository, so this fallback queue is never
+    /// would construct a repository, so this fallback context is never
     /// actually read from or written to in that case. It exists purely so
     /// those default arguments stay non-optional/non-throwing.
-    static var sharedOrFallbackQueue: DatabaseQueue {
+    static var sharedOrFallbackContext: NSManagedObjectContext {
         if let shared {
-            return shared.dbQueue
+            return shared.persistentContainer.viewContext
         }
         // swiftlint:disable:next force_try
-        return try! DatabaseQueue()
+        return try! DatabaseManager(storeURL: nil).persistentContainer.viewContext
     }
 
-    /// Default on-disk location for the local database: a
-    /// `semibold.sqlite` file inside the app's Application Support
-    /// directory, creating that directory if it doesn't exist yet.
-    static func defaultDatabasePath() -> String {
+    /// Default on-disk location for the local store: a `semibold.sqlite`
+    /// file inside the app's Application Support directory, creating
+    /// that directory if it doesn't exist yet.
+    static func defaultStoreURL() -> URL {
         let fileManager = FileManager.default
         let appSupportURL = fileManager.urls(
             for: .applicationSupportDirectory,
@@ -84,6 +113,6 @@ final class DatabaseManager {
             )
         }
 
-        return appSupportURL.appendingPathComponent("semibold.sqlite").path
+        return appSupportURL.appendingPathComponent("semibold.sqlite")
     }
 }

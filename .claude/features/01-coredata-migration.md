@@ -67,6 +67,27 @@ Status: in-progress
   `parent == nil`, `.order(Column("documentId"), Column("parentId"), …)`
   → `NSSortDescriptor(keyPath: \DocumentBlockEntity.document.id, …)`
   류). 관계와 중복되는 스칼라 FK 속성은 추가하지 않음.
+- `DatabaseManager`는 `NSPersistentContainer`(model name `"SemiboldModel"`)
+  래퍼로 재작성됨. 기존 `init(path:) throws` → `init(storeURL:) throws`로
+  바뀌었고, `dbQueue: DatabaseQueue` → `persistentContainer:
+  NSPersistentContainer`, `sharedOrFallbackQueue` →
+  `sharedOrFallbackContext: NSManagedObjectContext`로 대응시킴.
+  `shared: DatabaseManager?` / `openError: Error?` 패턴과
+  `defaultDatabasePath()` → `defaultStoreURL()`(Application Support 내
+  `semibold.sqlite`, 동일 경로 유지)는 그대로 보존해 `SemiboldApp.swift`의
+  `DatabaseManager.shared == nil` 분기가 코드 수정 없이 그대로 동작함.
+  `loadPersistentStores`는 콜백 기반이지만 로컬 SQLite/in-memory 스토어는
+  호출이 반환되기 전에 동기적으로 완료되므로, 콜백에서 에러를 캡처해
+  `init`이 반환하기 직전에 던지는 방식으로 기존 `throws` 시그니처를
+  유지함.
+- 이 AC 항목 완료 시점에 `FolderRepository`/`DocumentRepository`/
+  `DocumentBlockRepository`는 아직 GRDB `DatabaseQueue`/
+  `DatabaseManager.sharedOrFallbackQueue`를 참조하므로 전체 타겟 빌드는
+  실패하는 것이 의도된 전환기 상태임(다음 AC 항목인 Repository
+  Core Data 재작성에서 해소). `DatabaseManager.swift` 자체는
+  격리 상태로 컴파일 에러 없이 빌드됨 — 실제 컴파일 에러는
+  `FolderRepository.swift:12`, `DocumentRepository.swift:12`,
+  `DocumentBlockRepository.swift:12`의 `sharedOrFallbackQueue` 참조뿐임.
 - 삭제 규칙(`deletionRule`): FK를 들고 있는 to-one 쪽
   (`Document.folder`, `DocumentBlock.document`, `Folder.parent`,
   `DocumentBlock.parent`)은 `Nullify`를 유지해 기존 GRDB가 갖고 있던
@@ -89,7 +110,7 @@ Status: in-progress
       (`id`, `parentId`/`folderId`, `name`/`title`, `sortOrder`,
       `createdAt`, `updatedAt`, `deletedAt`, block의 `type`,
       `contentJSON`, `markdownSource` 등)을 1:1로 반영해 정의됨
-- [ ] `DatabaseManager`가 `NSPersistentContainer` 기반으로 재작성되고,
+- [x] `DatabaseManager`가 `NSPersistentContainer` 기반으로 재작성되고,
       `shared`/`sharedOrFallbackQueue`에 대응하는 접근 지점이 기존과
       동일한 실패 처리(열기 실패 시 `DatabaseUnavailableView` 분기)를
       유지함
@@ -106,3 +127,11 @@ Status: in-progress
 
 - CloudKit 실연동 테스트는 Apple Developer Console 설정(Team ID 발급
   대기 중) 완료 후 02번 브리프에서 진행
+- `DatabaseManager`의 `loadPersistentStores` 동기 완료 가정은 현재
+  local SQLite/in-memory 구성(`shouldAddStoreAsynchronously` 미설정,
+  `NSPersistentCloudKitContainer` 미사용)에서만 유효함. 02번 브리프에서
+  `NSPersistentCloudKitContainer`로 교체할 때 이 가정이 깨지지 않는지
+  반드시 재확인할 것 (swift-reviewer Suggested 항목).
+- `AppMigrations.swift`가 더 이상 `DatabaseManager.init`에서 호출되지
+  않아 죽은 코드가 됨 — GRDB 의존성 제거(5번 AC 항목)와 같은 패스에서
+  함께 삭제할 것.
