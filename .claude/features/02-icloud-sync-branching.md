@@ -67,7 +67,7 @@ Status: in-progress
 - [x] `SyncModeStore`(또는 동등 타입)가 `UserDefaults`의 `sync_mode` 키를
       `"icloud"`/`"local"`/미설정 3가지 상태로 읽고 쓰며, 미설정 상태는
       "최초 실행"으로 간주됨 (NO-002 §4.3, §6)
-- [ ] 모드 전환 함수가 로컬→iCloud, iCloud→로컬 양방향으로 컨테이너를
+- [x] 모드 전환 함수가 로컬→iCloud, iCloud→로컬 양방향으로 컨테이너를
       재초기화하고, 전환 실패 시 원래 모드로 롤백함 (NO-002 §7 "모드
       전환 실패")
 
@@ -76,3 +76,16 @@ Status: in-progress
 - Developer Console 설정(Team ID/CloudKit 컨테이너 연결)이 이 브리프
   작업 시점까지 완료되지 않았다면, 실제 iCloud 레코드 동기화 검증은
   보류 — 완료 후 별도로 검증 필요
+- `DatabaseManager.switchMode(to:storeURL:syncModeStore:)`를 추가하면서
+  발견한 구조적 제약 — 03/04번 브리프(설정 화면 UI)가 이 함수를 호출할
+  때 반드시 고려해야 함: `FolderRepository`/`DocumentRepository`/
+  `DocumentBlockRepository`는 모두 `DatabaseManager.sharedOrFallbackContext`를
+  **생성 시점에 한 번** 기본 인자로 평가해서 들고 있음. 즉 `switchMode`
+  호출이 성공해 `DatabaseManager.shared`의 컨테이너가 교체되더라도,
+  *그 전에 만들어둔* 리포지토리 인스턴스는 계속 옛 컨테이너의 컨텍스트를
+  바라본다 — 새 저장소가 보이지 않음. 설정 화면에서 모드 전환에
+  성공한 뒤에는 화면을 다시 그리거나(예: 루트 뷰 재구성) 그 시점 이후
+  생성되는 리포지토리만 새 컨텍스트를 쓰도록 보장해야 함. 근본적으로
+  해결하려면 리포지토리들이 `context`를 매번 `DatabaseManager.shared`에서
+  다시 읽어오도록 바꾸는 별도 작업이 필요할 수 있음 — 이번 브리프
+  범위에서는 변경하지 않고 여기 기록만 남김.
