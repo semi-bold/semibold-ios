@@ -56,7 +56,17 @@ struct SemiboldApp: App {
                     onUseLocalOnly: { respondToConsent(sync: false) }
                 )
             case .home:
+                // `.id(_:)` keyed on `homeRebuildToken`: when
+                // `SettingsView` switches sync mode successfully, this
+                // tears down and reconstructs `HomeView`'s whole subtree,
+                // so its `HomeViewModel` (and the repositories it
+                // constructs) resolve the newly-active container instead
+                // of staying pointed at the one resolved before the
+                // switch — see `AppCommandCenter.homeRebuildToken`'s doc
+                // comment and `DatabaseManager.switchMode`'s "Important"
+                // note.
                 HomeView()
+                    .id(commandCenter.homeRebuildToken)
                     .environment(commandCenter)
             }
         }

@@ -10,12 +10,20 @@ import SwiftUI
 /// documentation — at runtime only one banner is ever shown, chosen by
 /// `bannerState` below.
 ///
-/// This view only renders the current state for now; wiring the toggle to
-/// actually switch sync mode (with its confirmation alerts) and disabling
-/// the toggle when iCloud is unavailable are separate steps in this same
-/// brief (`.claude/features/04-settings-screen.md`).
+/// Flipping the toggle never applies the new mode immediately — it shows
+/// NO-002 §2.4's confirmation warning for that direction first
+/// (`SyncModeSwitchAction.prompt`), and only calls
+/// `DatabaseManager.switchMode` (via `SyncModeSwitchAction.confirmSwitch`)
+/// once the person confirms. Canceling, or a failed switch, reverts the
+/// toggle to its pre-tap position (NO-002 §3.2 "토글 원복").
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+
+    /// Lets a successful switch request `HomeView`'s subtree be rebuilt
+    /// against the newly-active container — see
+    /// `AppCommandCenter.homeRebuildToken`'s doc comment for why that's
+    /// necessary instead of just calling `switchMode` in isolation.
+    @Environment(AppCommandCenter.self) private var commandCenter
 
     /// Whether this device is signed into iCloud at all (NO-002 §4.2).
     /// Re-checked on `onAppear` rather than observed live — see the
@@ -23,9 +31,34 @@ struct SettingsView: View {
     @State private var isICloudAvailable: Bool
 
     /// Local reflection of the person's sync preference, seeded from
-    /// `SyncModeStore.effectiveMode()`. Toggling this doesn't yet call
-    /// `DatabaseManager.switchMode` — that's wired in a later AC item.
+    /// `SyncModeStore.effectiveMode()`.
     @State private var isSyncOn: Bool
+
+    /// The last value `isSyncOn` held *before* the change currently being
+    /// confirmed — what it reverts to on "취소" or on a failed switch
+    /// (NO-002 §3.2 "토글 원복").
+    @State private var isSyncOnBeforePendingChange: Bool
+
+    /// The confirmation warning currently being shown for a toggle change
+    /// in progress, or `nil` when no toggle change is pending. Drives the
+    /// confirm/cancel `Alert` below.
+    @State private var pendingPrompt: SyncModeSwitchPrompt?
+
+    /// Whether to show NO-002 §3.2's "iCloud 설정 필요" guidance — shown
+    /// instead of a confirm/cancel warning when 로컬 → iCloud is attempted
+    /// while iCloud isn't actually available right now.
+    @State private var isICloudUnavailableGuidancePresented = false
+
+    /// Whether to show NO-002 §7's "동기화 설정을 변경하지 못했습니다"
+    /// failure alert, after a confirmed switch's `DatabaseManager.switchMode`
+    /// call throws.
+    @State private var isSwitchFailureAlertPresented = false
+
+    /// Set right before `revertToggle()` programmatically reassigns
+    /// `isSyncOn`, so the `.onChange(of: isSyncOn)` that reassignment
+    /// triggers can tell it's a revert rather than a new person-initiated
+    /// toggle and skip showing another prompt for it.
+    @State private var isRevertingToggle = false
 
     init(
         isICloudAvailable: Bool = ICloudAvailability.isAvailable(),
@@ -33,6 +66,7 @@ struct SettingsView: View {
     ) {
         self._isICloudAvailable = State(initialValue: isICloudAvailable)
         self._isSyncOn = State(initialValue: isSyncOn)
+        self._isSyncOnBeforePendingChange = State(initialValue: isSyncOn)
     }
 
     /// Which of the three status banners applies right now (`Planning_8`
@@ -63,6 +97,119 @@ struct SettingsView: View {
         .onAppear {
             isICloudAvailable = ICloudAvailability.isAvailable()
             isSyncOn = SyncModeStore().effectiveMode() == .icloud
+            isSyncOnBeforePendingChange = isSyncOn
+        }
+        .onChange(of: isSyncOn) { _, newValue in
+            if isRevertingToggle {
+                isRevertingToggle = false
+                return
+            }
+            requestSwitch(to: newValue ? .icloud : .local)
+        }
+        .alert(
+            alertTitle(for: pendingPrompt),
+            isPresented: isPendingPromptAlertPresented,
+            presenting: pendingPrompt
+        ) { prompt in
+            Button("취소", role: .cancel) {
+                revertToggle()
+            }
+            Button("확인") {
+                confirmSwitch(for: prompt)
+            }
+        } message: { prompt in
+            if let warningMessage = prompt.warningMessage {
+                Text(warningMessage)
+            }
+        }
+        .alert("iCloud 설정 필요", isPresented: $isICloudUnavailableGuidancePresented) {
+            Button("확인") {
+                revertToggle()
+            }
+        } message: {
+            Text("iCloud를 사용하려면 기기 설정을 확인하세요.")
+        }
+        .alert("동기화 설정을 변경하지 못했습니다", isPresented: $isSwitchFailureAlertPresented) {
+            Button("확인") {
+                revertToggle()
+            }
+        }
+    }
+
+    // MARK: - Sync mode switching
+
+    /// Reacts to the toggle's new (not-yet-committed) position by asking
+    /// `SyncModeSwitchAction` what to show, per NO-002 §3.2's "변경
+    /// 방향?" branch — never applies `newMode` directly.
+    private func requestSwitch(to newMode: SyncMode) {
+        switch SyncModeSwitchAction.prompt(for: newMode) {
+        case .confirmLocalToICloud:
+            pendingPrompt = .confirmLocalToICloud
+        case .confirmICloudToLocal:
+            pendingPrompt = .confirmICloudToLocal
+        case .iCloudUnavailable:
+            isICloudUnavailableGuidancePresented = true
+        }
+    }
+
+    /// "확인": actually performs the switch this prompt was shown for, and
+    /// either commits the toggle's new position or reverts it
+    /// (NO-002 §3.2/§7).
+    private func confirmSwitch(for prompt: SyncModeSwitchPrompt) {
+        let newMode: SyncMode = prompt == .confirmLocalToICloud ? .icloud : .local
+
+        let succeeded = SyncModeSwitchAction.confirmSwitch(
+            to: newMode,
+            databaseManager: DatabaseManager.shared,
+            storeURL: DatabaseManager.defaultStoreURL()
+        )
+
+        guard succeeded else {
+            isSwitchFailureAlertPresented = true
+            return
+        }
+
+        // Commit: the toggle's current position already reflects
+        // `newMode`, so just record it as the new "before" baseline and
+        // rebuild `HomeView`'s subtree so its repositories pick up the
+        // container `switchMode` just swapped in (see
+        // `AppCommandCenter.homeRebuildToken`'s doc comment).
+        isSyncOnBeforePendingChange = isSyncOn
+        commandCenter.requestHomeRebuild()
+    }
+
+    /// "취소", or a failed switch: puts the toggle back where it was
+    /// before this change began (NO-002 §3.2 "토글 원복").
+    private func revertToggle() {
+        guard isSyncOn != isSyncOnBeforePendingChange else { return }
+        isRevertingToggle = true
+        isSyncOn = isSyncOnBeforePendingChange
+    }
+
+    private var isPendingPromptAlertPresented: Binding<Bool> {
+        Binding(
+            get: { pendingPrompt != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingPrompt = nil
+                }
+            }
+        )
+    }
+
+    /// `pendingPrompt` (and therefore this function) only ever holds
+    /// `.confirmLocalToICloud`/`.confirmICloudToLocal` — `requestSwitch`
+    /// routes `.iCloudUnavailable` straight to its own separate guidance
+    /// alert below instead of setting `pendingPrompt`. The remaining
+    /// cases exist only so this switch stays exhaustive.
+    private func alertTitle(for prompt: SyncModeSwitchPrompt?) -> String {
+        switch prompt {
+        case .confirmLocalToICloud:
+            return "iCloud 동기화로 전환"
+        case .confirmICloudToLocal:
+            return "로컬 전용으로 전환"
+        case .iCloudUnavailable, .none:
+            return ""
         }
     }
 
@@ -274,12 +421,15 @@ private enum SyncBannerState {
 
 #Preview("Sync On") {
     SettingsView(isICloudAvailable: true, isSyncOn: true)
+        .environment(AppCommandCenter())
 }
 
 #Preview("Sync Off") {
     SettingsView(isICloudAvailable: true, isSyncOn: false)
+        .environment(AppCommandCenter())
 }
 
 #Preview("iCloud Unavailable") {
     SettingsView(isICloudAvailable: false, isSyncOn: false)
+        .environment(AppCommandCenter())
 }
