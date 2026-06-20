@@ -162,29 +162,23 @@ For each unchecked (`- [ ]`) item, in order:
    - **Never instruct it to write/record/document anything in the brief
      file** — not even "note this in Decisions & Deviations." It reports
      deviations/decisions/gaps in its own output text only. The brief
-     file is frozen — only step 4 below (and only `Status`/checkboxes)
+     file is frozen — only step 3 below (and only `Status`/checkboxes)
      ever changes it. If you catch yourself drafting a prompt that asks
      it to edit the brief, rewrite the prompt instead.
 
-2. **Verify the brief file wasn't touched**
-   - `git diff --name-only -- .claude/features/` — should be empty. If
-     `feature-implementer` wrote to the brief anyway, `git checkout --
-     .claude/features/NN-slug.md` to discard that edit before doing
-     anything else, then proceed as if it hadn't happened.
-
-3. **Spawn `swift-reviewer`**
+2. **Spawn `swift-reviewer`**
    - `subagent_type: swift-reviewer`
    - Prompt: review the diff just produced (`git diff`) against
      CLAUDE.md and the brief's Decisions & Deviations / this Acceptance
      Criteria item.
 
-4. **Handle the review result**
+3. **Handle the review result**
    - `OK` / `Suggested` only → continue.
    - `Blocking` → re-spawn `feature-implementer` with the blocking items
      as fix instructions. Retry up to 2 times total. If still blocking,
      stop and report the outstanding issues to the user.
 
-5. **Check off and commit**
+4. **Check off and commit**
    - If `feature-implementer` confirms the item is fully met, edit the
      brief: change that item's `- [ ]` to `- [x]`. This is the **only**
      edit this step makes — don't touch Decisions & Deviations even to
@@ -197,7 +191,7 @@ For each unchecked (`- [ ]`) item, in order:
    git push
    ```
 
-6. Report progress (see User Communication).
+5. Report progress (see User Communication).
 
 If `feature-implementer` reports a gap (no matching wireframe/spec for a
 UI-facing item, or an ambiguous brief decision), stop and report it to the
