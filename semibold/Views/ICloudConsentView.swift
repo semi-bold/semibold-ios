@@ -7,17 +7,18 @@ import SwiftUI
 /// Presented full-screen from `SemiboldApp` over `HomeView` as a dim
 /// overlay with a centered modal card, matching `ios_icloud_consent` in
 /// `wireframe.py`. The two buttons' `sync_mode` + container-switching
-/// behavior (callouts ③④) land in this brief's next acceptance-criteria
-/// item — for now they're visually complete with no-op actions.
+/// behavior (callouts ③④) is wired by the caller through `onUseSync`/
+/// `onUseLocalOnly` — see `SemiboldApp.respondToConsent` and
+/// `ICloudConsentChoice.apply`.
 struct ICloudConsentView: View {
-    /// Called when the person taps "동기화 사용" (callout ③). No-op for
-    /// now; wiring it to `sync_mode = "icloud"` + the iCloud container
-    /// is this brief's next acceptance-criteria item.
+    /// Called when the person taps "동기화 사용" (callout ③). The caller
+    /// is expected to persist `sync_mode = "icloud"`, switch to the
+    /// iCloud container, and dismiss this view.
     var onUseSync: () -> Void = {}
 
-    /// Called when the person taps "나중에" (callout ④). No-op for now;
-    /// wiring it to `sync_mode = "local"` + the local container is this
-    /// brief's next acceptance-criteria item.
+    /// Called when the person taps "나중에" (callout ④). The caller is
+    /// expected to persist `sync_mode = "local"`, switch to the local
+    /// container, and dismiss this view.
     var onUseLocalOnly: () -> Void = {}
 
     var body: some View {

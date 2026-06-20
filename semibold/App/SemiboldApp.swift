@@ -13,23 +13,21 @@ struct SemiboldApp: App {
         isDatabaseAvailable: DatabaseManager.shared != nil
     )
 
-    /// Bridges `launchState`'s `.showICloudConsent` case to
-    /// `.fullScreenCover(isPresented:)`'s `Binding<Bool>` shape.
-    ///
-    /// Dismissing without an explicit "동기화 사용"/"나중에" answer (e.g.
-    /// swiping away) falls back to `.home` rather than re-presenting —
-    /// this item only wires up show/hide; persisting a "나중에"-equivalent
-    /// choice on dismissal isn't decided here and lands with the button
-    /// actions (this brief's next acceptance-criteria item).
-    private var isShowingICloudConsent: Binding<Bool> {
-        Binding(
-            get: { launchState == .showICloudConsent },
-            set: { isPresented in
-                if !isPresented {
-                    launchState = .home
-                }
-            }
+    /// Handles "동기화 사용" (`sync: true`) / "나중에" (`sync: false`) from
+    /// `ICloudConsentView` (callouts ③④): persists `sync_mode` and
+    /// switches `DatabaseManager.shared`'s container via
+    /// `ICloudConsentChoice.apply`, then advances `launchState` to `.home`
+    /// — which is what actually constructs `HomeView` for the first time
+    /// (see `body` below) — regardless of whether the switch itself
+    /// succeeded (see `ICloudConsentChoice`'s doc comment for why a
+    /// failure shouldn't leave the person stuck on this screen).
+    private func respondToConsent(sync: Bool) {
+        ICloudConsentChoice.apply(
+            sync: sync,
+            databaseManager: DatabaseManager.shared,
+            storeURL: DatabaseManager.defaultStoreURL()
         )
+        launchState = .home
     }
 
     var body: some Scene {
@@ -40,17 +38,26 @@ struct SemiboldApp: App {
             switch launchState {
             case .databaseUnavailable:
                 DatabaseUnavailableView()
-            case .showICloudConsent, .home:
-                // The consent popup is decided and shown *before*
-                // `HomeView`'s `NavigationStack` is entered (Decisions &
-                // Deviations, `.claude/features/03-icloud-onboarding.md`)
-                // — it sits as a full-screen layer over `HomeView` rather
-                // than gating which view is constructed.
+            case .showICloudConsent:
+                // `HomeView` is deliberately NOT constructed here.
+                // `ICloudConsentChoice.apply` (driven by the buttons
+                // below) may switch `DatabaseManager.shared`'s container
+                // before the person ever reaches `HomeView` — constructing
+                // `HomeViewModel`'s repositories only once `launchState`
+                // becomes `.home` guarantees they resolve whichever
+                // container is active *after* that switch, never a stale
+                // pre-switch one (Decisions & Deviations,
+                // `.claude/features/03-icloud-onboarding.md`).
+                // `ICloudConsentView` already paints its own full-screen
+                // dim overlay, so it can stand alone as the only thing on
+                // screen.
+                ICloudConsentView(
+                    onUseSync: { respondToConsent(sync: true) },
+                    onUseLocalOnly: { respondToConsent(sync: false) }
+                )
+            case .home:
                 HomeView()
                     .environment(commandCenter)
-                    .fullScreenCover(isPresented: isShowingICloudConsent) {
-                        ICloudConsentView()
-                    }
             }
         }
         .commands {
