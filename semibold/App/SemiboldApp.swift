@@ -6,17 +6,51 @@ struct SemiboldApp: App {
     /// below — see `AppCommandCenter`.
     @State private var commandCenter = AppCommandCenter()
 
+    /// Computed once at launch (NO-002 §3.1's "최초 실행 플로우") — see
+    /// `RootLaunchState.resolve` for why iCloud availability is checked
+    /// fresh on every launch rather than cached alongside `sync_mode`.
+    @State private var launchState = RootLaunchState.resolve(
+        isDatabaseAvailable: DatabaseManager.shared != nil
+    )
+
+    /// Bridges `launchState`'s `.showICloudConsent` case to
+    /// `.fullScreenCover(isPresented:)`'s `Binding<Bool>` shape.
+    ///
+    /// Dismissing without an explicit "동기화 사용"/"나중에" answer (e.g.
+    /// swiping away) falls back to `.home` rather than re-presenting —
+    /// this item only wires up show/hide; persisting a "나중에"-equivalent
+    /// choice on dismissal isn't decided here and lands with the button
+    /// actions (this brief's next acceptance-criteria item).
+    private var isShowingICloudConsent: Binding<Bool> {
+        Binding(
+            get: { launchState == .showICloudConsent },
+            set: { isPresented in
+                if !isPresented {
+                    launchState = .home
+                }
+            }
+        )
+    }
+
     var body: some Scene {
         WindowGroup {
             // §15.2 "DB 열기 실패": if the local database couldn't be
-            // opened/migrated at launch, `DatabaseManager.shared` is `nil`
-            // — show that error instead of a `HomeView` that has nothing
-            // to read from or write to.
-            if DatabaseManager.shared != nil {
+            // opened/migrated at launch, there's nothing to read from or
+            // write to — show that error instead of any other state.
+            switch launchState {
+            case .databaseUnavailable:
+                DatabaseUnavailableView()
+            case .showICloudConsent, .home:
+                // The consent popup is decided and shown *before*
+                // `HomeView`'s `NavigationStack` is entered (Decisions &
+                // Deviations, `.claude/features/03-icloud-onboarding.md`)
+                // — it sits as a full-screen layer over `HomeView` rather
+                // than gating which view is constructed.
                 HomeView()
                     .environment(commandCenter)
-            } else {
-                DatabaseUnavailableView()
+                    .fullScreenCover(isPresented: isShowingICloudConsent) {
+                        ICloudConsentView()
+                    }
             }
         }
         .commands {

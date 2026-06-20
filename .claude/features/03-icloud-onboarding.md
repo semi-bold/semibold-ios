@@ -49,7 +49,7 @@ Status: in-progress
 
 ## Acceptance Criteria
 
-- [ ] 앱 최초 실행 시(`sync_mode` 미설정) iCloud 가용 상태면
+- [x] 앱 최초 실행 시(`sync_mode` 미설정) iCloud 가용 상태면
       `ICloudConsentView`가 표시되고, 불가능 상태면 팝업 없이 로컬
       전용으로 바로 `HomeView` 진입함 (NO-002 §3.1 flowchart)
 - [ ] `ICloudConsentView`가 `iOS_ICloudConsent` 와이어프레임과 1:1
