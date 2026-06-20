@@ -1,6 +1,6 @@
 # Feature: 03-icloud-onboarding
 
-Status: in-progress
+Status: done
 
 ## Source
 
@@ -93,7 +93,7 @@ Status: in-progress
 - [x] "동기화 사용" 탭 시 `sync_mode = "icloud"` 저장 + iCloud 컨테이너로
       초기화, "나중에" 탭 시 `sync_mode = "local"` 저장 + 로컬 컨테이너로
       초기화됨
-- [ ] 한 번 응답한 이후에는 앱을 재실행해도 팝업이 다시 표시되지 않음
+- [x] 한 번 응답한 이후에는 앱을 재실행해도 팝업이 다시 표시되지 않음
 
 ## Open Questions / Follow-ups
 

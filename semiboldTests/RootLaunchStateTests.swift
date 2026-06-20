@@ -84,4 +84,61 @@ struct RootLaunchStateTests {
 
         #expect(state == .home)
     }
+
+    /// End-to-end regression for this brief's last acceptance criterion:
+    /// "한 번 응답한 이후에는 앱을 재실행해도 팝업이 다시 표시되지 않음"
+    /// (once answered, the popup never shows again on a later relaunch).
+    ///
+    /// The tests above exercise `resolve` against a `SyncModeStore` that's
+    /// already pre-seeded via `setStoredMode` directly, which only proves
+    /// `resolve`'s branching logic is correct *given* a stored value — it
+    /// doesn't prove the value actually survives from one launch to the
+    /// next. This test instead drives the real write path
+    /// (`ICloudConsentChoice.apply`, what `SemiboldApp` calls when a button
+    /// is tapped) on a simulated "launch 1", then constructs a brand new
+    /// `SyncModeStore`/`RootLaunchState.resolve` call — as `SemiboldApp`
+    /// would on a fresh process start — backed by the *same* underlying
+    /// `UserDefaults` suite, simulating "launch 2" after the app was fully
+    /// relaunched.
+    @MainActor
+    @Test("Responding once means a later relaunch never shows the consent popup again")
+    func respondingOnceSkipsConsentOnEveryLaterLaunch() throws {
+        let suiteName = UUID().uuidString
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            fatalError("Couldn't create an ephemeral UserDefaults suite for testing")
+        }
+
+        // Launch 1: first launch, iCloud available, popup shown.
+        let launch1Store = SyncModeStore(userDefaults: defaults)
+        let launch1State = RootLaunchState.resolve(
+            isDatabaseAvailable: true,
+            syncModeStore: launch1Store,
+            fileManager: FakeUbiquityIdentityProvider.signedIn
+        )
+        #expect(launch1State == .showICloudConsent)
+
+        // The person taps "나중에" — this is the exact call SemiboldApp
+        // makes from ICloudConsentView's onUseLocalOnly closure.
+        let manager = try DatabaseManager(storeURL: nil)
+        ICloudConsentChoice.apply(
+            sync: false,
+            databaseManager: manager,
+            storeURL: nil,
+            syncModeStore: launch1Store
+        )
+
+        // Launch 2: simulate a full app relaunch by building a fresh
+        // SyncModeStore over the SAME UserDefaults suite (not reusing
+        // launch1Store), exactly like SemiboldApp constructing a brand new
+        // SyncModeStore() at process start reading from .standard.
+        let launch2Store = SyncModeStore(userDefaults: defaults)
+        let launch2State = RootLaunchState.resolve(
+            isDatabaseAvailable: true,
+            syncModeStore: launch2Store,
+            fileManager: FakeUbiquityIdentityProvider.signedIn
+        )
+
+        #expect(launch2State != .showICloudConsent)
+        #expect(launch2State == .home)
+    }
 }
