@@ -96,6 +96,27 @@ Status: in-progress
   프로그래밍적으로 변경되는 경로(예: 화면이 떠 있는 동안 iCloud
   가용성이 바뀌는 드문 레이스)에 대한 방어 로직으로 유지하고,
   `SyncModeSwitchActionTests`로 계속 커버함.
+- "탭하면 토글 위치로 스크롤/포커스됨"(NO-002 §5.3, `Planning_8` 콜아웃
+  ③ "탭하면 토글로 포커스가 이동해 바로 켤 수 있게 유도")을
+  `ScrollViewReader` + `.id("iCloudSyncRow")` + `proxy.scrollTo(_:
+  anchor: .center)`로 구현함. 이 화면은 콘텐츠가 짧아 토글 행이 이미
+  화면 안에 있는 경우가 많아 스크롤 자체는 시각적으로 무의미한 경우가
+  있음 — 그래서 "포커스 이동"을 스크롤만으로 해석하지 않고,
+  `iCloudSyncRow` 배경에 `AppTheme.Colors.primary.opacity(0.15)`를
+  0.2초 페이드 인 → 0.2초 페이드 아웃(중간 0.4초 유지)하는 짧은 하이라이트
+  펄스를 추가해 시선을 토글로 유도함. 새 색상/애니메이션 토큰을 만들지
+  않고 기존 `AppTheme.Colors.primary`와 표준 `easeInOut` 애니메이션만
+  사용해 과한 추가 장치를 피함.
+- 배너 3종 중 `.syncOff`(로컬 전용 안내) 배너에만 탭 제스처를 연결함 —
+  `.syncOn`/`.iCloudOff` 배너는 단순 안내용이라 NO-002 §5.3/콜아웃③이
+  명시한 "탭하면 토글로 이동"이 적용되지 않음. `banner(for:
+  onTapToFocusToggle:)`가 클로저를 받아 `.syncOff` 케이스에서만
+  `.onTapGesture`로 연결하고 나머지 케이스는 무시하도록 구현.
+- 탭-스크롤/하이라이트 상호작용은 SwiftUI 제스처·스크롤 애니메이션이라
+  XCTest/Swift Testing으로 의미 있게 검증하기 어려워 단위 테스트를
+  추가하지 않음 — `#Preview("Sync Off")`로 배너 탭 시 스크롤/하이라이트
+  동작을 시각적으로 확인하는 것으로 충분하다고 판단함. (전체 빌드와
+  기존 160개 테스트는 회귀 없이 통과함.)
 
 ## Acceptance Criteria
 
@@ -105,7 +126,7 @@ Status: in-progress
       확인 Alert(로컬→iCloud / iCloud→로컬 각각 다른 문구)가 표시됨
 - [x] iCloud 비활성 상태에서는 토글이 비활성화(disabled)되고 안내
       문구가 표시됨
-- [ ] 로컬 전용 안내 배너가 토글 OFF일 때만 노출되고 탭하면 토글
+- [x] 로컬 전용 안내 배너가 토글 OFF일 때만 노출되고 탭하면 토글
       위치로 스크롤/포커스됨
 - [ ] `HomeView`에서 `SettingsView`로 진입할 수 있는 버튼이 추가됨
 

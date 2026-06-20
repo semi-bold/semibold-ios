@@ -60,6 +60,17 @@ struct SettingsView: View {
     /// toggle and skip showing another prompt for it.
     @State private var isRevertingToggle = false
 
+    /// Whether `iCloudSyncRow` is currently flashing its highlight, after
+    /// the person taps the local-only banner (NO-002 §5.3 "탭하면 토글로
+    /// 포커스가 이동"). Drives a brief background pulse on the row so a
+    /// scroll alone — which may be a visual no-op on this short screen —
+    /// isn't the only thing calling attention to the toggle.
+    @State private var isSyncRowHighlighted = false
+
+    /// Stable id `iCloudSyncRow` is tagged with so `ScrollViewReader` can
+    /// scroll to it from the local-only banner's tap target.
+    private static let syncRowID = "iCloudSyncRow"
+
     init(
         isICloudAvailable: Bool = ICloudAvailability.isAvailable(),
         isSyncOn: Bool = SyncModeStore().effectiveMode() == .icloud
@@ -82,13 +93,18 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             navBar
 
-            ScrollView {
-                VStack(spacing: 0) {
-                    sectionHeader("동기화")
-                    iCloudSyncRow
-                    banner(for: bannerState)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        sectionHeader("동기화")
+                        iCloudSyncRow
+                            .id(Self.syncRowID)
+                        banner(for: bannerState) {
+                            focusSyncRow(using: proxy)
+                        }
                         .padding(.horizontal, AppTheme.Spacing.md)
                         .padding(.top, AppTheme.Spacing.md)
+                    }
                 }
             }
         }
@@ -192,6 +208,25 @@ struct SettingsView: View {
         guard isSyncOn != isSyncOnBeforePendingChange else { return }
         isRevertingToggle = true
         isSyncOn = isSyncOnBeforePendingChange
+    }
+
+    /// NO-002 §5.3 / `Planning_8` callout ③: tapping the local-only banner
+    /// scrolls `iCloudSyncRow` into view and briefly highlights it, so the
+    /// person's attention lands on the toggle they'd need to flip to turn
+    /// sync back on.
+    private func focusSyncRow(using proxy: ScrollViewProxy) {
+        withAnimation {
+            proxy.scrollTo(Self.syncRowID, anchor: .center)
+        }
+
+        withAnimation(.easeInOut(duration: 0.2)) {
+            isSyncRowHighlighted = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isSyncRowHighlighted = false
+            }
+        }
     }
 
     private var isPendingPromptAlertPresented: Binding<Bool> {
@@ -311,7 +346,11 @@ struct SettingsView: View {
                 .frame(height: 1)
                 .padding(.leading, AppTheme.Spacing.md)
         }
-        .background(AppTheme.Colors.background)
+        .background(
+            isSyncRowHighlighted
+                ? AppTheme.Colors.primary.opacity(0.15)
+                : AppTheme.Colors.background
+        )
     }
 
     // MARK: - Status banner
@@ -319,8 +358,12 @@ struct SettingsView: View {
     /// Renders exactly one of the wireframe's three `Banner_*` groups,
     /// chosen by `bannerState` — the wireframe stacks all three only to
     /// document every possible appearance at once.
+    ///
+    /// - Parameter onTapToFocusToggle: Called when the local-only banner
+    ///   (`.syncOff`) is tapped, per NO-002 §5.3. The other two banners
+    ///   are informational only and ignore this.
     @ViewBuilder
-    private func banner(for state: SyncBannerState) -> some View {
+    private func banner(for state: SyncBannerState, onTapToFocusToggle: @escaping () -> Void) -> some View {
         switch state {
         case .syncOn:
             // `Banner_SyncOn` (wireframe.py:1076-1080).
@@ -344,8 +387,8 @@ struct SettingsView: View {
             )
 
         case .syncOff:
-            // `Banner_SyncOff` (wireframe.py:1082-1087) — tap target for
-            // focusing the toggle is added in a later AC item.
+            // `Banner_SyncOff` (wireframe.py:1082-1087) — tapping it
+            // scrolls/highlights `iCloudSyncRow` (NO-002 §5.3).
             HStack(spacing: AppTheme.Spacing.md) {
                 Text("⚠")
                     .appTextStyle(AppTheme.Typography.body)
@@ -368,6 +411,8 @@ struct SettingsView: View {
                 AppTheme.Colors.surface2,
                 in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
             )
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onTapToFocusToggle)
 
         case .iCloudOff:
             // `Banner_iCloudOff` (wireframe.py:1089-1093) — red-tinted
