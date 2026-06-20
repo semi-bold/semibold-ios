@@ -46,13 +46,18 @@ Status: in-progress
   분기 결정이 끝나야 하므로, `HomeView`가 그려지기 전 단계에서 처리)
 - "나중에 설정에서 바꿀 수 있습니다" 문구(와이어프레임 note 레이어)는
   그대로 텍스트로 구현 — 별도 동작은 없음 (정보 제공용)
+- `ICloudConsentView` 색상/타이포그래피는 와이어프레임의 리터럴 hex/pt
+  값이 아니라 **가장 가까운 기존 `AppTheme` 토큰**에 매핑함 (예:
+  와이어프레임 `#0a84ff`/18pt → `AppTheme.Colors.primary`/`Typography.title`
+  20pt). 차이가 시각적으로 무시할 수준이라 화면 전용 토큰을 새로
+  추가하지 않음 — `AppTheme` 중앙화 원칙(CLAUDE.md §3) 우선.
 
 ## Acceptance Criteria
 
 - [x] 앱 최초 실행 시(`sync_mode` 미설정) iCloud 가용 상태면
       `ICloudConsentView`가 표시되고, 불가능 상태면 팝업 없이 로컬
       전용으로 바로 `HomeView` 진입함 (NO-002 §3.1 flowchart)
-- [ ] `ICloudConsentView`가 `iOS_ICloudConsent` 와이어프레임과 1:1
+- [x] `ICloudConsentView`가 `iOS_ICloudConsent` 와이어프레임과 1:1
       매칭됨 (아이콘, 제목, 본문, 버튼 2개, dim overlay, radius/색상
       토큰은 `AppTheme` 사용)
 - [ ] "동기화 사용" 탭 시 `sync_mode = "icloud"` 저장 + iCloud 컨테이너로
