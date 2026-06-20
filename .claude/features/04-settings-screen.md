@@ -1,6 +1,6 @@
 # Feature: 04-settings-screen
 
-Status: in-progress
+Status: done
 
 ## Source
 
@@ -128,7 +128,7 @@ Status: in-progress
       문구가 표시됨
 - [x] 로컬 전용 안내 배너가 토글 OFF일 때만 노출되고 탭하면 토글
       위치로 스크롤/포커스됨
-- [ ] `HomeView`에서 `SettingsView`로 진입할 수 있는 버튼이 추가됨
+- [x] `HomeView`에서 `SettingsView`로 진입할 수 있는 버튼이 추가됨
 
 ## Open Questions / Follow-ups
 

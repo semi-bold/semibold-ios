@@ -194,11 +194,23 @@ struct SettingsView: View {
         }
 
         // Commit: the toggle's current position already reflects
-        // `newMode`, so just record it as the new "before" baseline and
-        // rebuild `HomeView`'s subtree so its repositories pick up the
-        // container `switchMode` just swapped in (see
-        // `AppCommandCenter.homeRebuildToken`'s doc comment).
+        // `newMode`, so just record it as the new "before" baseline.
         isSyncOnBeforePendingChange = isSyncOn
+
+        // Dismiss this sheet *before* asking `HomeView` to rebuild.
+        // `SemiboldApp` keys `HomeView()`'s `.id(_:)` to
+        // `homeRebuildToken` above the point where `HomeView` presents
+        // this sheet, so bumping the token tears down `HomeView`'s whole
+        // subtree as a single unit — including the `@State` that's
+        // holding this sheet open. Calling `dismiss()` first means the
+        // sheet's own dismissal is what's in flight when that happens,
+        // rather than the sheet (and this view) being yanked out from
+        // under itself mid-presentation. Both calls are plain state
+        // mutations that SwiftUI coalesces into the same update pass
+        // regardless of order, but source order still communicates
+        // intent: this view should close itself before triggering a
+        // rebuild of what's behind it.
+        dismiss()
         commandCenter.requestHomeRebuild()
     }
 
