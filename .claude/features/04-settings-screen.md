@@ -49,11 +49,18 @@ Status: in-progress
   정확한 위치가 모호하면 swift-reviewer 검토 시 확인
 - 상태 갱신 시점: 화면이 다시 보일 때(`onAppear`)마다
   `FileManager.ubiquityIdentityToken` 재확인 — 실시간 옵저빙은 하지
-  않음 (NO-002 범위에 실시간 감지 요구사항 없음)
+  않음 (NO-002 범위에 실시간 감지 요구사항 없음). `isSyncOn`도 같은
+  시점에 `SyncModeStore().effectiveMode()`로 재동기화.
+- 토글 행의 상태 설명(`rowSubtitle`, 한 줄)과 배너 본문(`subtitle`, 두
+  줄)을 별개 텍스트로 분리함 — NO-002 §5.2(설정 화면 항목, 한 줄
+  설명)와 §5.3(로컬 전용 안내 배너, 두 줄 설명)이 서로 다른 UI
+  요소를 위한 별도 문구를 명시하고 있어 그대로 따름. 와이어프레임은
+  행 예시 텍스트로 ON 상태("iCloud에 저장 중")만 보여주고 있어,
+  나머지 두 상태의 행 텍스트는 §5.2 명세를 직접 사용함.
 
 ## Acceptance Criteria
 
-- [ ] `SettingsView`가 `iOS_Settings` 와이어프레임과 1:1 매칭됨 (토글
+- [x] `SettingsView`가 `iOS_Settings` 와이어프레임과 1:1 매칭됨 (토글
       행, 상태 배너 3종 중 현재 상태에 맞는 배너만 노출)
 - [ ] 토글 ON↔OFF 전환 시 02번 브리프의 전환 함수가 호출되고, 전환 전
       확인 Alert(로컬→iCloud / iCloud→로컬 각각 다른 문구)가 표시됨
