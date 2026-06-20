@@ -7,9 +7,6 @@ options:
   createIntermediateGroups: true
 
 packages:
-  GRDB:
-    url: https://github.com/groue/GRDB.swift
-    from: 6.29.0
   SwiftLint:
     url: https://github.com/realm/SwiftLint
     from: 0.57.0
@@ -20,9 +17,6 @@ targets:
     platform: iOS
     sources:
       - path: semibold
-    dependencies:
-      - package: GRDB
-        product: GRDB
     plugins:
       - plugin: SwiftLintBuildToolPlugin
         package: SwiftLint
@@ -48,8 +42,6 @@ targets:
     sources:
       - path: semiboldTests
     dependencies:
-      - package: GRDB
-        product: GRDB
       - target: semibold
     settings:
       base:

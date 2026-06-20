@@ -1,6 +1,6 @@
 # Feature: 01-coredata-migration
 
-Status: draft
+Status: done
 
 ## Source
 
@@ -56,28 +56,88 @@ Status: draft
   `NSFetchRequest`/`NSManagedObjectContext`로 교체. ViewModel 레이어
   (`HomeViewModel`, `DetailViewModel` 등)는 가능한 한 수정 없이 동작해야
   함 — Repository가 같은 계약을 지키는 한 ViewModel을 바꿀 필요는 없음.
+- FK(`parentId`/`folderId`/`documentId`)는 스칼라 컬럼이 아니라 Core
+  Data 관례에 따라 `NSRelationship`(`Folder.parent`/`children`,
+  `Document.folder`, `DocumentBlock.document`/`parent`)으로만 모델링함.
+  AC의 "1:1 컬럼 반영" 요구는 named 관계로 충족된 것으로 간주 — 기존
+  GRDB 저장소가 `Column("parentId")`/`Column("documentId")` 같은 플랫
+  컬럼에 직접 필터/정렬을 걸던 부분은, 이어지는 Repository 재작성 AC
+  항목에서 관계 keypath 기반 `NSFetchRequest` 술어(predicate)와
+  `NSSortDescriptor`로 옮겨 처리한다(예: `parentId == nil` →
+  `parent == nil`, `.order(Column("documentId"), Column("parentId"), …)`
+  → `NSSortDescriptor(keyPath: \DocumentBlockEntity.document.id, …)`
+  류). 관계와 중복되는 스칼라 FK 속성은 추가하지 않음.
+- `DatabaseManager`는 `NSPersistentContainer`(model name `"SemiboldModel"`)
+  래퍼로 재작성됨. 기존 `init(path:) throws` → `init(storeURL:) throws`로
+  바뀌었고, `dbQueue: DatabaseQueue` → `persistentContainer:
+  NSPersistentContainer`, `sharedOrFallbackQueue` →
+  `sharedOrFallbackContext: NSManagedObjectContext`로 대응시킴.
+  `shared: DatabaseManager?` / `openError: Error?` 패턴과
+  `defaultDatabasePath()` → `defaultStoreURL()`(Application Support 내
+  `semibold.sqlite`, 동일 경로 유지)는 그대로 보존해 `SemiboldApp.swift`의
+  `DatabaseManager.shared == nil` 분기가 코드 수정 없이 그대로 동작함.
+  `loadPersistentStores`는 콜백 기반이지만 로컬 SQLite/in-memory 스토어는
+  호출이 반환되기 전에 동기적으로 완료되므로, 콜백에서 에러를 캡처해
+  `init`이 반환하기 직전에 던지는 방식으로 기존 `throws` 시그니처를
+  유지함.
+- 이 AC 항목 완료 시점에 `FolderRepository`/`DocumentRepository`/
+  `DocumentBlockRepository`는 아직 GRDB `DatabaseQueue`/
+  `DatabaseManager.sharedOrFallbackQueue`를 참조하므로 전체 타겟 빌드는
+  실패하는 것이 의도된 전환기 상태임(다음 AC 항목인 Repository
+  Core Data 재작성에서 해소). `DatabaseManager.swift` 자체는
+  격리 상태로 컴파일 에러 없이 빌드됨 — 실제 컴파일 에러는
+  `FolderRepository.swift:12`, `DocumentRepository.swift:12`,
+  `DocumentBlockRepository.swift:12`의 `sharedOrFallbackQueue` 참조뿐임.
+- 삭제 규칙(`deletionRule`): FK를 들고 있는 to-one 쪽
+  (`Document.folder`, `DocumentBlock.document`, `Folder.parent`,
+  `DocumentBlock.parent`)은 `Nullify`를 유지해 기존 GRDB가 갖고 있던
+  "자동 cascade 없음" 동작을 보존함. to-many 역방향 쪽
+  (`Folder.children`, `Folder.documents`, `Document.blocks`,
+  `DocumentBlock.children`)은 `Nullify` 대신 `Deny`로 설정함. Core
+  Data는 객체가 **삭제되는 쪽**에서 선언된 관계의 삭제 규칙을 따르므로
+  (예: `Folder`를 삭제할 때 적용되는 규칙은 `Folder.children`/
+  `Folder.documents`에 선언된 것이고, 그 역방향인 `DocumentBlock.parent`/
+  `Document.folder`의 규칙이 아님), 자식이 남아있는 상태로 부모를
+  삭제하면 `Deny`가 저장을 막아 "자동 cascade도, 묵시적 orphan도
+  없음"을 보장함. 이에 따라 Repository 재작성 AC에서 구현할
+  `hardDelete`는 부모를 삭제하기 전에 자식 행을 먼저 직접 삭제하거나
+  연결을 끊어야 함 — Core Data가 대신 cascade해주지 않음.
 
 ## Acceptance Criteria
 
-- [ ] `semibold/Data/SemiboldModel.xcdatamodeld`에 `Folder`/`Document`/
+- [x] `semibold/Data/SemiboldModel.xcdatamodeld`에 `Folder`/`Document`/
       `DocumentBlock` Entity가 기존 GRDB 스키마의 모든 컬럼
       (`id`, `parentId`/`folderId`, `name`/`title`, `sortOrder`,
       `createdAt`, `updatedAt`, `deletedAt`, block의 `type`,
       `contentJSON`, `markdownSource` 등)을 1:1로 반영해 정의됨
-- [ ] `DatabaseManager`가 `NSPersistentContainer` 기반으로 재작성되고,
+- [x] `DatabaseManager`가 `NSPersistentContainer` 기반으로 재작성되고,
       `shared`/`sharedOrFallbackQueue`에 대응하는 접근 지점이 기존과
       동일한 실패 처리(열기 실패 시 `DatabaseUnavailableView` 분기)를
       유지함
-- [ ] `FolderRepository`, `DocumentRepository`, `DocumentBlockRepository`가
+- [x] `FolderRepository`, `DocumentRepository`, `DocumentBlockRepository`가
       Core Data로 재작성되고 기존 메서드 시그니처를 유지하며, soft
       delete(`deletedAt`) 동작이 기존과 동일하게 보존됨
-- [ ] `FolderDocumentPersistenceTests.swift`, `DetailViewModelTests.swift`
+- [x] `FolderDocumentPersistenceTests.swift`, `DetailViewModelTests.swift`
       등 GRDB 의존 테스트가 Core Data in-memory 컨테이너 기준으로
       재작성되어 전체 테스트 스위트가 통과함
-- [ ] `project.yml`에서 GRDB SPM 패키지 의존성이 제거되고
+- [x] `project.yml`에서 GRDB SPM 패키지 의존성이 제거되고
       `xcodegen generate` 후 빌드가 정상 동작함
 
 ## Open Questions / Follow-ups
 
 - CloudKit 실연동 테스트는 Apple Developer Console 설정(Team ID 발급
   대기 중) 완료 후 02번 브리프에서 진행
+- `DatabaseManager`의 `loadPersistentStores` 동기 완료 가정은 현재
+  local SQLite/in-memory 구성(`shouldAddStoreAsynchronously` 미설정,
+  `NSPersistentCloudKitContainer` 미사용)에서만 유효함. 02번 브리프에서
+  `NSPersistentCloudKitContainer`로 교체할 때 이 가정이 깨지지 않는지
+  반드시 재확인할 것 (swift-reviewer Suggested 항목).
+- `AppMigrations.swift`가 더 이상 `DatabaseManager.init`에서 호출되지
+  않아 죽은 코드가 됨 — GRDB 의존성 제거(5번 AC 항목)와 같은 패스에서
+  함께 삭제할 것.
+- `hardDelete(id:)`(Folder/Document 양쪽)가 자식의 `deletedAt` 상태와
+  무관하게 하위 전체를 영구 삭제하도록 구현됨 — `Deny` 삭제 규칙을
+  만족시키기 위한 의도된 동작이며, 문서 주석에 경고를 명시함. 다만 현재
+  실제 호출부는 테스트뿐이고 UI에서 호출하는 곳은 없음 — 향후 "폴더/문서
+  영구 삭제" UI를 만들 때는 호출 전 반드시 소프트 삭제 확인 또는
+  사용자 확인을 거치도록 할 것.
