@@ -1,6 +1,6 @@
 # Feature: 02-icloud-sync-branching
 
-Status: in-progress
+Status: done
 
 ## Source
 
