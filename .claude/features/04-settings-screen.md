@@ -81,6 +81,21 @@ Status: in-progress
   검증하기 어려움 — `#Preview`에 `AppCommandCenter`를 주입해 빌드/
   프리뷰가 가능하도록 했고, 실제 동작 검증은 단위 테스트
   (`SyncModeSwitchActionTests`)로 결정 로직을 커버함.
+- iCloud 비활성 상태의 "안내 문구"는 NO-002 §5.2가 명시한 한 줄
+  설명("iCloud를 사용하려면 기기 설정을 확인하세요")을 그대로
+  사용 — 이는 이전 AC(배너 3종)에서 이미 `rowSubtitle`/
+  `Banner_iCloudOff`로 구현되어 있었음. 이번 AC에서는 토글
+  자체에 `.disabled(!isICloudAvailable)`만 추가함. 와이어프레임/
+  `tasks/NO-002.md`(§2.4, §3.2, §5.2, §5.3, §6) 어디에도 비활성
+  토글 행 전용의 *별도* 안내 문구가 명시되어 있지 않아, 기존
+  한 줄 설명 + 토글 비활성화 조합으로 충분하다고 판단함.
+- 토글이 비활성화되면 사람이 탭으로 `requestSwitch`의
+  `.iCloudUnavailable` 분기(`isICloudUnavailableGuidancePresented`
+  얼럿)에 도달할 입구가 사실상 막힘 — 그러나 이 분기를 죽은 코드로
+  보고 제거하지 않음. `SyncModeSwitchAction.prompt`는 `isSyncOn`이
+  프로그래밍적으로 변경되는 경로(예: 화면이 떠 있는 동안 iCloud
+  가용성이 바뀌는 드문 레이스)에 대한 방어 로직으로 유지하고,
+  `SyncModeSwitchActionTests`로 계속 커버함.
 
 ## Acceptance Criteria
 
@@ -88,7 +103,7 @@ Status: in-progress
       행, 상태 배너 3종 중 현재 상태에 맞는 배너만 노출)
 - [x] 토글 ON↔OFF 전환 시 02번 브리프의 전환 함수가 호출되고, 전환 전
       확인 Alert(로컬→iCloud / iCloud→로컬 각각 다른 문구)가 표시됨
-- [ ] iCloud 비활성 상태에서는 토글이 비활성화(disabled)되고 안내
+- [x] iCloud 비활성 상태에서는 토글이 비활성화(disabled)되고 안내
       문구가 표시됨
 - [ ] 로컬 전용 안내 배너가 토글 OFF일 때만 노출되고 탭하면 토글
       위치로 스크롤/포커스됨

@@ -141,6 +141,14 @@ struct SettingsView: View {
     /// Reacts to the toggle's new (not-yet-committed) position by asking
     /// `SyncModeSwitchAction` what to show, per NO-002 §3.2's "변경
     /// 방향?" branch — never applies `newMode` directly.
+    ///
+    /// The `.iCloudUnavailable` branch is a defensive fallback rather than
+    /// the primary path for "iCloud is off": `iCloudSyncRow`'s
+    /// `.disabled(!isICloudAvailable)` already keeps the person from
+    /// reaching this function via a tap while iCloud is unavailable. It
+    /// stays here for the rare case where availability changes out from
+    /// under an in-flight programmatic toggle change between this screen's
+    /// last `onAppear` check and the change itself.
     private func requestSwitch(to newMode: SyncMode) {
         switch SyncModeSwitchAction.prompt(for: newMode) {
         case .confirmLocalToICloud:
@@ -267,6 +275,14 @@ struct SettingsView: View {
     /// `Row_iCloudSync` (wireframe.py:1066-1075): label, a one-line status
     /// subtitle that mirrors the banner's headline, and the toggle
     /// itself (`Planning_8` callout ①, subtitle is callout ②).
+    ///
+    /// While iCloud isn't available on this device, the toggle is disabled
+    /// outright (NO-002 §6 "iCloud 비활성화 안내") rather than left
+    /// tappable only to bounce the attempt back with the
+    /// "iCloud 설정 필요" alert — the row's subtitle already explains why
+    /// (`bannerState.rowSubtitle`), so a disabled control plus that
+    /// explanation is the guidance, matching the `Banner_iCloudOff` state
+    /// shown just below it.
     private var iCloudSyncRow: some View {
         VStack(spacing: 0) {
             HStack {
@@ -285,6 +301,7 @@ struct SettingsView: View {
                 Toggle("", isOn: $isSyncOn)
                     .labelsHidden()
                     .tint(AppTheme.Colors.primary)
+                    .disabled(!isICloudAvailable)
             }
             .padding(.horizontal, AppTheme.Spacing.md)
             .frame(height: 60)
