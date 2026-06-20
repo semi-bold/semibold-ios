@@ -159,22 +159,36 @@ For each unchecked (`- [ ]`) item, in order:
      the primary spec for this work code. If the item corresponds to a
      row in the brief's Screens & Flows table, mention that mapping
      explicitly.
+   - **Never instruct it to write/record/document anything in the brief
+     file** — not even "note this in Decisions & Deviations." It reports
+     deviations/decisions/gaps in its own output text only. The brief
+     file is frozen — only step 4 below (and only `Status`/checkboxes)
+     ever changes it. If you catch yourself drafting a prompt that asks
+     it to edit the brief, rewrite the prompt instead.
 
-2. **Spawn `swift-reviewer`**
+2. **Verify the brief file wasn't touched**
+   - `git diff --name-only -- .claude/features/` — should be empty. If
+     `feature-implementer` wrote to the brief anyway, `git checkout --
+     .claude/features/NN-slug.md` to discard that edit before doing
+     anything else, then proceed as if it hadn't happened.
+
+3. **Spawn `swift-reviewer`**
    - `subagent_type: swift-reviewer`
    - Prompt: review the diff just produced (`git diff`) against
      CLAUDE.md and the brief's Decisions & Deviations / this Acceptance
      Criteria item.
 
-3. **Handle the review result**
+4. **Handle the review result**
    - `OK` / `Suggested` only → continue.
    - `Blocking` → re-spawn `feature-implementer` with the blocking items
      as fix instructions. Retry up to 2 times total. If still blocking,
      stop and report the outstanding issues to the user.
 
-4. **Check off and commit**
+5. **Check off and commit**
    - If `feature-implementer` confirms the item is fully met, edit the
-     brief: change that item's `- [ ]` to `- [x]`.
+     brief: change that item's `- [ ]` to `- [x]`. This is the **only**
+     edit this step makes — don't touch Decisions & Deviations even to
+     summarize what happened.
    - If it's only partially done or blocked, leave it unchecked and add a
      note under Open Questions / Follow-ups explaining what's left.
    ```bash
@@ -183,7 +197,7 @@ For each unchecked (`- [ ]`) item, in order:
    git push
    ```
 
-5. Report progress (see User Communication).
+6. Report progress (see User Communication).
 
 If `feature-implementer` reports a gap (no matching wireframe/spec for a
 UI-facing item, or an ambiguous brief decision), stop and report it to the
@@ -313,8 +327,16 @@ Acceptance criteria: 3/3 met
 - `.claude/features/*.md` (except `TEMPLATE.md`) are removed from
   `feature/<work-code>/base` only once **every** brief is `done` — git
   history retains their content for reference.
-- Don't edit a brief's Scope/Decisions/Screens & Flows sections — only
-  `Status` and the Acceptance Criteria checkboxes.
+- **A brief is frozen once written.** You (the orchestrator) only ever
+  touch `Status` and the Acceptance Criteria checkboxes — never Scope,
+  Decisions & Deviations, or Screens & Flows. `feature-implementer` and
+  `swift-reviewer` never touch the brief file at all, in any way. This
+  isn't a style preference: the user reviews a brief once, and any
+  edit to it after that makes it impossible to tell whether the file
+  still reflects what they approved, plus risks merge conflicts across
+  the relay chain. If something worth recording comes up mid-work that
+  doesn't fit a checkbox, say it in your own report to the user — don't
+  put it in the brief.
 - **⛔ Never push to `dev` or `main` directly.** The user merges PRs
   (in relay order) and creates the final `feature/<work-code>/base` →
   `dev` PR manually.
