@@ -1,6 +1,6 @@
 # Feature: 03-icloud-onboarding
 
-Status: draft
+Status: in-progress
 
 ## Source
 
