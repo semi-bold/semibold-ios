@@ -1,6 +1,6 @@
 ---
 name: work
-description: Run the semi:bold iOS feature pipeline for one work code — for the next not-done `.claude/features/<brief>.md` (in order), create/resume a relay branch `feature/<work-code>/<brief>` off `feature/<work-code>/base` (or the previous brief's branch), implement its unchecked Acceptance Criteria via feature-implementer + swift-reviewer, and open a chained PR. Once every brief is `done`, clean up `.claude/features/` on `feature/<work-code>/base`.
+description: Run the semi:bold iOS feature pipeline for one work code — for the next not-done `.claude/features/<brief>.md` (in order), create/resume a relay branch `feature/<work-code>/<brief>` off `feature/<work-code>/base` (or the previous brief's branch), implement its unchecked Acceptance Criteria via feature-implementer + swift-reviewer, and open a chained PR. Once every brief is `done` and every brief's PR is merged into `feature/<work-code>/base`, clean up `.claude/features/` there.
 ---
 
 You are the work orchestrator for semi:bold iOS development.
@@ -30,10 +30,13 @@ PR.
   branch otherwise). The user merges these PRs **in order**; each merge
   updates the next PR's diff down to just that brief's own changes.
 - Once **every** brief in `.claude/features/` (excluding `TEMPLATE.md`)
-  is `Status: done`, check out `feature/<work-code>/base`, remove all
-  `.claude/features/*.md` except `TEMPLATE.md`, and commit + push that
-  to `feature/<work-code>/base`. The user then creates and merges the
-  final `feature/<work-code>/base` → `dev` PR manually.
+  is `Status: done` **and** every brief's PR is merged into
+  `feature/<work-code>/base`, check out `feature/<work-code>/base`,
+  remove all `.claude/features/*.md` except `TEMPLATE.md`, and commit +
+  push that to `feature/<work-code>/base`. The user then creates and
+  merges the final `feature/<work-code>/base` → `dev` PR manually.
+  Deleting these files before every PR is merged breaks the still-open
+  ones with a modify/delete conflict.
 - **⛔ Never push to `dev` or `main` directly.** This skill never merges
   or pushes to `dev` — the user controls when `feature/<work-code>/base`
   lands into `dev`.
@@ -106,7 +109,17 @@ PR.
      ordered by filename (numbered briefs in numeric order first, then
      unnumbered alphabetically), and pick the first whose `Status` isn't
      `done`.
-   - If every brief is `done`, skip straight to **Completion**.
+   - If every brief is `done`, check whether every brief's PR is already
+     **merged** into `feature/<work-code>/base`:
+     `git merge-base --is-ancestor origin/feature/<work-code>/<NN-slug>
+     origin/feature/<work-code>/base` for each brief (exit code `0`
+     means merged). All merged → skip straight to **Completion**. Any
+     not yet merged → stop and tell the user their PRs are still pending
+     merge; running `/work` again once they're all merged will trigger
+     Completion automatically. **Never run Completion (delete the brief
+     files) while any brief's PR is still open** — its branch still
+     needs that file intact for the PR's own diff/merge, and `base`
+     deleting it first causes a modify/delete conflict on that PR.
    - If the resolved brief's Source/Scope/Acceptance Criteria look
      unfilled (still template placeholders), stop and tell the user it
      needs to be fleshed out first — from
@@ -211,11 +224,13 @@ user instead of guessing — don't continue to the next item.
      --body "<see PR Body Template>" \
      [--draft]   # use --draft if Acceptance Criteria aren't all met yet
    ```
-3. If this brief is now `done` **and** it was the last not-done brief
-   (every brief in `.claude/features/` is now `done`), proceed to
-   **Completion**. Otherwise, tell the user this brief's PR is open and
-   that running `/work` again will pick up the next brief, chained onto
-   this one's branch.
+3. Opening this brief's PR does **not** trigger Completion, even if it
+   was the last not-done brief — Completion requires every brief's PR to
+   already be **merged**, which can't be true the same run that just
+   opened one of them. Tell the user this brief's PR is open; if it was
+   the last brief, also tell them that once they've merged all the
+   briefs' PRs in order (down to `feature/<work-code>/base`), running
+   `/work` once more will detect that and run Completion automatically.
 
 ### PR Body Template
 
@@ -231,7 +246,8 @@ user instead of guessing — don't continue to the next item.
 🤖 Generated with `/work` from `.claude/features/NN-slug.md`
 ```
 
-## Completion (every brief is `done`)
+## Completion (every brief is `done` **and** every brief's PR is merged
+into `feature/<work-code>/base` — see step 4's merge check)
 
 ```bash
 git checkout feature/<work-code>/base && git pull origin feature/<work-code>/base
@@ -319,8 +335,11 @@ Acceptance criteria: 3/3 met
   `feature/<work-code>/base` for the first):
   `feature/<work-code>/<NN-slug>`.
 - `.claude/features/*.md` (except `TEMPLATE.md`) are removed from
-  `feature/<work-code>/base` only once **every** brief is `done` — git
-  history retains their content for reference.
+  `feature/<work-code>/base` only once **every** brief is `done` **and**
+  every brief's PR is merged into `base` — git history retains their
+  content for reference. Deleting them on `base` any earlier breaks
+  every still-open brief PR with a modify/delete conflict, since each
+  one's own branch still has its (now further-edited) brief file.
 - **A brief is frozen once written.** You (the orchestrator) only ever
   touch `Status` and the Acceptance Criteria checkboxes — never Scope,
   Decisions & Deviations, or Screens & Flows. `feature-implementer` and
