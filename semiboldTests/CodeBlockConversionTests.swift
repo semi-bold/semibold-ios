@@ -1,4 +1,3 @@
-import GRDB
 import Testing
 
 @testable import semibold
@@ -13,15 +12,15 @@ import Testing
 /// `ChecklistConversionTests`/`BlockquoteConversionTests` precedent.
 @MainActor
 struct CodeBlockConversionTests {
-    private func makeDatabaseManager() throws -> DatabaseManager {
-        try DatabaseManager(path: ":memory:")
+    private func makeStore() throws -> CoreDataTestStore {
+        try CoreDataTestStore()
     }
 
     @Test("Typing '```swift' converts the block to a code block with language 'swift', saved immediately")
     func typingFenceWithLanguageConvertsBlockToCodeBlock() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -57,9 +56,9 @@ struct CodeBlockConversionTests {
 
     @Test("Typing '```' alone converts the block to a code block with no language")
     func typingBareFenceConvertsBlockToCodeBlockWithNoLanguage() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -82,9 +81,9 @@ struct CodeBlockConversionTests {
 
     @Test("Typing '```swift extra' keeps 'extra' as the code block's initial code")
     func typingFenceWithTrailingTextKeepsItAsInitialCode() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -106,9 +105,9 @@ struct CodeBlockConversionTests {
 
     @Test("Editing a code block keeps it a code block and rebuilds markdownSource with the fence")
     func editingCodeBlockRebuildsMarkdownSource() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -135,9 +134,9 @@ struct CodeBlockConversionTests {
 
     @Test("'``' (two backticks) does NOT convert to a code block")
     func twoBackticksDoesNotConvert() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -153,9 +152,9 @@ struct CodeBlockConversionTests {
 
     @Test("'`' (one backtick) does NOT convert to a code block")
     func oneBacktickDoesNotConvert() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -171,9 +170,9 @@ struct CodeBlockConversionTests {
 
     @Test("'```' code-fence prefix doesn't conflict with heading/list/checklist/blockquote prefixes")
     func codeFencePrefixDoesNotConflictWithOtherPrefixes() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
 

@@ -28,6 +28,10 @@ struct HomeView: View {
     /// (`Planning_3_DocumentCreateFlow`, PLANNING §5.3).
     @State private var isNewDocumentSheetPresented = false
 
+    /// Whether `SettingsView` (currently scoped to the "동기화" section,
+    /// NO-002) is showing.
+    @State private var isSettingsSheetPresented = false
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -64,14 +68,17 @@ struct HomeView: View {
             Button("Cancel", role: .cancel) {}
         }
         .sheet(isPresented: $isNewFolderSheetPresented) {
-            NewFolderSheet { createdFolder in
-                viewModel.didCreateFolder(createdFolder)
+            NewFolderSheet { _ in
+                viewModel.didCreateFolder()
             }
         }
         .sheet(isPresented: $isNewDocumentSheetPresented) {
-            NewDocumentSheet { createdDocument in
-                viewModel.didCreateDocument(createdDocument)
+            NewDocumentSheet { _ in
+                viewModel.didCreateDocument()
             }
+        }
+        .sheet(isPresented: $isSettingsSheetPresented) {
+            SettingsView()
         }
     }
 
@@ -90,6 +97,8 @@ struct HomeView: View {
                 spaceBadge
 
                 Spacer()
+
+                settingsButton
 
                 addButton
             }
@@ -115,6 +124,26 @@ struct HomeView: View {
                 AppTheme.Colors.primary.opacity(0.15),
                 in: RoundedRectangle(cornerRadius: AppTheme.Radius.full)
             )
+    }
+
+    /// Entry point for `SettingsView` (currently scoped to the "동기화"
+    /// section, NO-002) — not specified in `Screen_Home`/`iOS_PrivateSpace`,
+    /// so it's placed beside `addButton` using the same icon-button style
+    /// (see `.claude/features/04-settings-screen.md` Decisions &
+    /// Deviations).
+    private var settingsButton: some View {
+        Button {
+            isSettingsSheetPresented = true
+        } label: {
+            Image(systemName: "gearshape")
+                .appTextStyle(AppTheme.Typography.title)
+                .foregroundStyle(AppTheme.Colors.primary)
+                .frame(width: 40, height: 40)
+                .background(
+                    AppTheme.Colors.primary.opacity(0.18),
+                    in: RoundedRectangle(cornerRadius: AppTheme.Radius.full)
+                )
+        }
     }
 
     /// Entry point for the "new folder / new document" menu
@@ -146,7 +175,7 @@ struct HomeView: View {
                 emptyRow(text: "첫 폴더를 만들어보세요.")
             } else {
                 ForEach(viewModel.folders) { folder in
-                    FolderRow(folder: folder, isSelected: folder.id == viewModel.selectedFolderId)
+                    FolderRow(folder: folder)
                 }
             }
         } header: {
@@ -164,7 +193,7 @@ struct HomeView: View {
                 emptyRow(text: "첫 문서를 만들어보세요.")
             } else {
                 ForEach(viewModel.documents) { document in
-                    DocumentRow(document: document, isSelected: document.id == viewModel.selectedDocumentId)
+                    DocumentRow(document: document)
                 }
             }
         } header: {
@@ -199,11 +228,6 @@ struct HomeView: View {
 private struct FolderRow: View {
     let folder: Folder
 
-    /// Whether this is the folder just created from the "+" menu
-    /// (PLANNING §5.2: "생성된 폴더 선택 상태로 전환"), highlighted so the
-    /// user can see where it landed in the list.
-    let isSelected: Bool
-
     var body: some View {
         HStack(spacing: AppTheme.Spacing.md) {
             Image(systemName: "folder")
@@ -229,18 +253,13 @@ private struct FolderRow: View {
                 .foregroundStyle(AppTheme.Colors.text3)
         }
         .padding(.vertical, AppTheme.Spacing.sm)
-        .listRowBackground(isSelected ? AppTheme.Colors.surface2 : AppTheme.Colors.background)
+        .listRowBackground(AppTheme.Colors.background)
     }
 }
 
 /// A single document row: document icon, title, and last-updated date.
 private struct DocumentRow: View {
     let document: Document
-
-    /// Whether this is the document just created from the "+" menu
-    /// (`Planning_3_DocumentCreateFlow`, PLANNING §5.3), highlighted so the
-    /// user can see where it landed in the list.
-    let isSelected: Bool
 
     var body: some View {
         HStack(spacing: AppTheme.Spacing.md) {
@@ -261,7 +280,7 @@ private struct DocumentRow: View {
             Spacer()
         }
         .padding(.vertical, AppTheme.Spacing.sm)
-        .listRowBackground(isSelected ? AppTheme.Colors.surface2 : AppTheme.Colors.background)
+        .listRowBackground(AppTheme.Colors.background)
     }
 }
 

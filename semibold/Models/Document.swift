@@ -1,5 +1,4 @@
 import Foundation
-import GRDB
 
 /// A single document the user is writing.
 ///
@@ -32,8 +31,4 @@ struct Document: Identifiable, Equatable, Hashable, Codable {
         self.updatedAt = updatedAt
         self.deletedAt = deletedAt
     }
-}
-
-extension Document: FetchableRecord, PersistableRecord {
-    static let databaseTableName = "documents"
 }

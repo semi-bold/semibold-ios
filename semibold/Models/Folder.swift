@@ -1,5 +1,4 @@
 import Foundation
-import GRDB
 
 /// A folder in the user's local document tree.
 ///
@@ -32,8 +31,4 @@ struct Folder: Identifiable, Equatable, Codable {
         self.updatedAt = updatedAt
         self.deletedAt = deletedAt
     }
-}
-
-extension Folder: FetchableRecord, PersistableRecord {
-    static let databaseTableName = "folders"
 }

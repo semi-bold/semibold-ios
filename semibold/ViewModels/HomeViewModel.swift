@@ -11,16 +11,6 @@ final class HomeViewModel {
     private(set) var folders: [Folder] = []
     private(set) var documents: [Document] = []
 
-    /// The folder most recently created from the "+" menu, highlighted in
-    /// the list to confirm where it landed
-    /// (PLANNING §5.2: "생성된 폴더 선택 상태로 전환").
-    var selectedFolderId: String?
-
-    /// The document most recently created from the "+" menu, highlighted
-    /// in the list to confirm where it landed (PLANNING §5.3, mirroring
-    /// the folder flow's "선택 상태로 전환" step).
-    var selectedDocumentId: String?
-
     private let folderRepository: FolderRepository
     private let documentRepository: DocumentRepository
 
@@ -48,21 +38,19 @@ final class HomeViewModel {
         }
     }
 
-    /// Refreshes the list after a new folder is created and marks it as
-    /// selected, completing `Planning_2_FolderCreateFlow`'s final two
-    /// steps ("폴더 목록 갱신" → "생성된 폴더 선택 상태로 전환").
-    func didCreateFolder(_ folder: Folder) {
+    /// Refreshes the list after a new folder is created
+    /// (`Planning_2_FolderCreateFlow`'s final step, "폴더 목록 갱신" —
+    /// the highlighted-selection step that used to follow it was removed
+    /// from the spec, see NO-003 §1.4).
+    func didCreateFolder() {
         load()
-        selectedFolderId = folder.id
     }
 
-    /// Refreshes the list after a new document is created and marks it as
-    /// selected, so the user can see where it landed
+    /// Refreshes the list after a new document is created
     /// (`Planning_3_DocumentCreateFlow`, PLANNING §5.3: "documents row
-    /// 생성" → "빈 document editor 열기"). The user can then tap into the
-    /// new document to open `DetailView`.
-    func didCreateDocument(_ document: Document) {
+    /// 생성"). The user can then tap into the new document to open
+    /// `DetailView`.
+    func didCreateDocument() {
         load()
-        selectedDocumentId = document.id
     }
 }

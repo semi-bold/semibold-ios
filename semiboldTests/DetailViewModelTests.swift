@@ -1,5 +1,4 @@
 import Foundation
-import GRDB
 import Testing
 
 @testable import semibold
@@ -16,15 +15,15 @@ import Testing
 /// so this suite runs on the main actor too.
 @MainActor
 struct DetailViewModelTests {
-    private func makeDatabaseManager() throws -> DatabaseManager {
-        try DatabaseManager(path: ":memory:")
+    private func makeStore() throws -> CoreDataTestStore {
+        try CoreDataTestStore()
     }
 
     @Test("A brand-new document gets one empty paragraph block on load, focused")
     func loadCreatesFirstEmptyBlockForNewDocument() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Untitled"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -43,9 +42,9 @@ struct DetailViewModelTests {
 
     @Test("Loading a document that already has blocks doesn't add another one")
     func loadDoesNotDuplicateExistingBlocks() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         _ = try blockRepository.create(DocumentBlock(
@@ -66,9 +65,9 @@ struct DetailViewModelTests {
 
     @Test("Editing a block's text updates it in memory immediately and persists it once the debounce settles")
     func updateBlockTextPersistsAfterDebounce() async throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -97,9 +96,9 @@ struct DetailViewModelTests {
 
     @Test("Backgrounding the app flushes a pending debounced edit immediately")
     func flushPendingChangesPersistsImmediately() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -119,9 +118,9 @@ struct DetailViewModelTests {
 
     @Test("Pressing Enter splits the block at the cursor and creates a new block below it, focused")
     func insertBlockSplitsAtCursorAndFocusesNewBlock() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -146,9 +145,9 @@ struct DetailViewModelTests {
 
     @Test("Pressing Enter at the end of a block creates an empty block below it")
     func insertBlockAtEndCreatesEmptyBlock() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -166,9 +165,9 @@ struct DetailViewModelTests {
 
     @Test("Pressing Enter on a block that isn't the last shifts later blocks' sortOrder down")
     func insertBlockShiftsLaterBlocksSortOrder() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -198,9 +197,9 @@ struct DetailViewModelTests {
 
     @Test("Backspace at the start of an empty block deletes it and focuses the previous block at its end")
     func backspaceAtStartOfEmptyBlockDeletesItAndFocusesPreviousBlockEnd() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -245,9 +244,9 @@ struct DetailViewModelTests {
 
     @Test("Backspace at the start of a non-empty block merges its text into the previous block")
     func backspaceAtStartOfNonEmptyBlockMergesIntoPreviousBlock() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -284,9 +283,9 @@ struct DetailViewModelTests {
 
     @Test("Backspace at the start of the document's first block does nothing")
     func backspaceAtStartOfFirstBlockDoesNothing() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -307,9 +306,9 @@ struct DetailViewModelTests {
 
     @Test("moveBlock swaps a block with the neighbor above it and persists the new order")
     func moveBlockUpSwapsSortOrderAndPersists() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -340,9 +339,9 @@ struct DetailViewModelTests {
 
     @Test("moveBlock does nothing when the block is already at the top or bottom")
     func moveBlockAtBoundaryDoesNothing() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -389,9 +388,9 @@ struct DetailViewModelTests {
 
     @Test("reorderBlocks moves a block to a later position and renumbers sortOrder in between")
     func reorderBlocksMovesBlockLaterAndRenumbers() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
         let (viewModel, _) = try loadFourBlockDocument(documentRepository: documentRepository, blockRepository: blockRepository)
 
         // Move "B" (index 1) to just after "C" (SwiftUI's onMove
@@ -408,9 +407,9 @@ struct DetailViewModelTests {
 
     @Test("reorderBlocks moves a block to an earlier position and renumbers sortOrder in between")
     func reorderBlocksMovesBlockEarlierAndRenumbers() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
         let (viewModel, _) = try loadFourBlockDocument(documentRepository: documentRepository, blockRepository: blockRepository)
 
         // Move "D" (index 3) to the front.
@@ -426,9 +425,9 @@ struct DetailViewModelTests {
 
     @Test("reorderBlocks to the same position is a no-op that persists nothing new")
     func reorderBlocksToSamePositionIsNoOp() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
         let (viewModel, _) = try loadFourBlockDocument(documentRepository: documentRepository, blockRepository: blockRepository)
 
         // Moving index 1 to destination 1 (or 2, which `Array.move`
@@ -442,9 +441,9 @@ struct DetailViewModelTests {
 
     @Test("reorderBlocks with an empty source does nothing")
     func reorderBlocksWithEmptySourceDoesNothing() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
         let (viewModel, _) = try loadFourBlockDocument(documentRepository: documentRepository, blockRepository: blockRepository)
 
         viewModel.reorderBlocks(fromOffsets: IndexSet(), toOffset: 2)
@@ -455,9 +454,9 @@ struct DetailViewModelTests {
 
     @Test("moveBlock(id:beforeBlockId:) moves a dragged block to sit just above the drop target")
     func moveBlockBeforeTargetReordersAndPersists() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
         let (viewModel, blocks) = try loadFourBlockDocument(documentRepository: documentRepository, blockRepository: blockRepository)
 
         // Drag "A" (first) and drop it onto "C" — "A" should land directly
@@ -476,9 +475,9 @@ struct DetailViewModelTests {
 
     @Test("moveBlock(id:beforeBlockId:) moves a dragged block backwards above an earlier target")
     func moveBlockBeforeEarlierTargetReordersAndPersists() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
         let (viewModel, blocks) = try loadFourBlockDocument(documentRepository: documentRepository, blockRepository: blockRepository)
 
         // Drag "D" (last) and drop it onto "B" — "D" should land directly
@@ -497,9 +496,9 @@ struct DetailViewModelTests {
 
     @Test("moveBlock(id:beforeBlockId:) does nothing when dragging a block onto itself")
     func moveBlockBeforeSelfDoesNothing() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
         let (viewModel, blocks) = try loadFourBlockDocument(documentRepository: documentRepository, blockRepository: blockRepository)
 
         viewModel.moveBlock(id: blocks[1].id, beforeBlockId: blocks[1].id)
@@ -510,9 +509,9 @@ struct DetailViewModelTests {
 
     @Test("A brand-new document with no content shows the empty-state placeholder")
     func showsEmptyContentPlaceholderForBrandNewDocument() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Untitled"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -523,9 +522,9 @@ struct DetailViewModelTests {
 
     @Test("Typing into the document's only block hides the empty-state placeholder")
     func hidesEmptyContentPlaceholderOnceTextIsTyped() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Untitled"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -539,9 +538,9 @@ struct DetailViewModelTests {
 
     @Test("A document with more than one block doesn't show the empty-state placeholder")
     func hidesEmptyContentPlaceholderWhenMultipleBlocksExist() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -558,9 +557,9 @@ struct DetailViewModelTests {
 
     @Test("Loading a document whose only block already has text doesn't show the empty-state placeholder")
     func hidesEmptyContentPlaceholderForExistingNonEmptyBlock() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         _ = try blockRepository.create(DocumentBlock(
@@ -581,9 +580,9 @@ struct DetailViewModelTests {
 
     @Test("A failed block save sets errorMessage to the §15.2 '저장 실패' text")
     func persistBlockFailureSetsSaveErrorMessage() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -595,9 +594,9 @@ struct DetailViewModelTests {
         let blockId = try #require(viewModel.blocks.first?.id)
 
         // Remove the block's row out from under the view model, so the
-        // next save (`update`, a GRDB `PersistableRecord` method) finds no
-        // matching row and throws `PersistenceError.recordNotFound` —
-        // simulating a write that fails to persist.
+        // next save (`update`) finds no matching row and throws
+        // `RepositoryError.recordNotFound` — simulating a write that fails
+        // to persist.
         try blockRepository.hardDelete(id: blockId)
 
         #expect(viewModel.errorMessage == nil)
@@ -614,9 +613,9 @@ struct DetailViewModelTests {
 
     @Test("A failed block delete sets errorMessage to the §15.2 '삭제 실패' text")
     func mergeOrDeleteBlockFailureSetsDeleteErrorMessage() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -628,12 +627,11 @@ struct DetailViewModelTests {
         viewModel.insertBlock(after: firstBlockId, currentText: "", cursorOffset: 0)
         let secondBlockId = try #require(viewModel.blocks.last?.id)
 
-        // Close the underlying connection so the soft-delete's
-        // `dbQueue.write` call throws instead of succeeding. SQLite logs a
-        // "misuse"/"NULL database connection pointer" warning for the
-        // resulting write attempt — expected noise from this setup, not a
-        // test failure.
-        try database.dbQueue.close()
+        // Detach the in-memory store from its coordinator so the
+        // soft-delete's `context.save()` call throws instead of
+        // succeeding — the Core Data equivalent of closing the underlying
+        // database connection out from under a pending write.
+        try store.simulateStoreFailure()
 
         #expect(viewModel.errorMessage == nil)
 

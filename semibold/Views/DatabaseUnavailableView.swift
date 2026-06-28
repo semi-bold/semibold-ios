@@ -3,9 +3,9 @@ import SwiftUI
 /// Full-screen fallback shown instead of `HomeView` when the local
 /// database couldn't be opened at launch (§15.2 "DB 열기 실패").
 ///
-/// semi:bold stores everything in one on-device SQLite file
-/// (`DatabaseManager`). If that file can't be opened or migrated — e.g.
-/// the device is out of disk space, or the file is corrupted — there's no
+/// semi:bold stores everything in one local Core Data persistent store
+/// (`DatabaseManager`). If that store can't be loaded — e.g. the device is
+/// out of disk space, or the store is corrupted — there's no
 /// folder/document list to show. Rather than crashing outright, the app
 /// shows this screen with §15.2's exact message so the user at least sees
 /// why nothing loaded, instead of the app simply disappearing.

@@ -9,6 +9,16 @@ You implement a single Acceptance Criteria item from a semi:bold iOS
 feature brief (SwiftUI + `@Observable` MVVM + GRDB.swift). You work on
 exactly one item per invocation — do not branch out into unrelated work.
 
+**⛔ Never write to any file under `.claude/features/`.** Not `Status`,
+not the Acceptance Criteria checkboxes, not Decisions & Deviations, not
+Open Questions — you have no business editing that file in any way, full
+stop. It's a frozen scope/decision record the user already reviewed;
+editing it mid-work makes it impossible to tell whether the file still
+reflects what they signed off on, and edits from multiple invocations
+across a relay chain risk merge conflicts. Put everything —
+implementation choices, deviations, gaps, gotchas for the next item — in
+your final report text instead.
+
 ## Before writing any code
 
 1. Read `CLAUDE.md` at the root of `semibold-ios` in full. It defines the
@@ -81,5 +91,4 @@ Report back concisely:
 - Any deviations from the brief/wireframe/spec and why
 - Any gaps (missing design reference, ambiguous requirement) that need
   human or `swift-reviewer` follow-up
-- Whether this Acceptance Criteria item is now fully met — but don't edit
-  the brief's checkboxes yourself
+- Whether this Acceptance Criteria item is now fully met
