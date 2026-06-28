@@ -106,19 +106,26 @@ PR.
    - If it doesn't exist, briefs fall back to the `PLANNING.md` (legacy)
      sections referenced in their Source.
 
-4. **Resolve the target brief** — "done" = PR merged, checked via git/
-   `gh`, never via the brief file:
+4. **Resolve the target brief — two different thresholds, don't
+   conflate them**: a brief's *implementation* is done once its PR
+   exists (open or merged — the next brief branches off it regardless
+   of merge timing); **Completion** additionally requires every PR to
+   be *merged*. Checked via git/`gh`, never via the brief file:
    - If `[NN-slug]` was given, use that brief. Otherwise list
      `.claude/features/*.md` excluding `TEMPLATE.md` in filename order
      (numbered first), and for each check:
      `git branch -r | grep "origin/feature/<work-code>/<NN-slug>"` and
-     `gh pr list --head feature/<work-code>/<NN-slug> --state merged --json number`.
-   - No branch → not started, this is the target. Branch exists, no
-     merged PR → in progress, this is the target (resume it in step 6;
-     `git log <its-base>..feature/<work-code>/<NN-slug> --oneline` shows
-     which AC items already have a `feat(NN-slug): ...` commit). Branch
-     exists with a merged PR → done, check the next brief.
-   - Every brief done → skip to **Completion**.
+     `gh pr list --head feature/<work-code>/<NN-slug> --json number,state`.
+   - No branch → not started, this is the target.
+   - Branch exists, no PR yet → in progress (interrupted before its PR
+     was opened) — this is the target; resume it in step 6. `git log
+     <its-base>..feature/<work-code>/<NN-slug> --oneline` shows which AC
+     items already have a `feat(NN-slug): ...` commit.
+   - PR exists (open or merged) → implementation done, check the next
+     brief.
+   - Every brief has a PR → check whether they're all **merged**. All
+     merged → skip to **Completion**. Any still open → stop and tell
+     the user their PRs are pending merge.
    - Brief's Source/Scope/Acceptance Criteria still unfilled (template
      placeholders) → stop, tell the user to flesh it out first.
 
