@@ -22,11 +22,21 @@ struct FolderContentsView: View {
     @State private var viewModel: FolderContentsViewModel
     @Environment(\.dismiss) private var dismiss
 
-    /// Whether the "+" menu (`iOS_AddMenu`) is showing. Wiring its
-    /// "New Folder"/"New Document" actions to create items inside this
-    /// folder is a separate acceptance-criteria item; the menu currently
-    /// only offers "Cancel".
+    /// Whether the "+" menu (`iOS_AddMenu`) is showing, offering "New
+    /// Folder" / "New Document" / "Cancel" — same pattern as `HomeView`,
+    /// but scoped to this folder (`Planning_6_FolderNavigationFlow`
+    /// callout ③).
     @State private var isAddMenuPresented = false
+
+    /// Whether the new-folder name-entry sheet is showing
+    /// (`Planning_2_FolderCreateFlow`, PLANNING §5.2), creating the
+    /// folder as a child of this folder.
+    @State private var isNewFolderSheetPresented = false
+
+    /// Whether the new-document title-entry sheet is showing
+    /// (`Planning_3_DocumentCreateFlow`, PLANNING §5.3), creating the
+    /// document inside this folder.
+    @State private var isNewDocumentSheetPresented = false
 
     init(folder: Folder) {
         _viewModel = State(initialValue: FolderContentsViewModel(folder: folder))
@@ -49,7 +59,23 @@ struct FolderContentsView: View {
             viewModel.load()
         }
         .confirmationDialog("Add", isPresented: $isAddMenuPresented, titleVisibility: .hidden) {
+            Button("New Folder") {
+                isNewFolderSheetPresented = true
+            }
+            Button("New Document") {
+                isNewDocumentSheetPresented = true
+            }
             Button("Cancel", role: .cancel) {}
+        }
+        .sheet(isPresented: $isNewFolderSheetPresented) {
+            NewFolderSheet(parentId: viewModel.folder.id) { _ in
+                viewModel.didCreateFolder()
+            }
+        }
+        .sheet(isPresented: $isNewDocumentSheetPresented) {
+            NewDocumentSheet(folderId: viewModel.folder.id) { _ in
+                viewModel.didCreateDocument()
+            }
         }
     }
 
