@@ -5,7 +5,7 @@ import Foundation
 /// Folders can be nested inside one another (`parentId` points at the
 /// parent folder, or is `nil` for a top-level folder) and hold both
 /// documents and other folders, ordered by `sortOrder`.
-struct Folder: Identifiable, Equatable, Codable {
+struct Folder: Identifiable, Hashable, Codable {
     var id: String
     var parentId: String?
     var name: String

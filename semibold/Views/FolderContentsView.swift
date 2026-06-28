@@ -12,9 +12,11 @@ import SwiftUI
 ///
 /// Per `Planning_6_FolderNavigationFlow` (NO-003 §3.1), tapping a nested
 /// folder row pushes this same screen again for that folder (callout
-/// ④), and tapping a document row pushes `DetailView` (callout ⑤) — that
-/// navigation wiring lands in a separate acceptance-criteria item, so
-/// rows here are static for now.
+/// ④) — wired below via `NavigationLink(value:)`, resolved by the
+/// `.navigationDestination(for: Folder.self)` registered once at the
+/// `NavigationStack` root in `HomeView`. Tapping a document row pushes
+/// `DetailView` (callout ⑤) — that navigation wiring lands in a separate
+/// acceptance-criteria item, so document rows are still static for now.
 struct FolderContentsView: View {
     @State private var viewModel: FolderContentsViewModel
     @Environment(\.dismiss) private var dismiss
@@ -79,16 +81,21 @@ struct FolderContentsView: View {
         .background(AppTheme.Colors.surface)
     }
 
-    /// "< Semi:bold" — returns to the previous screen in the navigation
-    /// stack (`Planning_6_FolderNavigationFlow` callout ①). `NavigationStack`
+    /// Returns to the previous screen in the navigation stack
+    /// (`Planning_6_FolderNavigationFlow` callout ①). `NavigationStack`
     /// already supplies the system back gesture/button; this label just
     /// matches the wireframe's literal text since the system back button
     /// is hidden along with the rest of the nav bar (`.toolbar(.hidden)`).
+    ///
+    /// Reads "< Semi:bold" for a root-level folder (going back to
+    /// `HomeView`), or "< <상위 폴더명>" for a nested folder (going back
+    /// to the parent folder's own `FolderContentsView`) — "하위 폴더
+    /// 진입 시 레이블은 상위 폴더명으로 바뀐다".
     private var backButton: some View {
         Button {
             dismiss()
         } label: {
-            Text("< Semi:bold")
+            Text(viewModel.backButtonLabel.text)
                 .appTextStyle(AppTheme.Typography.body)
                 .foregroundStyle(AppTheme.Colors.primary)
         }
@@ -115,7 +122,15 @@ struct FolderContentsView: View {
                 emptyRow(text: "하위 폴더가 없습니다.")
             } else {
                 ForEach(viewModel.folders) { folder in
-                    FolderRow(folder: folder)
+                    // Tapping a nested folder pushes this same screen
+                    // again for that folder, recursing as deep as the
+                    // tree goes (`Planning_6_FolderNavigationFlow`
+                    // callout ④). The destination is registered once at
+                    // the `NavigationStack` root in `HomeView`, so this
+                    // push lands on the same stack as every other one.
+                    NavigationLink(value: folder) {
+                        FolderRow(folder: folder)
+                    }
                 }
             }
         } header: {

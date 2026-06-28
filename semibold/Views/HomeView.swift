@@ -46,6 +46,14 @@ struct HomeView: View {
             }
             .background(AppTheme.Colors.background)
             .toolbar(.hidden)
+            .navigationDestination(for: Folder.self) { folder in
+                // Registered once at the stack root so every push in the
+                // chain — including the recursive pushes nested folders
+                // make from inside `FolderContentsView` itself — resolves
+                // through this same destination (`Planning_6_FolderNavigationFlow`
+                // callout ④).
+                FolderContentsView(folder: folder)
+            }
         }
         .onAppear {
             viewModel.load()
@@ -175,7 +183,11 @@ struct HomeView: View {
                 emptyRow(text: "첫 폴더를 만들어보세요.")
             } else {
                 ForEach(viewModel.folders) { folder in
-                    FolderRow(folder: folder)
+                    // Tapping a folder pushes `FolderContentsView` for it
+                    // (`Planning_6_FolderNavigationFlow` callout ①).
+                    NavigationLink(value: folder) {
+                        FolderRow(folder: folder)
+                    }
                 }
             }
         } header: {

@@ -13,6 +13,13 @@ final class FolderContentsViewModel {
     private(set) var folders: [Folder] = []
     private(set) var documents: [Document] = []
 
+    /// The back-button label `FolderContentsView`'s nav bar shows
+    /// (`Planning_6_FolderNavigationFlow` callout ①). Starts out
+    /// matching the root context's label and is replaced with the parent
+    /// folder's name once `load()` looks it up, for folders nested
+    /// inside another folder.
+    private(set) var backButtonLabel = FolderBackButtonLabel.root
+
     private let folderRepository: FolderRepository
     private let documentRepository: DocumentRepository
 
@@ -26,7 +33,8 @@ final class FolderContentsViewModel {
         self.documentRepository = documentRepository
     }
 
-    /// Reloads the folders and documents nested directly inside `folder`.
+    /// Reloads the folders and documents nested directly inside `folder`,
+    /// and resolves the back-button label for this depth.
     func load() {
         do {
             folders = try folderRepository.children(of: folder.id)
@@ -37,6 +45,11 @@ final class FolderContentsViewModel {
             folders = []
             documents = []
         }
+
+        let parentName = folder.parentId.flatMap { parentId in
+            try? folderRepository.find(id: parentId)?.name
+        }
+        backButtonLabel = FolderBackButtonLabel.resolve(parentId: folder.parentId, parentName: parentName)
     }
 
     /// Refreshes the list after a new nested folder is created inside
