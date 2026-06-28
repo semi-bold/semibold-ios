@@ -1,7 +1,5 @@
 # Feature: 02-swipe-actions
 
-Status: draft
-
 ## Source
 
 - Feature spec (if provided externally): none

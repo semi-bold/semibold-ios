@@ -1,7 +1,5 @@
 # Feature: 01-folder-navigation
 
-Status: draft
-
 ## Source
 
 - Feature spec (if provided externally): none
