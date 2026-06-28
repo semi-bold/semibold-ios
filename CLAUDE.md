@@ -115,13 +115,18 @@ its design-tokens type (see §2).
 | Layer | Choice |
 |---|---|
 | UI | SwiftUI + `@Observable` (MVVM) |
-| Local DB | GRDB.swift (SQLite) |
+| Local DB | Core Data (`NSPersistentContainer` / `NSPersistentCloudKitContainer`) |
 | Lint | SwiftLint (SPM plugin) |
 | Project generation | XcodeGen (`project.yml`) |
 
-No additional architecture libraries. Do not introduce Core Data, TCA,
-Combine-heavy patterns, or a remote backend without an explicit decision
-to do so.
+No additional architecture libraries. Do not introduce TCA, Combine-heavy
+patterns, or a remote backend without an explicit decision to do so.
+
+**Core Data, not GRDB.** The data layer was migrated from GRDB (SQLite)
+to Core Data for work code NO-002 (iCloud sync via
+`NSPersistentCloudKitContainer` — see
+`../sketch-autokit/docs/tasks/NO-002.md`). This is an explicit,
+already-made decision — do not reintroduce GRDB or raw `sqlite3` calls.
 
 **`semibold.xcodeproj` is generated from `project.yml` and is not the
 source of truth.** Add new targets, source groups, or SPM dependencies by
@@ -137,9 +142,13 @@ automatically on the next `generate`.
 - **SwiftUI-first.** Use `@Observable` view-models. Drop to UIKit only
   where SwiftUI genuinely can't do the job (e.g. custom block-editor text
   handling).
-- **GRDB** owns all SQLite access. Don't bypass it with raw
-  `sqlite3` C calls. Migrations go in a versioned `DatabaseMigrator`
-  block — never alter the schema outside of migrations.
+- **Core Data** (`semibold/Data/SemiboldModel.xcdatamodeld`) owns all
+  local persistence. Don't bypass it with raw `sqlite3` calls. Schema
+  changes go in the versioned `.xcdatamodeld` model — never alter
+  storage outside of it. Repositories (`FolderRepository`,
+  `DocumentRepository`, `DocumentBlockRepository`) map `NSManagedObject`
+  entities to/from the plain Swift model structs so the rest of the app
+  never touches Core Data types directly.
 - Name Swift model types/fields after the DB schema in
   `tasks/<work-code>.md` (or legacy `PLANNING.md` §9) (`sortOrder`,
   `parentId`, `contentJSON`, `markdownSource`, …) so the data layer maps

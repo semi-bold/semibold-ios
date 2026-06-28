@@ -1,4 +1,3 @@
-import GRDB
 import Testing
 
 @testable import semibold
@@ -14,15 +13,15 @@ import Testing
 /// within SwiftLint's `type_body_length`.
 @MainActor
 struct ChecklistConversionTests {
-    private func makeDatabaseManager() throws -> DatabaseManager {
-        try DatabaseManager(path: ":memory:")
+    private func makeStore() throws -> CoreDataTestStore {
+        try CoreDataTestStore()
     }
 
     @Test("Typing '- [ ] task' converts the block to an unchecked checklist item, saved immediately")
     func typingUncheckedChecklistPrefixConvertsBlockToChecklistItem() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -60,9 +59,9 @@ struct ChecklistConversionTests {
 
     @Test("Typing '- [x] task' converts the block to a checked checklist item, saved immediately")
     func typingCheckedChecklistPrefixConvertsBlockToChecklistItem() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -97,9 +96,9 @@ struct ChecklistConversionTests {
         ]
     )
     func checklistPrefixesDoNotConvertToBulletedList(_ testCase: (prefix: String, checked: Bool)) throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -121,9 +120,9 @@ struct ChecklistConversionTests {
 
     @Test("Editing a checklist item keeps its checked state and rebuilds markdownSource with the '- [ ]'/'- [x]' prefix")
     func editingChecklistItemKeepsCheckedStateAndPrefix() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -148,9 +147,9 @@ struct ChecklistConversionTests {
 
     @Test("toggleChecklistItem flips the checked state, rebuilds markdownSource, and persists immediately")
     func toggleChecklistItemFlipsCheckedStateAndPersists() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(
@@ -189,9 +188,9 @@ struct ChecklistConversionTests {
 
     @Test("toggleChecklistItem does nothing for a non-checklist block")
     func toggleChecklistItemDoesNothingForNonChecklistBlock() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
@@ -211,9 +210,9 @@ struct ChecklistConversionTests {
         arguments: ["- [] task", "- [X] task"]
     )
     func nonChecklistBracketSyntaxFallsThroughToBulletedList(_ typedText: String) throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
-        let blockRepository = DocumentBlockRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)

@@ -1,4 +1,3 @@
-import GRDB
 import Testing
 
 @testable import semibold
@@ -13,14 +12,14 @@ import Testing
 /// `semibold.sqlite` is never touched.
 struct FolderDocumentPersistenceTests {
     /// A fresh, fully-migrated in-memory database for one test.
-    private func makeDatabaseManager() throws -> DatabaseManager {
-        try DatabaseManager(path: ":memory:")
+    private func makeStore() throws -> CoreDataTestStore {
+        try CoreDataTestStore()
     }
 
     @Test("A created root-level folder is persisted and shows up in HomeView's folder list")
     func createFolderPersistsAndIsListed() throws {
-        let database = try makeDatabaseManager()
-        let folderRepository = FolderRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let folderRepository = FolderRepository(context: store.context)
 
         let folder = Folder(name: "Recipes")
         let created = try folderRepository.create(folder)
@@ -36,8 +35,8 @@ struct FolderDocumentPersistenceTests {
 
     @Test("A created root-level document is persisted and shows up in HomeView's document list")
     func createDocumentPersistsAndIsListed() throws {
-        let database = try makeDatabaseManager()
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
 
         let document = Document(title: "Project Plan")
         let created = try documentRepository.create(document)
@@ -53,9 +52,9 @@ struct FolderDocumentPersistenceTests {
 
     @Test("A document created inside a folder is not listed at the root")
     func documentInFolderIsScopedToThatFolder() throws {
-        let database = try makeDatabaseManager()
-        let folderRepository = FolderRepository(dbQueue: database.dbQueue)
-        let documentRepository = DocumentRepository(dbQueue: database.dbQueue)
+        let store = try makeStore()
+        let folderRepository = FolderRepository(context: store.context)
+        let documentRepository = DocumentRepository(context: store.context)
 
         let folder = try folderRepository.create(Folder(name: "Work"))
         _ = try documentRepository.create(Document(folderId: folder.id, title: "Notes"))

@@ -7,9 +7,6 @@ options:
   createIntermediateGroups: true
 
 packages:
-  GRDB:
-    url: https://github.com/groue/GRDB.swift
-    from: 6.29.0
   SwiftLint:
     url: https://github.com/realm/SwiftLint
     from: 0.57.0
@@ -20,17 +17,15 @@ targets:
     platform: iOS
     sources:
       - path: semibold
-    dependencies:
-      - package: GRDB
-        product: GRDB
     plugins:
       - plugin: SwiftLintBuildToolPlugin
         package: SwiftLint
     settings:
       base:
         SWIFT_VERSION: "5.0"
-        DEVELOPMENT_TEAM: ""
+        DEVELOPMENT_TEAM: "H3FBP924CK"
         CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: semibold/semibold.entitlements
     info:
       path: semibold/Info.plist
       properties:
@@ -48,12 +43,10 @@ targets:
     sources:
       - path: semiboldTests
     dependencies:
-      - package: GRDB
-        product: GRDB
       - target: semibold
     settings:
       base:
         SWIFT_VERSION: "5.0"
-        DEVELOPMENT_TEAM: ""
+        DEVELOPMENT_TEAM: "H3FBP924CK"
         CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: YES
