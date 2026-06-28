@@ -38,6 +38,15 @@ struct FolderContentsView: View {
     /// document inside this folder.
     @State private var isNewDocumentSheetPresented = false
 
+    /// The nested folder currently being renamed via the "편집" swipe
+    /// action (`Planning_9_SwipeActionFlow`), or `nil` when no rename
+    /// sheet is showing.
+    @State private var folderBeingRenamed: Folder?
+
+    /// The document currently being renamed via the "편집" swipe action,
+    /// or `nil` when no rename sheet is showing.
+    @State private var documentBeingRenamed: Document?
+
     init(folder: Folder) {
         _viewModel = State(initialValue: FolderContentsViewModel(folder: folder))
     }
@@ -75,6 +84,16 @@ struct FolderContentsView: View {
         .sheet(isPresented: $isNewDocumentSheetPresented) {
             NewDocumentSheet(folderId: viewModel.folder.id) { _ in
                 viewModel.didCreateDocument()
+            }
+        }
+        .sheet(item: $folderBeingRenamed) { folder in
+            RenameFolderSheet(folder: folder) { _ in
+                viewModel.didEditFolder()
+            }
+        }
+        .sheet(item: $documentBeingRenamed) { document in
+            RenameDocumentSheet(document: document) { _ in
+                viewModel.didEditDocument()
             }
         }
     }
@@ -156,11 +175,12 @@ struct FolderContentsView: View {
                     // the `NavigationStack` root in `HomeView`, so this
                     // push lands on the same stack as every other one.
                     NavigationLink(value: folder) {
-                        // "편집"/"삭제" swipe actions (`Planning_9_SwipeActionFlow`
-                        // callouts ①–③) — wired to no-ops for now; rename/soft-delete
-                        // behavior lands in the next two acceptance-criteria items
-                        // of `.claude/features/02-swipe-actions.md`.
-                        FolderRow(folder: folder, onEdit: {}, onDelete: {})
+                        // "편집" swipe action opens `RenameFolderSheet`
+                        // (`Planning_9_SwipeActionFlow` callouts ①–③).
+                        // "삭제" is still a no-op — soft-delete behavior is
+                        // the next acceptance-criteria item of
+                        // `.claude/features/02-swipe-actions.md`.
+                        FolderRow(folder: folder, onEdit: { folderBeingRenamed = folder }, onDelete: {})
                     }
                 }
             }
@@ -183,11 +203,12 @@ struct FolderContentsView: View {
                     // `NavigationStack` root in `HomeView`, so this push
                     // lands on the same stack as every other one.
                     NavigationLink(value: document) {
-                        // "편집"/"삭제" swipe actions (`Planning_9_SwipeActionFlow`
-                        // callouts ①–③) — wired to no-ops for now; rename/soft-delete
-                        // behavior lands in the next two acceptance-criteria items
-                        // of `.claude/features/02-swipe-actions.md`.
-                        DocumentRow(document: document, onEdit: {}, onDelete: {})
+                        // "편집" swipe action opens `RenameDocumentSheet`
+                        // (`Planning_9_SwipeActionFlow` callouts ①–③).
+                        // "삭제" is still a no-op — soft-delete behavior is
+                        // the next acceptance-criteria item of
+                        // `.claude/features/02-swipe-actions.md`.
+                        DocumentRow(document: document, onEdit: { documentBeingRenamed = document }, onDelete: {})
                     }
                 }
             }

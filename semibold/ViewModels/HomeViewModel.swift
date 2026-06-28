@@ -53,4 +53,16 @@ final class HomeViewModel {
     func didCreateDocument() {
         load()
     }
+
+    /// Refreshes the list after a folder is renamed via the "편집" swipe
+    /// action (`Planning_9_SwipeActionFlow`).
+    func didEditFolder() {
+        load()
+    }
+
+    /// Refreshes the list after a document is renamed via the "편집"
+    /// swipe action (`Planning_9_SwipeActionFlow`).
+    func didEditDocument() {
+        load()
+    }
 }
