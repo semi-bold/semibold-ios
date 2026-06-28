@@ -47,6 +47,15 @@ struct FolderContentsView: View {
     /// or `nil` when no rename sheet is showing.
     @State private var documentBeingRenamed: Document?
 
+    /// The nested folder pending confirmation from the "삭제" swipe
+    /// action, or `nil` when no delete-confirmation alert is showing
+    /// (`Planning_9_SwipeActionFlow` callout ③).
+    @State private var folderPendingDelete: Folder?
+
+    /// The document pending confirmation from the "삭제" swipe action,
+    /// or `nil` when no delete-confirmation alert is showing.
+    @State private var documentPendingDelete: Document?
+
     init(folder: Folder) {
         _viewModel = State(initialValue: FolderContentsViewModel(folder: folder))
     }
@@ -96,6 +105,90 @@ struct FolderContentsView: View {
                 viewModel.didEditDocument()
             }
         }
+        .alert(
+            AppConfirmationMessages.deleteTitle,
+            isPresented: folderDeleteConfirmationPresented,
+            presenting: folderPendingDelete
+        ) { folder in
+            Button(AppConfirmationMessages.confirmButton, role: .destructive) {
+                viewModel.deleteFolder(folder)
+            }
+            Button(AppConfirmationMessages.cancelButton, role: .cancel) {}
+        } message: { folder in
+            // "삭제" swipe action — a folder with live nested content
+            // gets the stronger warning so deleting it isn't a surprise
+            // (`Planning_9_SwipeActionFlow` callout ③).
+            Text(
+                viewModel.folderHasNestedContent(folder)
+                    ? AppConfirmationMessages.deleteFolderWithContents
+                    : AppConfirmationMessages.deleteSimple
+            )
+        }
+        .alert(
+            AppConfirmationMessages.deleteTitle,
+            isPresented: documentDeleteConfirmationPresented,
+            presenting: documentPendingDelete
+        ) { document in
+            Button(AppConfirmationMessages.confirmButton, role: .destructive) {
+                viewModel.deleteDocument(document)
+            }
+            Button(AppConfirmationMessages.cancelButton, role: .cancel) {}
+        } message: { _ in
+            Text(AppConfirmationMessages.deleteSimple)
+        }
+        .alert(
+            "Error",
+            isPresented: errorAlertPresented,
+            presenting: viewModel.errorMessage
+        ) { _ in
+            Button("OK") {
+                viewModel.errorMessage = nil
+            }
+        } message: { message in
+            // §15.2 "삭제 실패" — shown when a folder/document delete
+            // couldn't be persisted.
+            Text(message)
+        }
+    }
+
+    /// Whether the "삭제" swipe action's folder confirmation alert is
+    /// showing — driven by `folderPendingDelete`.
+    private var folderDeleteConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { folderPendingDelete != nil },
+            set: { isPresented in
+                if !isPresented {
+                    folderPendingDelete = nil
+                }
+            }
+        )
+    }
+
+    /// Whether the "삭제" swipe action's document confirmation alert is
+    /// showing — driven by `documentPendingDelete`.
+    private var documentDeleteConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { documentPendingDelete != nil },
+            set: { isPresented in
+                if !isPresented {
+                    documentPendingDelete = nil
+                }
+            }
+        )
+    }
+
+    /// Whether the §15.2 delete-failure alert is shown — driven by
+    /// `viewModel.errorMessage`. Dismissing it (the "OK" button, or
+    /// swiping it away) clears the message so it doesn't reappear.
+    private var errorAlertPresented: Binding<Bool> {
+        Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    viewModel.errorMessage = nil
+                }
+            }
+        )
     }
 
     // MARK: - Navigation bar
@@ -175,12 +268,15 @@ struct FolderContentsView: View {
                     // the `NavigationStack` root in `HomeView`, so this
                     // push lands on the same stack as every other one.
                     NavigationLink(value: folder) {
-                        // "편집" swipe action opens `RenameFolderSheet`
-                        // (`Planning_9_SwipeActionFlow` callouts ①–③).
-                        // "삭제" is still a no-op — soft-delete behavior is
-                        // the next acceptance-criteria item of
-                        // `.claude/features/02-swipe-actions.md`.
-                        FolderRow(folder: folder, onEdit: { folderBeingRenamed = folder }, onDelete: {})
+                        // "편집" swipe action opens `RenameFolderSheet`;
+                        // "삭제" shows a confirmation alert before
+                        // soft-deleting (`Planning_9_SwipeActionFlow`
+                        // callouts ①–③).
+                        FolderRow(
+                            folder: folder,
+                            onEdit: { folderBeingRenamed = folder },
+                            onDelete: { folderPendingDelete = folder }
+                        )
                     }
                 }
             }
@@ -203,12 +299,15 @@ struct FolderContentsView: View {
                     // `NavigationStack` root in `HomeView`, so this push
                     // lands on the same stack as every other one.
                     NavigationLink(value: document) {
-                        // "편집" swipe action opens `RenameDocumentSheet`
-                        // (`Planning_9_SwipeActionFlow` callouts ①–③).
-                        // "삭제" is still a no-op — soft-delete behavior is
-                        // the next acceptance-criteria item of
-                        // `.claude/features/02-swipe-actions.md`.
-                        DocumentRow(document: document, onEdit: { documentBeingRenamed = document }, onDelete: {})
+                        // "편집" swipe action opens `RenameDocumentSheet`;
+                        // "삭제" shows a confirmation alert before
+                        // soft-deleting (`Planning_9_SwipeActionFlow`
+                        // callouts ①–③).
+                        DocumentRow(
+                            document: document,
+                            onEdit: { documentBeingRenamed = document },
+                            onDelete: { documentPendingDelete = document }
+                        )
                     }
                 }
             }

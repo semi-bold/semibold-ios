@@ -11,6 +11,10 @@ final class HomeViewModel {
     private(set) var folders: [Folder] = []
     private(set) var documents: [Document] = []
 
+    /// Set when a delete fails to persist, so `HomeView` can show the
+    /// §15.2 "삭제 실패" alert. `nil` once dismissed.
+    var errorMessage: String?
+
     private let folderRepository: FolderRepository
     private let documentRepository: DocumentRepository
 
@@ -64,5 +68,45 @@ final class HomeViewModel {
     /// swipe action (`Planning_9_SwipeActionFlow`).
     func didEditDocument() {
         load()
+    }
+
+    /// Whether `folder` has any live (non-soft-deleted) nested folders or
+    /// documents — used by the "삭제" swipe action's confirmation alert
+    /// to warn that deleting it will also take its contents out of view
+    /// (`Planning_9_SwipeActionFlow` callout ③, "하위 폴더·문서가 있는
+    /// 폴더 삭제 시 포함 여부를 묻는 다이얼로그").
+    func folderHasNestedContent(_ folder: Folder) -> Bool {
+        let hasNestedFolders = (try? folderRepository.hasChildren(of: folder.id)) ?? false
+        let hasNestedDocuments = (try? documentRepository.hasDocuments(in: folder.id)) ?? false
+        return hasNestedFolders || hasNestedDocuments
+    }
+
+    /// Soft-deletes `folder` after the confirmation alert and refreshes
+    /// the list so it disappears (`Planning_9_SwipeActionFlow` callout
+    /// ③). Nested folders/documents aren't touched directly — they simply
+    /// stop being reachable once their parent is gone.
+    func deleteFolder(_ folder: Folder) {
+        do {
+            try folderRepository.softDelete(id: folder.id)
+            load()
+        } catch {
+            // §15.2 "삭제 실패" — the folder stays visible if the delete
+            // couldn't be persisted.
+            errorMessage = AppErrorMessages.deleteFailed
+        }
+    }
+
+    /// Soft-deletes `document` after the confirmation alert and refreshes
+    /// the list so it disappears (`Planning_9_SwipeActionFlow` callout
+    /// ③).
+    func deleteDocument(_ document: Document) {
+        do {
+            try documentRepository.softDelete(id: document.id)
+            load()
+        } catch {
+            // §15.2 "삭제 실패" — the document stays visible if the
+            // delete couldn't be persisted.
+            errorMessage = AppErrorMessages.deleteFailed
+        }
     }
 }
