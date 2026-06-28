@@ -156,7 +156,11 @@ struct FolderContentsView: View {
                     // the `NavigationStack` root in `HomeView`, so this
                     // push lands on the same stack as every other one.
                     NavigationLink(value: folder) {
-                        FolderRow(folder: folder)
+                        // "편집"/"삭제" swipe actions (`Planning_9_SwipeActionFlow`
+                        // callouts ①–③) — wired to no-ops for now; rename/soft-delete
+                        // behavior lands in the next two acceptance-criteria items
+                        // of `.claude/features/02-swipe-actions.md`.
+                        FolderRow(folder: folder, onEdit: {}, onDelete: {})
                     }
                 }
             }
@@ -179,7 +183,11 @@ struct FolderContentsView: View {
                     // `NavigationStack` root in `HomeView`, so this push
                     // lands on the same stack as every other one.
                     NavigationLink(value: document) {
-                        DocumentRow(document: document)
+                        // "편집"/"삭제" swipe actions (`Planning_9_SwipeActionFlow`
+                        // callouts ①–③) — wired to no-ops for now; rename/soft-delete
+                        // behavior lands in the next two acceptance-criteria items
+                        // of `.claude/features/02-swipe-actions.md`.
+                        DocumentRow(document: document, onEdit: {}, onDelete: {})
                     }
                 }
             }
