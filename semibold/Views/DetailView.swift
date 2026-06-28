@@ -85,6 +85,21 @@ struct DetailView: View {
             // create, or delete couldn't be persisted.
             Text(message)
         }
+        .alert(
+            "잠금",
+            isPresented: lockNoticeAlertPresented,
+            presenting: viewModel.lockNotice
+        ) { _ in
+            Button("OK") {
+                viewModel.lockNotice = nil
+            }
+        } message: { message in
+            // `Planning_9_SwipeActionFlow` callout ⑤ — Secret Lock's
+            // actual encryption is out of scope for now, so the "잠금"
+            // swipe action just confirms it's coming rather than doing
+            // nothing.
+            Text(message)
+        }
     }
 
     /// Whether the §15.2 save/delete-failure alert is shown — driven by
@@ -112,6 +127,20 @@ struct DetailView: View {
             set: { isPresented in
                 if !isPresented {
                     viewModel.dismissSlashCommand()
+                }
+            }
+        )
+    }
+
+    /// Whether the "잠금" swipe action's not-yet-supported notice is
+    /// shown — driven by `viewModel.lockNotice`. Dismissing it clears the
+    /// message so it doesn't reappear.
+    private var lockNoticeAlertPresented: Binding<Bool> {
+        Binding(
+            get: { viewModel.lockNotice != nil },
+            set: { isPresented in
+                if !isPresented {
+                    viewModel.lockNotice = nil
                 }
             }
         )
@@ -278,6 +307,9 @@ struct DetailView: View {
                         },
                         onToggleChecklist: {
                             viewModel.toggleChecklistItem(blockId: block.id)
+                        },
+                        onLockTapped: {
+                            viewModel.lockBlockTapped(block.id)
                         }
                     )
                     // Drag & drop block reordering (§12.3): dropping
@@ -347,6 +379,7 @@ private struct BlockRow: View {
     let onEnter: (String, Int) -> Void
     let onBackspaceAtStart: (String) -> Void
     let onToggleChecklist: () -> Void
+    let onLockTapped: () -> Void
 
     @State private var text: String
 
@@ -357,7 +390,8 @@ private struct BlockRow: View {
         onTextChange: @escaping (String) -> Void,
         onEnter: @escaping (String, Int) -> Void,
         onBackspaceAtStart: @escaping (String) -> Void,
-        onToggleChecklist: @escaping () -> Void
+        onToggleChecklist: @escaping () -> Void,
+        onLockTapped: @escaping () -> Void
     ) {
         self.block = block
         self.focusedBlockId = focusedBlockId
@@ -366,6 +400,7 @@ private struct BlockRow: View {
         self.onEnter = onEnter
         self.onBackspaceAtStart = onBackspaceAtStart
         self.onToggleChecklist = onToggleChecklist
+        self.onLockTapped = onLockTapped
         _text = State(initialValue: block.displayText)
     }
 
@@ -425,7 +460,23 @@ private struct BlockRow: View {
         if isDivider {
             dividerBody
         } else {
-            editableBody
+            // The drag handle is a sibling of the swipe-wrapped editable
+            // content, not nested inside it — `SwipeToRevealLockAction`
+            // attaches its own left-swipe `DragGesture` to whatever it
+            // wraps, so the reorder handle's long-press-then-pan
+            // `.draggable` gesture needs to live outside that subtree
+            // entirely to avoid both gestures recognizing the same touch.
+            HStack(alignment: .top, spacing: 0) {
+                SwipeToRevealLockAction(onLockTapped: onLockTapped) {
+                    editableBody
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                dragHandle
+                    .padding(.top, AppTheme.Spacing.md + (textStyle.lineHeight - AppTheme.Spacing.lg) / 2)
+                    .padding(.trailing, AppTheme.Spacing.md)
+                    .background(AppTheme.Colors.background)
+            }
         }
     }
 
@@ -509,9 +560,6 @@ private struct BlockRow: View {
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .focused(focusedBlockId, equals: block.id)
-
-                    dragHandle
-                        .padding(.top, (textStyle.lineHeight - AppTheme.Spacing.lg) / 2)
                 }
             }
             .padding(.horizontal, AppTheme.Spacing.md)
@@ -534,6 +582,148 @@ private struct BlockRow: View {
             if text != newText {
                 text = newText
             }
+        }
+    }
+}
+
+/// Reveals a "잠금" (lock) button when its content is swiped left, matching
+/// `iOS_SwipeAction`'s `SwipeAction_Lock` layer (`Planning_9_SwipeActionFlow`
+/// callout ⑤): an 80pt-wide button with a lock icon and label.
+///
+/// `DetailView`'s block list is a `ScrollView`/`LazyVStack` rather than a
+/// `List`, so the standard `.swipeActions(edge:)` modifier (used for the
+/// folder/document row actions elsewhere in this app) isn't available
+/// here — it only attaches to `List` rows. This reproduces the same
+/// swipe-to-reveal interaction with a `DragGesture` that drags `content`
+/// left to reveal the button underneath, snapping open past a small
+/// threshold and closed otherwise, the same left-swipe gesture pattern
+/// the wireframe shows for both HomeView rows and editor blocks.
+private enum SwipeToRevealLockActionLayout {
+    /// The lock button's fixed width, matching `SwipeAction_Lock`'s `w=80`
+    /// frame in the wireframe (same width as the HomeView row actions).
+    static let actionWidth: CGFloat = 80
+}
+
+private struct SwipeToRevealLockAction<Content: View>: View {
+    let onLockTapped: () -> Void
+    @ViewBuilder let content: () -> Content
+
+    @State private var dragTranslation: CGFloat = 0
+    @State private var isRevealed = false
+
+    private var revealOffset: CGFloat {
+        isRevealed ? -SwipeToRevealLockActionLayout.actionWidth : 0
+    }
+
+    private var currentOffset: CGFloat {
+        let proposed = revealOffset + dragTranslation
+        // Only allow swiping left (to reveal) or back right (to close) —
+        // never past fully open or back into a rightward overscroll.
+        return min(0, max(-SwipeToRevealLockActionLayout.actionWidth, proposed))
+    }
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            lockButton
+
+            content()
+                .background(AppTheme.Colors.background)
+                .offset(x: currentOffset)
+                // `.simultaneousGesture` (rather than `.gesture`) so this
+                // doesn't steal the tap-to-focus/cursor-placement gestures
+                // `ParagraphTextField`'s underlying `UITextView` and the
+                // drag handle's `.draggable` need — it only recognizes a
+                // genuine horizontal drag, which those don't.
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 16)
+                        .onChanged { value in
+                            // Only react to a horizontal drag, so this
+                            // doesn't fight the editor's own vertical
+                            // scrolling or the text view's own touch
+                            // handling.
+                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                            dragTranslation = value.translation.width
+                        }
+                        .onEnded { value in
+                            // Same axis-dominance check as `.onChanged` —
+                            // without it, a mostly-vertical gesture (e.g.
+                            // scrolling) that happened to clear the 16pt
+                            // minimum distance could still flip
+                            // `isRevealed` here based on a stale/diagonal
+                            // translation even though `dragTranslation`
+                            // was never updated for it. Still snap back to
+                            // wherever it was before this gesture
+                            // (`dragTranslation = 0`) so the row doesn't
+                            // stay visually offset if it was horizontal for
+                            // a moment earlier in the same gesture.
+                            guard abs(value.translation.width) > abs(value.translation.height) else {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    dragTranslation = 0
+                                }
+                                return
+                            }
+                            let projected = revealOffset + value.translation.width
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                isRevealed = projected < -SwipeToRevealLockActionLayout.actionWidth / 2
+                                dragTranslation = 0
+                            }
+                        }
+                )
+                // While the lock button is showing, a plain tap anywhere
+                // on the block closes it again — same as tapping away from
+                // a `.swipeActions` row elsewhere in this app. Only added
+                // while revealed, so it never competes with the text
+                // view's own tap-to-place-cursor handling during normal
+                // editing.
+                .modifier(CloseOnTapIfRevealed(isRevealed: $isRevealed))
+        }
+        .clipped()
+    }
+
+    /// The "잠금" button itself, matching `SwipeAction_Lock`'s lock icon +
+    /// label — a neutral gray fill (distinct from the destructive red used
+    /// for folder/document delete) since locking a block isn't destructive.
+    /// Fills the row's full (variable) height, like the system
+    /// `.swipeActions` buttons used for the folder/document rows.
+    private var lockButton: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.2)) {
+                isRevealed = false
+            }
+            onLockTapped()
+        } label: {
+            VStack(spacing: AppTheme.Spacing.xs) {
+                Image(systemName: "lock.fill")
+                    .foregroundStyle(AppTheme.Colors.text1)
+
+                Text("잠금")
+                    .appTextStyle(AppTheme.Typography.caption)
+                    .foregroundStyle(AppTheme.Colors.text1)
+            }
+            .frame(width: SwipeToRevealLockActionLayout.actionWidth)
+            .frame(maxHeight: .infinity)
+            .background(AppTheme.Colors.surface3)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Adds a tap-to-close gesture only while a `SwipeToRevealLockAction` row
+/// is in its revealed state — never present otherwise, so it can't
+/// intercept the normal tap-to-focus interaction on the block content
+/// underneath during regular editing.
+private struct CloseOnTapIfRevealed: ViewModifier {
+    @Binding var isRevealed: Bool
+
+    func body(content: Content) -> some View {
+        if isRevealed {
+            content.onTapGesture {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    isRevealed = false
+                }
+            }
+        } else {
+            content
         }
     }
 }
