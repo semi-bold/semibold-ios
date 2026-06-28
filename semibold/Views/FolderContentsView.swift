@@ -15,8 +15,9 @@ import SwiftUI
 /// ④) — wired below via `NavigationLink(value:)`, resolved by the
 /// `.navigationDestination(for: Folder.self)` registered once at the
 /// `NavigationStack` root in `HomeView`. Tapping a document row pushes
-/// `DetailView` (callout ⑤) — that navigation wiring lands in a separate
-/// acceptance-criteria item, so document rows are still static for now.
+/// `DetailView` (callout ⑤) — also wired via `NavigationLink(value:)`,
+/// resolved by the `.navigationDestination(for: Document.self)`
+/// registered alongside it at that same stack root.
 struct FolderContentsView: View {
     @State private var viewModel: FolderContentsViewModel
     @Environment(\.dismiss) private var dismiss
@@ -146,7 +147,14 @@ struct FolderContentsView: View {
                 emptyRow(text: "이 폴더에 문서가 없습니다.")
             } else {
                 ForEach(viewModel.documents) { document in
-                    DocumentRow(document: document)
+                    // Tapping a document pushes `DetailView` for it
+                    // (`Planning_6_FolderNavigationFlow` callout ⑤). The
+                    // destination is registered once at the
+                    // `NavigationStack` root in `HomeView`, so this push
+                    // lands on the same stack as every other one.
+                    NavigationLink(value: document) {
+                        DocumentRow(document: document)
+                    }
                 }
             }
         } header: {

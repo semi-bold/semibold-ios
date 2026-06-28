@@ -54,6 +54,16 @@ struct HomeView: View {
                 // callout ④).
                 FolderContentsView(folder: folder)
             }
+            .navigationDestination(for: Document.self) { document in
+                // Same reasoning as the `Folder.self` destination above —
+                // registered once here so a document row tapped from this
+                // screen or from any nested `FolderContentsView` resolves
+                // through this same destination (`Planning_6_FolderNavigationFlow`
+                // callout ⑤). This restores document-row navigation that a
+                // since-merged debugging commit had stripped from `HomeView`
+                // — not new functionality.
+                DetailView(document: document)
+            }
         }
         .onAppear {
             viewModel.load()
@@ -205,7 +215,11 @@ struct HomeView: View {
                 emptyRow(text: "첫 문서를 만들어보세요.")
             } else {
                 ForEach(viewModel.documents) { document in
-                    DocumentRow(document: document)
+                    // Tapping a document pushes `DetailView` for it
+                    // (`Planning_6_FolderNavigationFlow` callout ⑤).
+                    NavigationLink(value: document) {
+                        DocumentRow(document: document)
+                    }
                 }
             }
         } header: {
