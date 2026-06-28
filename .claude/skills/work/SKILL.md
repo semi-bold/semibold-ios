@@ -1,6 +1,6 @@
 ---
 name: work
-description: Run the semi:bold iOS feature pipeline for one work code — for the next not-done `.claude/features/<brief>.md` (in order), create/resume a relay branch `feature/<work-code>/<brief>` off `feature/<work-code>/base` (or the previous brief's branch), implement its unchecked Acceptance Criteria via feature-implementer + swift-reviewer, and open a chained PR. All brief-file bookkeeping (Status, checkboxes) happens only on `feature/<work-code>/base`, never on a relay branch, so brief PRs never carry brief-file changes. Once every brief is `done` and every brief's PR is merged into `feature/<work-code>/base`, clean up `.claude/features/` there.
+description: Run the semi:bold iOS feature pipeline for one work code — for the next brief in `.claude/features/` whose PR isn't merged yet (in order), create/resume a relay branch `feature/<work-code>/<brief>` off `feature/<work-code>/base` (or the previous brief's branch), implement its Acceptance Criteria via feature-implementer + swift-reviewer, and open a chained PR. A brief file is written once and never edited again by anyone — "done" is derived entirely from whether its PR is merged, never from a Status field or checkboxes. Once every brief's PR is merged into `feature/<work-code>/base`, clean up `.claude/features/` there.
 ---
 
 You are the work orchestrator for semi:bold iOS development.
@@ -30,25 +30,19 @@ PR.
   branch otherwise). The user merges these PRs **in order**; each merge
   updates the next PR's diff down to just that brief's own changes.
 - Once **every** brief in `.claude/features/` (excluding `TEMPLATE.md`)
-  is `Status: done` **and** every brief's PR is merged into
-  `feature/<work-code>/base`, check out `feature/<work-code>/base`,
-  remove all `.claude/features/*.md` except `TEMPLATE.md`, and commit +
-  push that to `feature/<work-code>/base`. The user then creates and
-  merges the final `feature/<work-code>/base` → `dev` PR manually.
-  Deleting these files before every PR is merged breaks the still-open
-  ones with a modify/delete conflict.
+  has its PR merged into `feature/<work-code>/base` (see "Before
+  Starting" step 4 for how that's checked), check out
+  `feature/<work-code>/base`, remove all `.claude/features/*.md` except
+  `TEMPLATE.md`, and commit + push that to `feature/<work-code>/base`.
+  The user then creates and merges the final `feature/<work-code>/base`
+  → `dev` PR manually. Deleting these files before every PR is merged
+  breaks the still-open ones with a modify/delete conflict.
 - **⛔ Never push to `dev` or `main` directly.** This skill never merges
   or pushes to `dev` — the user controls when `feature/<work-code>/base`
   lands into `dev`.
-- **A brief's `Status` field and Acceptance Criteria checkboxes are only
-  ever edited on `feature/<work-code>/base` — never on a relay branch.**
-  A relay branch's copy of its own brief file is frozen at whatever it
-  was when the branch was created; nothing on that branch ever commits a
-  change to it. This means a brief's PR (relay branch → previous branch
-  or `base`) never has the brief file in its diff at all, so merging it
-  can't conflict on that file — see "Workflow" step 4 and "Before
-  Starting" step 9 for the checkout-base/edit/push/checkout-back
-  mechanics this requires.
+- **A brief is committed once on `base` and never edited again — no
+  Status field, no checkbox edits.** "Done" = PR merged, checked via git/
+  `gh` (see step 4).
 
 ## Before Starting
 
@@ -112,35 +106,21 @@ PR.
    - If it doesn't exist, briefs fall back to the `PLANNING.md` (legacy)
      sections referenced in their Source.
 
-4. **Resolve the target brief**:
-   - Read brief `Status` from **`feature/<work-code>/base`** specifically
-     (`git show origin/feature/<work-code>/base:.claude/features/NN-slug.md`
-     for a known slug, or check out `base` briefly to `ls`/`grep` across
-     all of them) — never from whatever happens to be checked out
-     locally, since only `base`'s copy is kept current.
-   - If `[NN-slug]` was given, use that brief.
-   - Otherwise, list `.claude/features/*.md` (as they exist on `base`)
-     excluding `TEMPLATE.md`, ordered by filename (numbered briefs in
-     numeric order first, then unnumbered alphabetically), and pick the
-     first whose `Status` isn't `done`.
-   - If every brief is `done`, check whether every brief's PR is already
-     **merged** into `feature/<work-code>/base`:
-     `git merge-base --is-ancestor origin/feature/<work-code>/<NN-slug>
-     origin/feature/<work-code>/base` for each brief (exit code `0`
-     means merged). All merged → skip straight to **Completion**. Any
-     not yet merged → stop and tell the user their PRs are still pending
-     merge; running `/work` again once they're all merged will trigger
-     Completion automatically. **Never run Completion (delete the brief
-     files) while any brief's PR is still open** — its branch still
-     needs that file intact for the PR's own diff/merge, and `base`
-     deleting it first causes a modify/delete conflict on that PR.
-   - If the resolved brief's Source/Scope/Acceptance Criteria look
-     unfilled (still template placeholders), stop and tell the user it
-     needs to be fleshed out first — from
-     `../sketch-autokit/docs/tasks/<work-code>.md` (if it exists) or
-     `../sketch-autokit/docs/` (`PLANNING.md`, `SERVICE.md`, any notes
-     there) plus the relevant `Screen_*`/`Planning_N_*Flow` — before this
-     can implement it.
+4. **Resolve the target brief** — "done" = PR merged, checked via git/
+   `gh`, never via the brief file:
+   - If `[NN-slug]` was given, use that brief. Otherwise list
+     `.claude/features/*.md` excluding `TEMPLATE.md` in filename order
+     (numbered first), and for each check:
+     `git branch -r | grep "origin/feature/<work-code>/<NN-slug>"` and
+     `gh pr list --head feature/<work-code>/<NN-slug> --state merged --json number`.
+   - No branch → not started, this is the target. Branch exists, no
+     merged PR → in progress, this is the target (resume it in step 6;
+     `git log <its-base>..feature/<work-code>/<NN-slug> --oneline` shows
+     which AC items already have a `feat(NN-slug): ...` commit). Branch
+     exists with a merged PR → done, check the next brief.
+   - Every brief done → skip to **Completion**.
+   - Brief's Source/Scope/Acceptance Criteria still unfilled (template
+     placeholders) → stop, tell the user to flesh it out first.
 
 5. **Determine the relay base branch** for this brief:
    - Walk briefs in the same order as step 4, starting just before the
@@ -162,37 +142,15 @@ PR.
 
 7. Read `.claude/features/NN-slug.md` in full — Scope, Screens & Flows,
    Decisions & Deviations, and Acceptance Criteria drive everything
-   below. The relay branch's copy is fine to read for this — Scope/
-   Decisions/Screens & Flows never change after creation, so it's
-   identical to `base`'s copy regardless of which branch you're on.
+   below.
 8. Read `CLAUDE.md` — useful context for your own commit/PR messages.
-9. **If `Status: draft` or `ready`, flip it to `in-progress` — on
-   `base`, not the relay branch you just created/resumed**:
-   ```bash
-   git checkout feature/<work-code>/base && git pull origin feature/<work-code>/base
-   ```
-   Edit `.claude/features/NN-slug.md`: `Status: draft`/`ready` →
-   `Status: in-progress`.
-   ```bash
-   git add .claude/features/NN-slug.md
-   git commit -m "chore(NN-slug): start feature"
-   git push
-   git checkout feature/<work-code>/<NN-slug>
-   ```
-   Switch back to the brief's own branch — everything from here on
-   (reading source for implementation, the Workflow loop) happens there,
-   except the checkbox edits in Workflow step 4, which repeat this same
-   checkout-base/edit/push/checkout-back pattern.
-10. List the brief's Acceptance Criteria items **from `base`'s copy**
-    (`git show origin/feature/<work-code>/base:.claude/features/NN-slug.md`),
-    noting which are already `[x]` (skip) vs `[ ]` (this run's work
-    queue) — the relay branch's own copy may be stale on this point if
-    you're resuming a brief whose earlier items were already checked off
-    on `base` in a prior run.
+9. List the brief's Acceptance Criteria items, noting which already have
+   a `feat(NN-slug): ...` commit per step 4's `git log` check (skip) vs
+   which don't (this run's work queue).
 
 ## Workflow — per Acceptance Criteria item
 
-For each unchecked (`- [ ]`) item, in order:
+For each item in step 9's work queue, in order:
 
 1. **Spawn `feature-implementer`**
    - `subagent_type: feature-implementer`
@@ -204,11 +162,8 @@ For each unchecked (`- [ ]`) item, in order:
      row in the brief's Screens & Flows table, mention that mapping
      explicitly.
    - **Never instruct it to write/record/document anything in the brief
-     file** — not even "note this in Decisions & Deviations." It reports
-     deviations/decisions/gaps in its own output text only. The brief
-     file is frozen — only step 4 below (and only on `base`, never on
-     this relay branch) ever changes it. If you catch yourself drafting
-     a prompt that asks it to edit the brief, rewrite the prompt instead.
+     file.** It reports deviations/decisions/gaps in its own output text
+     only — the brief is never edited, by anyone, after creation.
 
 2. **Spawn `swift-reviewer`**
    - `subagent_type: swift-reviewer`
@@ -222,31 +177,15 @@ For each unchecked (`- [ ]`) item, in order:
      as fix instructions. Retry up to 2 times total. If still blocking,
      stop and report the outstanding issues to the user.
 
-4. **Commit the code, then check off — on two different branches**
-   - First, commit and push the actual code change on the brief's own
-     relay branch (no brief-file edits bundled in):
-     ```bash
-     git add -A
-     git commit -m "feat(NN-slug): <short summary of the AC item>"
-     git push
-     ```
-   - Then, separately, record the checkbox on `base`:
-     ```bash
-     git checkout feature/<work-code>/base && git pull origin feature/<work-code>/base
-     ```
-     If `feature-implementer` confirms the item is fully met, edit the
-     brief: change that item's `- [ ]` to `- [x]`. This is the **only**
-     edit this step makes — don't touch Decisions & Deviations even to
-     summarize what happened. If it's only partially done or blocked,
-     leave it unchecked and add a note under Open Questions / Follow-ups
-     explaining what's left instead.
-     ```bash
-     git add .claude/features/NN-slug.md
-     git commit -m "chore(NN-slug): check off <short AC item summary>"
-     git push
-     git checkout feature/<work-code>/<NN-slug>
-     ```
-     Switch back to the relay branch before continuing to the next item.
+4. **Commit the code** (no brief-file edits — there's nothing to check
+   off):
+   ```bash
+   git add -A
+   git commit -m "feat(NN-slug): <short summary of the AC item>"
+   git push
+   ```
+   If the item is only partially done or blocked, say so in your report
+   (step 5) rather than in the brief.
 
 5. Report progress (see User Communication).
 
@@ -256,15 +195,10 @@ user instead of guessing — don't continue to the next item.
 
 ## After This Brief's Items Are Done
 
-1. Re-read the brief's Acceptance Criteria **from `base`** (same
-   pattern as step 9/Workflow step 4 — checkout base, pull). If every
-   item is now `[x]`, update `Status: in-progress` → `done`; commit +
-   push **on `base`**, then checkout back to the relay branch.
-   - If some items remain unchecked (genuinely deferred follow-ups, not
-     blocking), leave `Status: in-progress` and summarize what's left to
-     the user.
-2. Open the PR (from the relay branch, which has never touched the
-   brief file — its diff is pure code):
+1. Confirm every Acceptance Criteria item now has a `feat(NN-slug): ...`
+   commit. If some are genuinely deferred (not blocking), note that in
+   the PR body (below) — don't edit the brief.
+2. Open the PR:
    ```bash
    gh pr create --base <base-branch-from-step-5> --head feature/<work-code>/NN-slug \
      --title "<concise summary, under 70 chars>" \
@@ -293,8 +227,7 @@ user instead of guessing — don't continue to the next item.
 🤖 Generated with `/work` from `.claude/features/NN-slug.md`
 ```
 
-## Completion (every brief is `done` **and** every brief's PR is merged
-into `feature/<work-code>/base` — see step 4's merge check)
+## Completion (every brief's PR is merged into `feature/<work-code>/base`)
 
 ```bash
 git checkout feature/<work-code>/base && git pull origin feature/<work-code>/base
@@ -369,8 +302,8 @@ Acceptance criteria: 3/3 met
 - **Agent** — spawn `feature-implementer` / `swift-reviewer`
 - **AskUserQuestion** — resolve the work code if not yet assigned
 - **Read / Glob** — feature briefs, CLAUDE.md, `tasks/<work-code>.md`
-- **Edit** — update a brief's Status and Acceptance Criteria checkboxes
-- **Bash** — git branch/commit/push, `gh pr create`, Completion cleanup
+- **Bash** — git branch/commit/push, `gh pr list`, `gh pr create`,
+  Completion cleanup
 - **TodoWrite** — track progress across items (recommended)
 
 ## Important Notes
@@ -382,24 +315,9 @@ Acceptance criteria: 3/3 met
   `feature/<work-code>/base` for the first):
   `feature/<work-code>/<NN-slug>`.
 - `.claude/features/*.md` (except `TEMPLATE.md`) are removed from
-  `feature/<work-code>/base` only once **every** brief is `done` **and**
-  every brief's PR is merged into `base` — git history retains their
-  content for reference. Deleting them on `base` any earlier breaks
-  every still-open brief PR with a modify/delete conflict, since each
-  one's own branch still has its (now further-edited) brief file.
-- **A brief is frozen once written, and only `base` ever tracks its
-  progress.** You (the orchestrator) only ever touch `Status` and the
-  Acceptance Criteria checkboxes, and only on `feature/<work-code>/base`
-  — never Scope, Decisions & Deviations, or Screens & Flows, and never
-  any field at all on a relay branch. `feature-implementer` and
-  `swift-reviewer` never touch the brief file at all, in any way. A
-  relay branch's own copy of its brief is frozen the moment that branch
-  is created — every Status/checkbox update happens via the
-  checkout-base/edit/commit/push/checkout-back cycle in step 9 and
-  Workflow step 4, so a brief's own PR diff never contains a brief-file
-  change and can never conflict on one. If something worth recording
-  comes up mid-work that doesn't fit a checkbox, say it in your own
-  report to the user — don't put it in the brief.
+  `feature/<work-code>/base` only once every brief's PR is merged — git
+  history retains their content for reference. Deleting them earlier
+  breaks any still-open brief PR with a modify/delete conflict.
 - **⛔ Never push to `dev` or `main` directly.** The user merges PRs
   (in relay order) and creates the final `feature/<work-code>/base` →
   `dev` PR manually.
