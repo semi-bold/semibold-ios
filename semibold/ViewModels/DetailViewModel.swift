@@ -18,6 +18,30 @@ final class DetailViewModel {
     /// The document being viewed/edited.
     private(set) var document: Document
 
+    /// The back-button label `DetailView`'s nav bar shows
+    /// (`Planning_6_FolderNavigationFlow` callout ①, extended to the
+    /// editor screen). Starts out `.root` and is replaced with the
+    /// document's folder name once `load()` looks it up, for documents
+    /// filed inside a folder.
+    private(set) var backButtonLabel = FolderBackButtonLabel.root
+
+    /// The literal text `DetailView`'s back button shows.
+    ///
+    /// Unlike `FolderContentsView` (which always returns to another
+    /// `FolderContentsView`/`HomeView` screen named "Semi:bold"),
+    /// `DetailView`'s root-level back button has always read "< Back" —
+    /// that existing label is kept as-is for a root document rather than
+    /// switched to `FolderBackButtonLabel.root`'s "< Semi:bold" text, so
+    /// this only overrides it for documents filed inside a named folder.
+    var backButtonText: String {
+        switch backButtonLabel {
+        case .root:
+            return "< Back"
+        case .parentFolder:
+            return backButtonLabel.text
+        }
+    }
+
     /// The document's top-level blocks, in display order, excluding
     /// soft-deleted ones.
     ///
@@ -73,6 +97,10 @@ final class DetailViewModel {
     /// shortcut-driven edits through this same repository.
     let documentBlockRepository: DocumentBlockRepository
 
+    /// Looked up once in `load()` to resolve `backButtonLabel` when the
+    /// document is filed inside a folder.
+    private let folderRepository: FolderRepository
+
     /// How long to wait after the last keystroke before writing a block's
     /// text to the database (PLANNING §11.2 "블록 입력: 300~800ms debounce
     /// 후 저장"). Configurable so tests can use a near-zero delay instead
@@ -92,16 +120,19 @@ final class DetailViewModel {
     init(
         document: Document,
         documentBlockRepository: DocumentBlockRepository = DocumentBlockRepository(),
+        folderRepository: FolderRepository = FolderRepository(),
         autosaveDebounceInterval: Duration = .milliseconds(500)
     ) {
         self.document = document
         self.documentBlockRepository = documentBlockRepository
+        self.folderRepository = folderRepository
         self.autosaveDebounceInterval = autosaveDebounceInterval
     }
 
-    /// Reloads this document's top-level blocks. If the document has no
-    /// blocks yet (a brand-new document), creates a single empty paragraph
-    /// block so there's always something to type into
+    /// Reloads this document's top-level blocks and resolves the
+    /// back-button label for the folder it's filed in. If the document has
+    /// no blocks yet (a brand-new document), creates a single empty
+    /// paragraph block so there's always something to type into
     /// (PLANNING §6.2 "기본 paragraph block 1개 생성", §5.4 step A).
     func load() {
         do {
@@ -127,6 +158,16 @@ final class DetailViewModel {
             // on here.
             blocks = []
         }
+
+        // A root-level document (`folderId == nil`) keeps the literal
+        // "< Back" label; a document filed inside a folder shows that
+        // folder's name instead, the same rule `FolderContentsViewModel`
+        // applies one level up (`Planning_6_FolderNavigationFlow` callout
+        // ①).
+        let folderName = document.folderId.flatMap { folderId in
+            try? folderRepository.find(id: folderId)?.name
+        }
+        backButtonLabel = FolderBackButtonLabel.resolve(parentId: document.folderId, parentName: folderName)
     }
 
     /// Updates the in-memory text for `block` immediately (so the editor
