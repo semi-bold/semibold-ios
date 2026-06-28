@@ -5,9 +5,9 @@ import SwiftUI
 ///
 /// Matches the `Screen_Home` wireframe (`iOS_PrivateSpace` artboard in
 /// `sketch-autokit/screens/wireframe.py`) — a navigation bar showing the
-/// current space ("Private") and an add button, followed by a "Folders"
-/// section and a "Documents" section listing everything at the root of
-/// the user's document tree.
+/// current space ("Private") and an add button, followed by a "폴더"
+/// (folders) section and a "문서" (documents) section listing everything
+/// at the root of the user's document tree.
 struct HomeView: View {
     @State private var viewModel = HomeViewModel()
 
@@ -179,7 +179,7 @@ struct HomeView: View {
                 }
             }
         } header: {
-            sectionHeader("Folders")
+            sectionHeader("폴더")
         }
     }
 
@@ -197,90 +197,8 @@ struct HomeView: View {
                 }
             }
         } header: {
-            sectionHeader("Documents")
+            sectionHeader("문서")
         }
-    }
-
-    /// Section header styled like the wireframe's `SectionHeader_*`
-    /// groups: a surface-colored bar with an uppercase label.
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title.uppercased())
-            .appTextStyle(AppTheme.Typography.label)
-            .foregroundStyle(AppTheme.Colors.text3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, AppTheme.Spacing.md)
-            .frame(height: 32)
-            .background(AppTheme.Colors.surface)
-            .listRowInsets(EdgeInsets())
-    }
-
-    /// Placeholder row shown while a section has no items.
-    private func emptyRow(text: String) -> some View {
-        Text(text)
-            .appTextStyle(AppTheme.Typography.body)
-            .foregroundStyle(AppTheme.Colors.text2)
-            .padding(.vertical, AppTheme.Spacing.sm)
-            .listRowBackground(AppTheme.Colors.background)
-    }
-}
-
-/// A single folder row: folder icon, name, and item count.
-private struct FolderRow: View {
-    let folder: Folder
-
-    var body: some View {
-        HStack(spacing: AppTheme.Spacing.md) {
-            Image(systemName: "folder")
-                .foregroundStyle(AppTheme.Colors.text2)
-                .frame(width: 20, height: 20)
-
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text(folder.name)
-                    .appTextStyle(AppTheme.Typography.body)
-                    .foregroundStyle(AppTheme.Colors.text1)
-
-                // TODO: replace with the folder's actual child count once
-                // folder contents are loaded.
-                Text("0 items")
-                    .appTextStyle(AppTheme.Typography.caption)
-                    .foregroundStyle(AppTheme.Colors.text2)
-            }
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .appTextStyle(AppTheme.Typography.caption)
-                .foregroundStyle(AppTheme.Colors.text3)
-        }
-        .padding(.vertical, AppTheme.Spacing.sm)
-        .listRowBackground(AppTheme.Colors.background)
-    }
-}
-
-/// A single document row: document icon, title, and last-updated date.
-private struct DocumentRow: View {
-    let document: Document
-
-    var body: some View {
-        HStack(spacing: AppTheme.Spacing.md) {
-            Image(systemName: "doc.text")
-                .foregroundStyle(AppTheme.Colors.text2)
-                .frame(width: 20, height: 20)
-
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text(document.title)
-                    .appTextStyle(AppTheme.Typography.body)
-                    .foregroundStyle(AppTheme.Colors.text1)
-
-                Text(document.updatedAt.formatted(date: .numeric, time: .omitted))
-                    .appTextStyle(AppTheme.Typography.caption)
-                    .foregroundStyle(AppTheme.Colors.text2)
-            }
-
-            Spacer()
-        }
-        .padding(.vertical, AppTheme.Spacing.sm)
-        .listRowBackground(AppTheme.Colors.background)
     }
 }
 
