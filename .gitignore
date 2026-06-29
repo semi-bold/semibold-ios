@@ -12,3 +12,6 @@ build/
 
 # macOS
 .DS_Store
+
+# xcode-build-server (VSCode SourceKit-LSP) — machine-specific paths
+buildServer.json
