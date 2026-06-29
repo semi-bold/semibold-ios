@@ -29,9 +29,35 @@ func emptyRow(text: String) -> some View {
         .listRowBackground(AppTheme.Colors.background)
 }
 
+/// Swipe-action button labels shared by `FolderRow`/`DocumentRow`, matching
+/// `iOS_HomeViewSwipe`'s `SwipeAction_Edit`/`SwipeAction_Delete` layers
+/// (`Planning_9_SwipeActionFlow` callouts ②③): "편집" in
+/// `AppTheme.Colors.primary` (wireframe `#0a84ff`), "삭제" in
+/// `AppTheme.Colors.danger` with the destructive role (wireframe `#ff3b30`).
+/// Both render as the standard 80pt-wide swipe button SwiftUI gives
+/// `.swipeActions` buttons, matching the wireframe's `w=80` layers.
+@ViewBuilder
+private func editDeleteSwipeActions(onEdit: @escaping () -> Void, onDelete: @escaping () -> Void) -> some View {
+    // Left-to-right swipe-revealed order per `ios_homeviewswipe`: edit
+    // (x=230) appears before delete (x=310), so edit is declared first —
+    // `.swipeActions(edge: .trailing)` reveals trailing-most action
+    // closest to the row's edge first when partially swiped.
+    Button("편집", action: onEdit)
+        .tint(AppTheme.Colors.primary)
+    Button("삭제", role: .destructive, action: onDelete)
+        .tint(AppTheme.Colors.danger)
+}
+
 /// A single folder row: folder icon, name, and item count.
+///
+/// Swiping left reveals "편집"/"삭제" actions (`iOS_HomeViewSwipe`,
+/// `Planning_9_SwipeActionFlow` callouts ①–③). The actual rename/soft-delete
+/// behavior is wired by the caller via `onEdit`/`onDelete` — this AC item
+/// only covers the buttons' presence and appearance.
 struct FolderRow: View {
     let folder: Folder
+    var onEdit: () -> Void = {}
+    var onDelete: () -> Void = {}
 
     var body: some View {
         HStack(spacing: AppTheme.Spacing.md) {
@@ -59,12 +85,22 @@ struct FolderRow: View {
         }
         .padding(.vertical, AppTheme.Spacing.sm)
         .listRowBackground(AppTheme.Colors.background)
+        .swipeActions(edge: .trailing) {
+            editDeleteSwipeActions(onEdit: onEdit, onDelete: onDelete)
+        }
     }
 }
 
 /// A single document row: document icon, title, and last-updated date.
+///
+/// Swiping left reveals "편집"/"삭제" actions (`iOS_HomeViewSwipe`,
+/// `Planning_9_SwipeActionFlow` callouts ①–③). The actual rename/soft-delete
+/// behavior is wired by the caller via `onEdit`/`onDelete` — this AC item
+/// only covers the buttons' presence and appearance.
 struct DocumentRow: View {
     let document: Document
+    var onEdit: () -> Void = {}
+    var onDelete: () -> Void = {}
 
     var body: some View {
         HStack(spacing: AppTheme.Spacing.md) {
@@ -86,5 +122,8 @@ struct DocumentRow: View {
         }
         .padding(.vertical, AppTheme.Spacing.sm)
         .listRowBackground(AppTheme.Colors.background)
+        .swipeActions(edge: .trailing) {
+            editDeleteSwipeActions(onEdit: onEdit, onDelete: onDelete)
+        }
     }
 }

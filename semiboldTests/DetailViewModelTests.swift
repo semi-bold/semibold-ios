@@ -703,4 +703,27 @@ struct DetailViewModelTests {
         #expect(viewModel.backButtonLabel == .root)
         #expect(viewModel.backButtonText == "< Back")
     }
+
+    @Test("Tapping a block's '잠금' swipe action sets the not-yet-supported notice")
+    func lockBlockTappedSetsNotYetSupportedNotice() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "오늘의 일기"))
+        let viewModel = DetailViewModel(document: document, documentBlockRepository: blockRepository)
+        viewModel.load()
+        let blockId = try #require(viewModel.blocks.first?.id)
+
+        #expect(viewModel.lockNotice == nil)
+
+        viewModel.lockBlockTapped(blockId)
+
+        // `Planning_9_SwipeActionFlow` callout ⑤ / NO-001 §1.2 — Secret
+        // Lock's actual encryption is out of scope, so this only surfaces
+        // a short notice rather than locking anything for real.
+        #expect(viewModel.lockNotice == AppErrorMessages.secretLockNotYetSupported)
+        // The block itself is untouched — no actual lock state exists yet.
+        #expect(viewModel.blocks.first?.id == blockId)
+    }
 }

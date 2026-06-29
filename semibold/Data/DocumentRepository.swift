@@ -47,6 +47,18 @@ struct DocumentRepository {
         return try context.fetch(request).map(Document.init(entity:))
     }
 
+    /// Whether `folderId` directly contains any live (non-soft-deleted)
+    /// documents. Used alongside `FolderRepository.hasChildren(of:)` to
+    /// warn the person deleting a folder that it isn't empty.
+    func hasDocuments(in folderId: String) throws -> Bool {
+        let request = DocumentEntity.fetchRequest()
+        let deletedPredicate = NSPredicate(format: "deletedAt == nil")
+        let folderPredicate = NSPredicate(format: "folder.id == %@", folderId)
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [deletedPredicate, folderPredicate])
+        request.fetchLimit = 1
+        return try context.count(for: request) > 0
+    }
+
     /// Saves changes to an existing document, refreshing `updatedAt`.
     @discardableResult
     func update(_ document: Document) throws -> Document {
