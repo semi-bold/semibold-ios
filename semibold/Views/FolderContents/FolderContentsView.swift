@@ -38,23 +38,15 @@ struct FolderContentsView: View {
     /// document inside this folder.
     @State private var isNewDocumentSheetPresented = false
 
-    /// The nested folder currently being renamed via the "편집" swipe
-    /// action (`Planning_9_SwipeActionFlow`), or `nil` when no rename
-    /// sheet is showing.
-    @State private var folderBeingRenamed: Folder?
+    /// The nested folder or document currently being renamed via the
+    /// "편집" swipe action (`Planning_9_SwipeActionFlow`), or `nil` when
+    /// no rename sheet is showing.
+    @State private var entryBeingRenamed: Entry?
 
-    /// The document currently being renamed via the "편집" swipe action,
-    /// or `nil` when no rename sheet is showing.
-    @State private var documentBeingRenamed: Document?
-
-    /// The nested folder pending confirmation from the "삭제" swipe
-    /// action, or `nil` when no delete-confirmation alert is showing
-    /// (`Planning_9_SwipeActionFlow` callout ③).
-    @State private var folderPendingDelete: Folder?
-
-    /// The document pending confirmation from the "삭제" swipe action,
-    /// or `nil` when no delete-confirmation alert is showing.
-    @State private var documentPendingDelete: Document?
+    /// The nested folder or document pending confirmation from the
+    /// "삭제" swipe action, or `nil` when no delete-confirmation alert is
+    /// showing (`Planning_9_SwipeActionFlow` callout ③).
+    @State private var entryPendingDelete: Entry?
 
     init(folder: Folder) {
         _viewModel = State(initialValue: FolderContentsViewModel(folder: folder))
@@ -95,46 +87,46 @@ struct FolderContentsView: View {
                 viewModel.didCreateDocument()
             }
         }
-        .sheet(item: $folderBeingRenamed) { folder in
-            RenameFolderSheet(folder: folder) { _ in
-                viewModel.didEditFolder()
-            }
-        }
-        .sheet(item: $documentBeingRenamed) { document in
-            RenameDocumentSheet(document: document) { _ in
-                viewModel.didEditDocument()
+        .sheet(item: $entryBeingRenamed) { entry in
+            switch entry {
+            case .folder(let folder):
+                RenameFolderSheet(folder: folder) { _ in
+                    viewModel.didEditFolder()
+                }
+            case .document(let document):
+                RenameDocumentSheet(document: document) { _ in
+                    viewModel.didEditDocument()
+                }
             }
         }
         .alert(
             AppConfirmationMessages.deleteTitle,
-            isPresented: folderDeleteConfirmationPresented,
-            presenting: folderPendingDelete
-        ) { folder in
+            isPresented: entryDeleteConfirmationPresented,
+            presenting: entryPendingDelete
+        ) { entry in
             Button(AppConfirmationMessages.confirmButton, role: .destructive) {
-                viewModel.deleteFolder(folder)
+                switch entry {
+                case .folder(let folder):
+                    viewModel.deleteFolder(folder)
+                case .document(let document):
+                    viewModel.deleteDocument(document)
+                }
             }
             Button(AppConfirmationMessages.cancelButton, role: .cancel) {}
-        } message: { folder in
-            // "삭제" swipe action — a folder with live nested content
-            // gets the stronger warning so deleting it isn't a surprise
-            // (`Planning_9_SwipeActionFlow` callout ③).
-            Text(
-                viewModel.folderHasNestedContent(folder)
-                    ? AppConfirmationMessages.deleteFolderWithContents
-                    : AppConfirmationMessages.deleteSimple
-            )
-        }
-        .alert(
-            AppConfirmationMessages.deleteTitle,
-            isPresented: documentDeleteConfirmationPresented,
-            presenting: documentPendingDelete
-        ) { document in
-            Button(AppConfirmationMessages.confirmButton, role: .destructive) {
-                viewModel.deleteDocument(document)
+        } message: { entry in
+            switch entry {
+            case .folder(let folder):
+                // "삭제" swipe action — a folder with live nested content
+                // gets the stronger warning so deleting it isn't a
+                // surprise (`Planning_9_SwipeActionFlow` callout ③).
+                Text(
+                    viewModel.folderHasNestedContent(folder)
+                        ? AppConfirmationMessages.deleteFolderWithContents
+                        : AppConfirmationMessages.deleteSimple
+                )
+            case .document:
+                Text(AppConfirmationMessages.deleteSimple)
             }
-            Button(AppConfirmationMessages.cancelButton, role: .cancel) {}
-        } message: { _ in
-            Text(AppConfirmationMessages.deleteSimple)
         }
         .alert(
             "Error",
@@ -151,27 +143,14 @@ struct FolderContentsView: View {
         }
     }
 
-    /// Whether the "삭제" swipe action's folder confirmation alert is
-    /// showing — driven by `folderPendingDelete`.
-    private var folderDeleteConfirmationPresented: Binding<Bool> {
+    /// Whether the "삭제" swipe action's confirmation alert is showing —
+    /// driven by `entryPendingDelete`.
+    private var entryDeleteConfirmationPresented: Binding<Bool> {
         Binding(
-            get: { folderPendingDelete != nil },
+            get: { entryPendingDelete != nil },
             set: { isPresented in
                 if !isPresented {
-                    folderPendingDelete = nil
-                }
-            }
-        )
-    }
-
-    /// Whether the "삭제" swipe action's document confirmation alert is
-    /// showing — driven by `documentPendingDelete`.
-    private var documentDeleteConfirmationPresented: Binding<Bool> {
-        Binding(
-            get: { documentPendingDelete != nil },
-            set: { isPresented in
-                if !isPresented {
-                    documentPendingDelete = nil
+                    entryPendingDelete = nil
                 }
             }
         )
@@ -272,8 +251,8 @@ struct FolderContentsView: View {
                     // `FolderRow` itself wraps the `NavigationLink`.
                     FolderRow(
                         folder: folder,
-                        onEdit: { folderBeingRenamed = folder },
-                        onDelete: { folderPendingDelete = folder }
+                        onEdit: { entryBeingRenamed = .folder(folder) },
+                        onDelete: { entryPendingDelete = .folder(folder) }
                     )
                 }
             }
@@ -300,8 +279,8 @@ struct FolderContentsView: View {
                     // `DocumentRow` itself wraps the `NavigationLink`.
                     DocumentRow(
                         document: document,
-                        onEdit: { documentBeingRenamed = document },
-                        onDelete: { documentPendingDelete = document }
+                        onEdit: { entryBeingRenamed = .document(document) },
+                        onDelete: { entryPendingDelete = .document(document) }
                     )
                 }
             }
