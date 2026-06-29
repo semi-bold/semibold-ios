@@ -164,7 +164,12 @@ struct DetailView: View {
 
     // MARK: - Nav bar
 
-    /// Top bar with a back button to return to `HomeView`'s document list.
+    /// Top bar with a back button to return to wherever this document was
+    /// opened from — `HomeView`'s document list for a root-level document,
+    /// or the owning `FolderContentsView` for one filed inside a folder, in
+    /// which case the label names that folder instead of staying generic
+    /// (`viewModel.backButtonText`, mirroring
+    /// `Planning_6_FolderNavigationFlow` callout ①).
     ///
     /// The wireframe also shows a "잠금" (lock) button on the right
     /// (`DocLockBtn`) — that's Secret Lock, explicitly out of this
@@ -183,7 +188,7 @@ struct DetailView: View {
                 Button {
                     dismiss()
                 } label: {
-                    Text("< Back")
+                    Text(viewModel.backButtonText)
                         .appTextStyle(AppTheme.Typography.body)
                         .foregroundStyle(AppTheme.Colors.primary)
                 }

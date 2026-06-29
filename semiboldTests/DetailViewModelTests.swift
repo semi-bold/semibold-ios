@@ -639,4 +639,68 @@ struct DetailViewModelTests {
 
         #expect(viewModel.errorMessage == AppErrorMessages.deleteFailed)
     }
+
+    // MARK: - Back button label (`Planning_6_FolderNavigationFlow` callout ①)
+
+    @Test("A root-level document keeps the existing '< Back' label")
+    func loadKeepsExistingBackLabelForRootDocument() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
+        let folderRepository = FolderRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(folderId: nil, title: "Untitled"))
+        let viewModel = DetailViewModel(
+            document: document,
+            documentBlockRepository: blockRepository,
+            folderRepository: folderRepository
+        )
+
+        viewModel.load()
+
+        #expect(viewModel.backButtonLabel == .root)
+        #expect(viewModel.backButtonText == "< Back")
+    }
+
+    @Test("A document filed inside a folder shows that folder's name in the back label")
+    func loadResolvesParentFolderNameForDocumentInFolder() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
+        let folderRepository = FolderRepository(context: store.context)
+
+        let folder = try folderRepository.create(Folder(name: "일상"))
+        let document = try documentRepository.create(Document(folderId: folder.id, title: "오늘의 일기"))
+        let viewModel = DetailViewModel(
+            document: document,
+            documentBlockRepository: blockRepository,
+            folderRepository: folderRepository
+        )
+
+        viewModel.load()
+
+        #expect(viewModel.backButtonLabel == .parentFolder(name: "일상"))
+        #expect(viewModel.backButtonText == "< 일상")
+    }
+
+    @Test("A document whose folder lookup fails falls back to the root back label")
+    func loadFallsBackToRootLabelWhenFolderLookupFails() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let blockRepository = DocumentBlockRepository(context: store.context)
+        let folderRepository = FolderRepository(context: store.context)
+
+        // `folderId` points at a folder that doesn't (or no longer) exists.
+        let document = try documentRepository.create(Document(folderId: "missing-folder-id", title: "Orphaned"))
+        let viewModel = DetailViewModel(
+            document: document,
+            documentBlockRepository: blockRepository,
+            folderRepository: folderRepository
+        )
+
+        viewModel.load()
+
+        #expect(viewModel.backButtonLabel == .root)
+        #expect(viewModel.backButtonText == "< Back")
+    }
 }
