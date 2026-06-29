@@ -307,18 +307,15 @@ struct HomeView: View {
             } else {
                 ForEach(viewModel.folders) { folder in
                     // Tapping a folder pushes `FolderContentsView` for it
-                    // (`Planning_6_FolderNavigationFlow` callout ①).
-                    NavigationLink(value: folder) {
-                        // "편집" swipe action opens `RenameFolderSheet`;
-                        // "삭제" shows a confirmation alert before
-                        // soft-deleting (`Planning_9_SwipeActionFlow`
-                        // callouts ①–③).
-                        FolderRow(
-                            folder: folder,
-                            onEdit: { folderBeingRenamed = folder },
-                            onDelete: { folderPendingDelete = folder }
-                        )
-                    }
+                    // (`Planning_6_FolderNavigationFlow` callout ①);
+                    // "편집"/"삭제" open `RenameFolderSheet`/a confirmation
+                    // alert (`Planning_9_SwipeActionFlow` callouts ①–③).
+                    // `FolderRow` itself wraps the `NavigationLink`.
+                    FolderRow(
+                        folder: folder,
+                        onEdit: { folderBeingRenamed = folder },
+                        onDelete: { folderPendingDelete = folder }
+                    )
                 }
             }
         } header: {
@@ -337,18 +334,15 @@ struct HomeView: View {
             } else {
                 ForEach(viewModel.documents) { document in
                     // Tapping a document pushes `DetailView` for it
-                    // (`Planning_6_FolderNavigationFlow` callout ⑤).
-                    NavigationLink(value: document) {
-                        // "편집" swipe action opens `RenameDocumentSheet`;
-                        // "삭제" shows a confirmation alert before
-                        // soft-deleting (`Planning_9_SwipeActionFlow`
-                        // callouts ①–③).
-                        DocumentRow(
-                            document: document,
-                            onEdit: { documentBeingRenamed = document },
-                            onDelete: { documentPendingDelete = document }
-                        )
-                    }
+                    // (`Planning_6_FolderNavigationFlow` callout ⑤);
+                    // "편집"/"삭제" open `RenameDocumentSheet`/a confirmation
+                    // alert (`Planning_9_SwipeActionFlow` callouts ①–③).
+                    // `DocumentRow` itself wraps the `NavigationLink`.
+                    DocumentRow(
+                        document: document,
+                        onEdit: { documentBeingRenamed = document },
+                        onDelete: { documentPendingDelete = document }
+                    )
                 }
             }
         } header: {

@@ -48,42 +48,55 @@ private func editDeleteSwipeActions(onEdit: @escaping () -> Void, onDelete: @esc
         .tint(AppTheme.Colors.danger)
 }
 
-/// A single folder row: folder icon, name, and item count.
+/// A single folder row: folder icon, name, and item count. Tapping it
+/// pushes whatever `.navigationDestination(for: Folder.self)` resolves
+/// to (registered once at the `NavigationStack` root in `HomeView`) —
+/// wrapping `NavigationLink` here, instead of at each call site, is what
+/// keeps the row-background fix below from having to be repeated/
+/// remembered in `HomeView`/`FolderContentsView` separately.
 ///
 /// Swiping left reveals "편집"/"삭제" actions (`iOS_HomeViewSwipe`,
 /// `Planning_9_SwipeActionFlow` callouts ①–③). The actual rename/soft-delete
-/// behavior is wired by the caller via `onEdit`/`onDelete` — this AC item
-/// only covers the buttons' presence and appearance.
+/// behavior is wired by the caller via `onEdit`/`onDelete`.
 struct FolderRow: View {
     let folder: Folder
     var onEdit: () -> Void = {}
     var onDelete: () -> Void = {}
 
     var body: some View {
-        HStack(spacing: AppTheme.Spacing.md) {
-            Image(systemName: "folder")
-                .foregroundStyle(AppTheme.Colors.text2)
-                .frame(width: 20, height: 20)
-
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text(folder.name)
-                    .appTextStyle(AppTheme.Typography.body)
-                    .foregroundStyle(AppTheme.Colors.text1)
-
-                // TODO: replace with the folder's actual child count once
-                // folder contents are loaded.
-                Text("0 items")
-                    .appTextStyle(AppTheme.Typography.caption)
+        NavigationLink(value: folder) {
+            HStack(spacing: AppTheme.Spacing.md) {
+                Image(systemName: "folder")
                     .foregroundStyle(AppTheme.Colors.text2)
+                    .frame(width: 20, height: 20)
+
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                    Text(folder.name)
+                        .appTextStyle(AppTheme.Typography.body)
+                        .foregroundStyle(AppTheme.Colors.text1)
+
+                    // TODO: replace with the folder's actual child count
+                    // once folder contents are loaded.
+                    Text("0 items")
+                        .appTextStyle(AppTheme.Typography.caption)
+                        .foregroundStyle(AppTheme.Colors.text2)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .appTextStyle(AppTheme.Typography.caption)
+                    .foregroundStyle(AppTheme.Colors.text3)
             }
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .appTextStyle(AppTheme.Typography.caption)
-                .foregroundStyle(AppTheme.Colors.text3)
+            .padding(.vertical, AppTheme.Spacing.sm)
         }
-        .padding(.vertical, AppTheme.Spacing.sm)
+        // `NavigationLink` inside a `List` row otherwise paints its own
+        // system row background (white) over whatever `listRowBackground`
+        // is set, regardless of where that modifier is applied relative
+        // to it — `.buttonStyle(.plain)` stops it from doing that, and
+        // `.listRowBackground` then needs to sit on the `NavigationLink`
+        // itself (not just inside its label content) to take effect.
+        .buttonStyle(.plain)
         .listRowBackground(AppTheme.Colors.background)
         .swipeActions(edge: .trailing) {
             editDeleteSwipeActions(onEdit: onEdit, onDelete: onDelete)
@@ -92,35 +105,43 @@ struct FolderRow: View {
 }
 
 /// A single document row: document icon, title, and last-updated date.
+/// Tapping it pushes whatever `.navigationDestination(for: Document.self)`
+/// resolves to (registered once at the `NavigationStack` root in
+/// `HomeView`) — see `FolderRow`'s doc comment for why `NavigationLink`
+/// is wrapped here rather than at each call site.
 ///
 /// Swiping left reveals "편집"/"삭제" actions (`iOS_HomeViewSwipe`,
 /// `Planning_9_SwipeActionFlow` callouts ①–③). The actual rename/soft-delete
-/// behavior is wired by the caller via `onEdit`/`onDelete` — this AC item
-/// only covers the buttons' presence and appearance.
+/// behavior is wired by the caller via `onEdit`/`onDelete`.
 struct DocumentRow: View {
     let document: Document
     var onEdit: () -> Void = {}
     var onDelete: () -> Void = {}
 
     var body: some View {
-        HStack(spacing: AppTheme.Spacing.md) {
-            Image(systemName: "doc.text")
-                .foregroundStyle(AppTheme.Colors.text2)
-                .frame(width: 20, height: 20)
-
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text(document.title)
-                    .appTextStyle(AppTheme.Typography.body)
-                    .foregroundStyle(AppTheme.Colors.text1)
-
-                Text(document.updatedAt.formatted(date: .numeric, time: .omitted))
-                    .appTextStyle(AppTheme.Typography.caption)
+        NavigationLink(value: document) {
+            HStack(spacing: AppTheme.Spacing.md) {
+                Image(systemName: "doc.text")
                     .foregroundStyle(AppTheme.Colors.text2)
-            }
+                    .frame(width: 20, height: 20)
 
-            Spacer()
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                    Text(document.title)
+                        .appTextStyle(AppTheme.Typography.body)
+                        .foregroundStyle(AppTheme.Colors.text1)
+
+                    Text(document.updatedAt.formatted(date: .numeric, time: .omitted))
+                        .appTextStyle(AppTheme.Typography.caption)
+                        .foregroundStyle(AppTheme.Colors.text2)
+                }
+
+                Spacer()
+            }
+            .padding(.vertical, AppTheme.Spacing.sm)
         }
-        .padding(.vertical, AppTheme.Spacing.sm)
+        // See `FolderRow`'s matching comment — same `NavigationLink`
+        // row-background fix applies here.
+        .buttonStyle(.plain)
         .listRowBackground(AppTheme.Colors.background)
         .swipeActions(edge: .trailing) {
             editDeleteSwipeActions(onEdit: onEdit, onDelete: onDelete)
