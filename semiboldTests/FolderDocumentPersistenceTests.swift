@@ -65,4 +65,42 @@ struct FolderDocumentPersistenceTests {
         let folderDocuments = try documentRepository.documents(in: folder.id)
         #expect(folderDocuments.map(\.title) == ["Notes"])
     }
+
+    @Test("FolderContentsViewModel resolves the literal Semi:bold back label for a root-level folder")
+    func folderContentsViewModelResolvesRootBackLabel() throws {
+        let store = try makeStore()
+        let folderRepository = FolderRepository(context: store.context)
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let folder = try folderRepository.create(Folder(name: "일상"))
+
+        let viewModel = FolderContentsViewModel(
+            folder: folder,
+            folderRepository: folderRepository,
+            documentRepository: documentRepository
+        )
+        viewModel.load()
+
+        #expect(viewModel.backButtonLabel == .root)
+    }
+
+    @Test("FolderContentsViewModel resolves the parent folder's name as the back label for a nested folder")
+    func folderContentsViewModelResolvesParentNameBackLabel() throws {
+        let store = try makeStore()
+        let folderRepository = FolderRepository(context: store.context)
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let parent = try folderRepository.create(Folder(name: "일상"))
+        let nested = try folderRepository.create(Folder(parentId: parent.id, name: "여행"))
+
+        let viewModel = FolderContentsViewModel(
+            folder: nested,
+            folderRepository: folderRepository,
+            documentRepository: documentRepository
+        )
+        viewModel.load()
+
+        #expect(viewModel.backButtonLabel == .parentFolder(name: "일상"))
+        #expect(viewModel.backButtonLabel.text == "< 일상")
+    }
 }

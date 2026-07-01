@@ -47,6 +47,19 @@ struct FolderRepository {
         return try context.fetch(request).map(Folder.init(entity:))
     }
 
+    /// Whether `parentId` has any live (non-soft-deleted) nested folders.
+    /// Used to warn the person deleting a folder that it isn't empty —
+    /// pair with `DocumentRepository.hasDocuments(in:)` to also check for
+    /// nested documents.
+    func hasChildren(of parentId: String) throws -> Bool {
+        let request = FolderEntity.fetchRequest()
+        let deletedPredicate = NSPredicate(format: "deletedAt == nil")
+        let parentPredicate = NSPredicate(format: "parent.id == %@", parentId)
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [deletedPredicate, parentPredicate])
+        request.fetchLimit = 1
+        return try context.count(for: request) > 0
+    }
+
     /// Saves changes to an existing folder, refreshing `updatedAt`.
     @discardableResult
     func update(_ folder: Folder) throws -> Folder {

@@ -5,9 +5,9 @@ import SwiftUI
 ///
 /// Matches the `Screen_Home` wireframe (`iOS_PrivateSpace` artboard in
 /// `sketch-autokit/screens/wireframe.py`) — a navigation bar showing the
-/// current space ("Private") and an add button, followed by a "Folders"
-/// section and a "Documents" section listing everything at the root of
-/// the user's document tree.
+/// current space ("Private") and an add button, followed by a "폴더"
+/// (folders) section and a "문서" (documents) section listing everything
+/// at the root of the user's document tree.
 struct HomeView: View {
     @State private var viewModel = HomeViewModel()
 
@@ -32,6 +32,18 @@ struct HomeView: View {
     /// NO-002) is showing.
     @State private var isSettingsSheetPresented = false
 
+    /// The folder or document currently being renamed via the "편집" swipe
+    /// action (`Planning_9_SwipeActionFlow`), or `nil` when no rename
+    /// sheet is showing. Holding the `Entry` itself (rather than a
+    /// separate `Bool`) lets the rename sheet pre-fill the right row's
+    /// name.
+    @State private var entryBeingRenamed: Entry?
+
+    /// The folder or document pending confirmation from the "삭제" swipe
+    /// action, or `nil` when no delete-confirmation alert is showing
+    /// (`Planning_9_SwipeActionFlow` callout ③).
+    @State private var entryPendingDelete: Entry?
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -46,6 +58,24 @@ struct HomeView: View {
             }
             .background(AppTheme.Colors.background)
             .toolbar(.hidden)
+            .navigationDestination(for: Folder.self) { folder in
+                // Registered once at the stack root so every push in the
+                // chain — including the recursive pushes nested folders
+                // make from inside `FolderContentsView` itself — resolves
+                // through this same destination (`Planning_6_FolderNavigationFlow`
+                // callout ④).
+                FolderContentsView(folder: folder)
+            }
+            .navigationDestination(for: Document.self) { document in
+                // Same reasoning as the `Folder.self` destination above —
+                // registered once here so a document row tapped from this
+                // screen or from any nested `FolderContentsView` resolves
+                // through this same destination (`Planning_6_FolderNavigationFlow`
+                // callout ⑤). This restores document-row navigation that a
+                // since-merged debugging commit had stripped from `HomeView`
+                // — not new functionality.
+                DetailView(document: document)
+            }
         }
         .onAppear {
             viewModel.load()
@@ -80,6 +110,87 @@ struct HomeView: View {
         .sheet(isPresented: $isSettingsSheetPresented) {
             SettingsView()
         }
+        .sheet(item: $entryBeingRenamed) { entry in
+            switch entry {
+            case .folder(let folder):
+                RenameFolderSheet(folder: folder) { _ in
+                    viewModel.didEditFolder()
+                }
+            case .document(let document):
+                RenameDocumentSheet(document: document) { _ in
+                    viewModel.didEditDocument()
+                }
+            }
+        }
+        .alert(
+            AppConfirmationMessages.deleteTitle,
+            isPresented: entryDeleteConfirmationPresented,
+            presenting: entryPendingDelete
+        ) { entry in
+            Button(AppConfirmationMessages.confirmButton, role: .destructive) {
+                switch entry {
+                case .folder(let folder):
+                    viewModel.deleteFolder(folder)
+                case .document(let document):
+                    viewModel.deleteDocument(document)
+                }
+            }
+            Button(AppConfirmationMessages.cancelButton, role: .cancel) {}
+        } message: { entry in
+            switch entry {
+            case .folder(let folder):
+                // "삭제" swipe action — a folder with live nested content
+                // gets the stronger warning so deleting it isn't a
+                // surprise (`Planning_9_SwipeActionFlow` callout ③).
+                Text(
+                    viewModel.folderHasNestedContent(folder)
+                        ? AppConfirmationMessages.deleteFolderWithContents
+                        : AppConfirmationMessages.deleteSimple
+                )
+            case .document:
+                Text(AppConfirmationMessages.deleteSimple)
+            }
+        }
+        .alert(
+            "Error",
+            isPresented: errorAlertPresented,
+            presenting: viewModel.errorMessage
+        ) { _ in
+            Button("OK") {
+                viewModel.errorMessage = nil
+            }
+        } message: { message in
+            // §15.2 "삭제 실패" — shown when a folder/document delete
+            // couldn't be persisted.
+            Text(message)
+        }
+    }
+
+    /// Whether the "삭제" swipe action's confirmation alert is showing —
+    /// driven by `entryPendingDelete`.
+    private var entryDeleteConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { entryPendingDelete != nil },
+            set: { isPresented in
+                if !isPresented {
+                    entryPendingDelete = nil
+                }
+            }
+        )
+    }
+
+    /// Whether the §15.2 delete-failure alert is shown — driven by
+    /// `viewModel.errorMessage`. Dismissing it (the "OK" button, or
+    /// swiping it away) clears the message so it doesn't reappear.
+    private var errorAlertPresented: Binding<Bool> {
+        Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    viewModel.errorMessage = nil
+                }
+            }
+        )
     }
 
     // MARK: - Navigation bar
@@ -175,11 +286,20 @@ struct HomeView: View {
                 emptyRow(text: "첫 폴더를 만들어보세요.")
             } else {
                 ForEach(viewModel.folders) { folder in
-                    FolderRow(folder: folder)
+                    // Tapping a folder pushes `FolderContentsView` for it
+                    // (`Planning_6_FolderNavigationFlow` callout ①);
+                    // "편집"/"삭제" open `RenameFolderSheet`/a confirmation
+                    // alert (`Planning_9_SwipeActionFlow` callouts ①–③).
+                    // `FolderRow` itself wraps the `NavigationLink`.
+                    FolderRow(
+                        folder: folder,
+                        onEdit: { entryBeingRenamed = .folder(folder) },
+                        onDelete: { entryPendingDelete = .folder(folder) }
+                    )
                 }
             }
         } header: {
-            sectionHeader("Folders")
+            sectionHeader("폴더")
         }
     }
 
@@ -193,94 +313,21 @@ struct HomeView: View {
                 emptyRow(text: "첫 문서를 만들어보세요.")
             } else {
                 ForEach(viewModel.documents) { document in
-                    DocumentRow(document: document)
+                    // Tapping a document pushes `DetailView` for it
+                    // (`Planning_6_FolderNavigationFlow` callout ⑤);
+                    // "편집"/"삭제" open `RenameDocumentSheet`/a confirmation
+                    // alert (`Planning_9_SwipeActionFlow` callouts ①–③).
+                    // `DocumentRow` itself wraps the `NavigationLink`.
+                    DocumentRow(
+                        document: document,
+                        onEdit: { entryBeingRenamed = .document(document) },
+                        onDelete: { entryPendingDelete = .document(document) }
+                    )
                 }
             }
         } header: {
-            sectionHeader("Documents")
+            sectionHeader("문서")
         }
-    }
-
-    /// Section header styled like the wireframe's `SectionHeader_*`
-    /// groups: a surface-colored bar with an uppercase label.
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title.uppercased())
-            .appTextStyle(AppTheme.Typography.label)
-            .foregroundStyle(AppTheme.Colors.text3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, AppTheme.Spacing.md)
-            .frame(height: 32)
-            .background(AppTheme.Colors.surface)
-            .listRowInsets(EdgeInsets())
-    }
-
-    /// Placeholder row shown while a section has no items.
-    private func emptyRow(text: String) -> some View {
-        Text(text)
-            .appTextStyle(AppTheme.Typography.body)
-            .foregroundStyle(AppTheme.Colors.text2)
-            .padding(.vertical, AppTheme.Spacing.sm)
-            .listRowBackground(AppTheme.Colors.background)
-    }
-}
-
-/// A single folder row: folder icon, name, and item count.
-private struct FolderRow: View {
-    let folder: Folder
-
-    var body: some View {
-        HStack(spacing: AppTheme.Spacing.md) {
-            Image(systemName: "folder")
-                .foregroundStyle(AppTheme.Colors.text2)
-                .frame(width: 20, height: 20)
-
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text(folder.name)
-                    .appTextStyle(AppTheme.Typography.body)
-                    .foregroundStyle(AppTheme.Colors.text1)
-
-                // TODO: replace with the folder's actual child count once
-                // folder contents are loaded.
-                Text("0 items")
-                    .appTextStyle(AppTheme.Typography.caption)
-                    .foregroundStyle(AppTheme.Colors.text2)
-            }
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .appTextStyle(AppTheme.Typography.caption)
-                .foregroundStyle(AppTheme.Colors.text3)
-        }
-        .padding(.vertical, AppTheme.Spacing.sm)
-        .listRowBackground(AppTheme.Colors.background)
-    }
-}
-
-/// A single document row: document icon, title, and last-updated date.
-private struct DocumentRow: View {
-    let document: Document
-
-    var body: some View {
-        HStack(spacing: AppTheme.Spacing.md) {
-            Image(systemName: "doc.text")
-                .foregroundStyle(AppTheme.Colors.text2)
-                .frame(width: 20, height: 20)
-
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text(document.title)
-                    .appTextStyle(AppTheme.Typography.body)
-                    .foregroundStyle(AppTheme.Colors.text1)
-
-                Text(document.updatedAt.formatted(date: .numeric, time: .omitted))
-                    .appTextStyle(AppTheme.Typography.caption)
-                    .foregroundStyle(AppTheme.Colors.text2)
-            }
-
-            Spacer()
-        }
-        .padding(.vertical, AppTheme.Spacing.sm)
-        .listRowBackground(AppTheme.Colors.background)
     }
 }
 

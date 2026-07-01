@@ -1,7 +1,5 @@
 # Feature: <slug>
 
-Status: draft | ready | in-progress | done
-
 ## Source
 
 - Feature spec (if provided externally): <path or pasted content>

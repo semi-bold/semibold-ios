@@ -1,13 +1,15 @@
 import Foundation
 
 /// Drives the "new document" title-entry sheet opened from `HomeView`'s
-/// "+" menu (`Planning_3_DocumentCreateFlow`, PLANNING §5.3).
+/// or `FolderContentsView`'s "+" menu (`Planning_3_DocumentCreateFlow`,
+/// PLANNING §5.3).
 ///
-/// Walks through the flow's state diagram: the user is asked which folder
-/// the document belongs to (the home screen has no "currently selected
-/// folder" yet, so new documents land at the root), types an optional
-/// title, and a `documents` row is saved — using "Untitled" when the title
-/// is left blank, per PLANNING §6.2 ("제목이 없을 경우 Untitled 사용").
+/// Walks through the flow's state diagram: the caller decides which
+/// folder the document belongs to via `folderId` (`nil` from `HomeView`
+/// lands it at the root; a real folder id from `FolderContentsView`
+/// scopes it to that folder), the user types an optional title, and a
+/// `documents` row is saved — using "Untitled" when the title is left
+/// blank, per PLANNING §6.2 ("제목이 없을 경우 Untitled 사용").
 @Observable
 final class NewDocumentViewModel {
     /// The title the user is typing for the new document. Unlike folder
