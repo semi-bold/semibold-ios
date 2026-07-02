@@ -51,7 +51,7 @@ struct OnboardingView: View {
                     } onCompletion: { result in
                         handleAppleSignIn(result: result)
                     }
-                    .signInWithAppleButtonStyle(.black)
+                    .signInWithAppleButtonStyle(.white)
                     .frame(height: 50)
                     .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
 
