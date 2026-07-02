@@ -1,4 +1,5 @@
 import SwiftUI
+import AuthenticationServices
 
 @main
 struct SemiboldApp: App {
@@ -13,6 +14,16 @@ struct SemiboldApp: App {
         isDatabaseAvailable: DatabaseManager.shared != nil
     )
 
+    /// Holds the Apple user ID returned by Sign in with Apple when iCloud is
+    /// not yet available at the time of sign-in (NO-004 §2.2). The 04 brief's
+    /// iCloud-setup screen reads this to complete the Keychain write once the
+    /// person fixes their iCloud settings.
+    @State private var pendingAppleUserID: String = ""
+
+    /// Tracks the current scene phase so the app can detect Apple credential
+    /// revocation each time it comes back to the foreground (NO-004 §4.4).
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some Scene {
         WindowGroup {
             // §15.2 "DB 열기 실패": if the local database couldn't be
@@ -22,19 +33,24 @@ struct SemiboldApp: App {
             case .databaseUnavailable:
                 DatabaseUnavailableView()
             case .showOnboarding:
-                // Placeholder — the real OnboardingView is wired in the
-                // 03 brief. Showing EmptyView here avoids a crash while
-                // keeping the branching logic in place.
-                EmptyView()
+                OnboardingView { newState, appleUserID in
+                    pendingAppleUserID = appleUserID
+                    launchState = newState
+                }
             case .iCloudSetupRequired:
                 // Placeholder — the real iCloudSetupRequiredView is wired
                 // in the 04 brief. Showing EmptyView here avoids a crash
                 // while keeping the branching logic in place.
+                // `pendingAppleUserID` is available here for the 04 brief.
                 EmptyView()
             case .home:
                 HomeView()
                     .environment(commandCenter)
             }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            checkAppleCredentialRevocation()
         }
         .commands {
             // macOS keyboard shortcuts (PLANNING/tasks §13.2):
@@ -57,5 +73,31 @@ struct SemiboldApp: App {
                 .keyboardShortcut("n", modifiers: [.command, .shift])
             }
         }
+    }
+
+    // MARK: - Apple credential revocation (NO-004 §4.4)
+
+    /// Checks whether the stored Apple credential has been revoked since the
+    /// last launch. Called every time the app returns to the foreground.
+    ///
+    /// Skipped entirely for local-only sessions (empty `appleUserID`) —
+    /// there is no Apple credential to check. On `.revoked` or `.notFound`,
+    /// the Keychain session is deleted and the app returns to onboarding;
+    /// local data is preserved (NO-004 §2.5).
+    private func checkAppleCredentialRevocation() {
+        guard let session = KeychainSessionStore().load(),
+              !session.appleUserID.isEmpty else {
+            // Local session or no session — nothing to check.
+            return
+        }
+
+        ASAuthorizationAppleIDProvider()
+            .getCredentialState(forUserID: session.appleUserID) { state, _ in
+                guard state == .revoked || state == .notFound else { return }
+                DispatchQueue.main.async {
+                    KeychainSessionStore().delete()
+                    launchState = .showOnboarding
+                }
+            }
     }
 }
