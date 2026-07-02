@@ -3,7 +3,7 @@ import Foundation
 
 /// A stand-in for `FileManager` that reports whatever iCloud sign-in state a
 /// test asks for, instead of the real device/simulator's actual account
-/// state — keeps `ICloudAvailability`/`SyncModeStore` tests deterministic
+/// state — keeps `ICloudAvailability` tests deterministic
 /// regardless of whether the machine running them is signed into iCloud.
 struct FakeUbiquityIdentityProvider: UbiquityIdentityProviding {
     let ubiquityIdentityToken: (NSCoding & NSCopying & NSObjectProtocol)?

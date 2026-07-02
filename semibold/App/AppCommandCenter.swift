@@ -23,24 +23,11 @@ final class AppCommandCenter {
     /// macOS app menu — `HomeView` opens its new-folder sheet in response.
     private(set) var newFolderRequestCount = 0
 
-    /// Bumped after `SettingsView` successfully switches sync mode
-    /// (NO-002 §3.2). `SemiboldApp` keys `HomeView()`'s `.id(_:)` to this
-    /// value, so a successful switch tears down and rebuilds `HomeView`'s
-    /// subtree — giving it a fresh `HomeViewModel` whose repositories
-    /// resolve the newly-active container instead of the one they
-    /// resolved at construction time (see `DatabaseManager.switchMode`'s
-    /// "Important" note on repositories going stale across a switch).
-    private(set) var homeRebuildToken = 0
-
     func requestNewDocument() {
         newDocumentRequestCount += 1
     }
 
     func requestNewFolder() {
         newFolderRequestCount += 1
-    }
-
-    func requestHomeRebuild() {
-        homeRebuildToken += 1
     }
 }
