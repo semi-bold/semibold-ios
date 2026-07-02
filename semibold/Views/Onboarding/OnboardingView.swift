@@ -143,8 +143,7 @@ struct OnboardingView: View {
                nsError.code == ASAuthorizationError.canceled.rawValue {
                 errorMessage = nil
             } else {
-                // DEBUG: show actual error code to diagnose sign-in failure
-                errorMessage = "로그인 실패 (domain: \(nsError.domain), code: \(nsError.code))\n\(nsError.localizedDescription)"
+                errorMessage = "로그인에 실패했어요. 다시 시도해주세요."
             }
         }
     }
