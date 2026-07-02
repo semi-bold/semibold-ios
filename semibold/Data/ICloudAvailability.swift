@@ -20,7 +20,7 @@ extension FileManager: UbiquityIdentityProviding {}
 /// §4.2) — i.e. whether the person is signed into iCloud on this device
 /// at all. This is the same check the rest of the iCloud sync feature
 /// uses to decide whether to even offer iCloud sync, independent of
-/// whatever sync mode the person has saved (see `SyncModeStore`).
+/// whatever sync mode the person has saved (see `KeychainSessionStore`).
 ///
 /// A namespace rather than a type someone needs to instantiate — there's
 /// no state to hold, just one check.
