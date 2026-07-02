@@ -145,11 +145,14 @@ stop and report to user. Do not guess.
 ## After All AC Items Are Done
 
 **Open the PR:**
+
+PR 제목 = 브리프의 단일 커밋 제목 그대로 사용:
 ```bash
+COMMIT_TITLE=$(git log --format="%s" feature/<work-code>/<NN-slug> ^<relay-base> | head -1)
 gh pr create \
   --base <relay-base> \
   --head "feature/<work-code>/<NN-slug>" \
-  --title "<concise summary under 70 chars>" \
+  --title "$COMMIT_TITLE" \
   --body "$(cat <<'EOF'
 ## Summary
 <1-3 bullets from brief Scope>
