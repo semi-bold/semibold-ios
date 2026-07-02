@@ -8,7 +8,7 @@ import Testing
 ///
 /// Each test suite creates its own unique Keychain service name so that runs
 /// never share state — equivalent to the ephemeral `UserDefaults` pattern used
-/// in `SyncModeStoreTests`. After each test the item is explicitly deleted to
+/// in `RootLaunchStateTests`. After each test the item is explicitly deleted to
 /// keep the test Keychain tidy, even on simulators where Keychain state can
 /// persist between test runs.
 struct KeychainSessionStoreTests {

@@ -1,6 +1,17 @@
 import Foundation
 import Security
 
+/// The one piece of `KeychainSessionStore` that `RootLaunchState` needs:
+/// whether a saved `AuthSession` exists and what it says.
+///
+/// Wrapping just this method behind a protocol lets tests substitute an
+/// in-memory fake that doesn't touch the system Keychain — mirrors the
+/// `UbiquityIdentityProviding` pattern used for `FileManager` in
+/// `ICloudAvailability`.
+protocol SessionStoring {
+    func load() -> AuthSession?
+}
+
 /// Persists and retrieves the person's `AuthSession` in the system Keychain
 /// (NO-004 §4.1) so semi:bold can skip the onboarding screen on every
 /// subsequent launch.
@@ -14,7 +25,7 @@ import Security
 /// The session is encoded as JSON (`JSONEncoder`) so both fields survive the
 /// round-trip without a separate key for each. A single static instance is
 /// enough — there is no mutable state, only Keychain reads and writes.
-struct KeychainSessionStore {
+struct KeychainSessionStore: SessionStoring {
     private let service: String
     private let account: String
 

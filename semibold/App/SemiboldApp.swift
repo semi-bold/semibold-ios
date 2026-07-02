@@ -6,29 +6,12 @@ struct SemiboldApp: App {
     /// below — see `AppCommandCenter`.
     @State private var commandCenter = AppCommandCenter()
 
-    /// Computed once at launch (NO-002 §3.1's "최초 실행 플로우") — see
-    /// `RootLaunchState.resolve` for why iCloud availability is checked
-    /// fresh on every launch rather than cached alongside `sync_mode`.
+    /// Computed once at launch (NO-004 §3.1's "전체 진입 플로우") — see
+    /// `RootLaunchState.resolve` for the full branching logic based on the
+    /// Keychain session and iCloud availability.
     @State private var launchState = RootLaunchState.resolve(
         isDatabaseAvailable: DatabaseManager.shared != nil
     )
-
-    /// Handles "동기화 사용" (`sync: true`) / "나중에" (`sync: false`) from
-    /// `ICloudConsentView` (callouts ③④): persists `sync_mode` and
-    /// switches `DatabaseManager.shared`'s container via
-    /// `ICloudConsentChoice.apply`, then advances `launchState` to `.home`
-    /// — which is what actually constructs `HomeView` for the first time
-    /// (see `body` below) — regardless of whether the switch itself
-    /// succeeded (see `ICloudConsentChoice`'s doc comment for why a
-    /// failure shouldn't leave the person stuck on this screen).
-    private func respondToConsent(sync: Bool) {
-        ICloudConsentChoice.apply(
-            sync: sync,
-            databaseManager: DatabaseManager.shared,
-            storeURL: DatabaseManager.defaultStoreURL()
-        )
-        launchState = .home
-    }
 
     var body: some Scene {
         WindowGroup {
@@ -38,35 +21,18 @@ struct SemiboldApp: App {
             switch launchState {
             case .databaseUnavailable:
                 DatabaseUnavailableView()
-            case .showICloudConsent:
-                // `HomeView` is deliberately NOT constructed here.
-                // `ICloudConsentChoice.apply` (driven by the buttons
-                // below) may switch `DatabaseManager.shared`'s container
-                // before the person ever reaches `HomeView` — constructing
-                // `HomeViewModel`'s repositories only once `launchState`
-                // becomes `.home` guarantees they resolve whichever
-                // container is active *after* that switch, never a stale
-                // pre-switch one (Decisions & Deviations,
-                // `.claude/features/03-icloud-onboarding.md`).
-                // `ICloudConsentView` already paints its own full-screen
-                // dim overlay, so it can stand alone as the only thing on
-                // screen.
-                ICloudConsentView(
-                    onUseSync: { respondToConsent(sync: true) },
-                    onUseLocalOnly: { respondToConsent(sync: false) }
-                )
+            case .showOnboarding:
+                // Placeholder — the real OnboardingView is wired in the
+                // 03 brief. Showing EmptyView here avoids a crash while
+                // keeping the branching logic in place.
+                EmptyView()
+            case .iCloudSetupRequired:
+                // Placeholder — the real iCloudSetupRequiredView is wired
+                // in the 04 brief. Showing EmptyView here avoids a crash
+                // while keeping the branching logic in place.
+                EmptyView()
             case .home:
-                // `.id(_:)` keyed on `homeRebuildToken`: when
-                // `SettingsView` switches sync mode successfully, this
-                // tears down and reconstructs `HomeView`'s whole subtree,
-                // so its `HomeViewModel` (and the repositories it
-                // constructs) resolve the newly-active container instead
-                // of staying pointed at the one resolved before the
-                // switch — see `AppCommandCenter.homeRebuildToken`'s doc
-                // comment and `DatabaseManager.switchMode`'s "Important"
-                // note.
                 HomeView()
-                    .id(commandCenter.homeRebuildToken)
                     .environment(commandCenter)
             }
         }
