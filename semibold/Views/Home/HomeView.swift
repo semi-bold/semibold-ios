@@ -28,10 +28,6 @@ struct HomeView: View {
     /// (`Planning_3_DocumentCreateFlow`, PLANNING §5.3).
     @State private var isNewDocumentSheetPresented = false
 
-    /// Whether `SettingsView` (currently scoped to the "동기화" section,
-    /// NO-002) is showing.
-    @State private var isSettingsSheetPresented = false
-
     /// The folder or document currently being renamed via the "편집" swipe
     /// action (`Planning_9_SwipeActionFlow`), or `nil` when no rename
     /// sheet is showing. Holding the `Entry` itself (rather than a
@@ -106,9 +102,6 @@ struct HomeView: View {
             NewDocumentSheet { _ in
                 viewModel.didCreateDocument()
             }
-        }
-        .sheet(isPresented: $isSettingsSheetPresented) {
-            SettingsView()
         }
         .sheet(item: $entryBeingRenamed) { entry in
             switch entry {
@@ -209,8 +202,6 @@ struct HomeView: View {
 
                 Spacer()
 
-                settingsButton
-
                 addButton
             }
             .padding(.horizontal, AppTheme.Spacing.md)
@@ -235,26 +226,6 @@ struct HomeView: View {
                 AppTheme.Colors.primary.opacity(0.15),
                 in: RoundedRectangle(cornerRadius: AppTheme.Radius.full)
             )
-    }
-
-    /// Entry point for `SettingsView` (currently scoped to the "동기화"
-    /// section, NO-002) — not specified in `Screen_Home`/`iOS_PrivateSpace`,
-    /// so it's placed beside `addButton` using the same icon-button style
-    /// (see `.claude/features/04-settings-screen.md` Decisions &
-    /// Deviations).
-    private var settingsButton: some View {
-        Button {
-            isSettingsSheetPresented = true
-        } label: {
-            Image(systemName: "gearshape")
-                .appTextStyle(AppTheme.Typography.title)
-                .foregroundStyle(AppTheme.Colors.primary)
-                .frame(width: 40, height: 40)
-                .background(
-                    AppTheme.Colors.primary.opacity(0.18),
-                    in: RoundedRectangle(cornerRadius: AppTheme.Radius.full)
-                )
-        }
     }
 
     /// Entry point for the "new folder / new document" menu
