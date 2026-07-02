@@ -58,8 +58,11 @@ struct SemiboldApp: App {
                     }
                 }
             case .home:
-                HomeView()
-                    .environment(commandCenter)
+                HomeView(onResetToOnboarding: {
+                    KeychainSessionStore().delete()
+                    launchState = .showOnboarding
+                })
+                .environment(commandCenter)
             }
         }
         .onChange(of: scenePhase) { _, newPhase in

@@ -32,9 +32,13 @@ final class DatabaseManager {
     /// before `HomeView` is ever shown, but that session takes effect on
     /// the next launch, not during the current one.
     static let shared: DatabaseManager? = {
-        let syncEnabled = KeychainSessionStore().load()?.mode == .icloud
+        let session = KeychainSessionStore().load()
+        let syncEnabled = session?.mode == .icloud
+        let storeURL = syncEnabled
+            ? DatabaseManager.cloudStoreURL()
+            : DatabaseManager.localStoreURL()
         do {
-            return try DatabaseManager(storeURL: DatabaseManager.defaultStoreURL(), syncEnabled: syncEnabled)
+            return try DatabaseManager(storeURL: storeURL, syncEnabled: syncEnabled)
         } catch {
             openError = error
             return nil
@@ -192,23 +196,27 @@ final class DatabaseManager {
         return container
     }
 
-    /// Default on-disk location for the local store: a `semibold.sqlite`
-    /// file inside the app's Application Support directory, creating
-    /// that directory if it doesn't exist yet.
-    static func defaultStoreURL() -> URL {
+    /// On-disk location for the local-only store (`local.sqlite`).
+    /// Completely independent from `cloudStoreURL()` — switching modes
+    /// never migrates or merges data between the two files.
+    static func localStoreURL() -> URL {
+        appSupportURL().appendingPathComponent("local.sqlite")
+    }
+
+    /// On-disk location for the iCloud-mirrored store (`cloud.sqlite`).
+    /// `NSPersistentCloudKitContainer` uses this as its local mirror of
+    /// the CloudKit private database — each device that picks iCloud mode
+    /// gets its own copy, which syncs with the shared cloud records.
+    static func cloudStoreURL() -> URL {
+        appSupportURL().appendingPathComponent("cloud.sqlite")
+    }
+
+    private static func appSupportURL() -> URL {
         let fileManager = FileManager.default
-        let appSupportURL = fileManager.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        )[0]
-
-        if !fileManager.fileExists(atPath: appSupportURL.path) {
-            try? fileManager.createDirectory(
-                at: appSupportURL,
-                withIntermediateDirectories: true
-            )
+        let url = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        if !fileManager.fileExists(atPath: url.path) {
+            try? fileManager.createDirectory(at: url, withIntermediateDirectories: true)
         }
-
-        return appSupportURL.appendingPathComponent("semibold.sqlite")
+        return url
     }
 }

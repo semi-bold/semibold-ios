@@ -9,7 +9,12 @@ import SwiftUI
 /// (folders) section and a "문서" (documents) section listing everything
 /// at the root of the user's document tree.
 struct HomeView: View {
+    /// Called when the user wants to return to OnboardingView — clears
+    /// the Keychain session and transitions back to `.showOnboarding`.
+    var onResetToOnboarding: (() -> Void)?
+
     @State private var viewModel = HomeViewModel()
+    @State private var isResetConfirmationPresented = false
 
     /// Shared trigger point for the macOS "New Document"/"New Folder" menu
     /// commands (Cmd+N / Cmd+Shift+N, §13.2) — see `AppCommandCenter`.
@@ -202,6 +207,10 @@ struct HomeView: View {
 
                 Spacer()
 
+                if KeychainSessionStore().load()?.mode == .local {
+                    switchAccountButton
+                }
+
                 addButton
             }
             .padding(.horizontal, AppTheme.Spacing.md)
@@ -226,6 +235,30 @@ struct HomeView: View {
                 AppTheme.Colors.primary.opacity(0.15),
                 in: RoundedRectangle(cornerRadius: AppTheme.Radius.full)
             )
+    }
+
+    /// Appears in the nav bar when the current session is local-only.
+    /// Lets the user return to OnboardingView to sign in with Apple.
+    private var switchAccountButton: some View {
+        Button {
+            isResetConfirmationPresented = true
+        } label: {
+            Image(systemName: "person.circle")
+                .appTextStyle(AppTheme.Typography.title)
+                .foregroundStyle(AppTheme.Colors.text2)
+                .frame(width: 40, height: 40)
+        }
+        .confirmationDialog(
+            "Apple 로그인으로 전환",
+            isPresented: $isResetConfirmationPresented
+        ) {
+            Button("Apple로 로그인") {
+                onResetToOnboarding?()
+            }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("로컬 데이터는 유지되며, Apple 로그인 이후에도 로컬로 이용을 선택하면 다시 돌아올 수 있습니다.")
+        }
     }
 
     /// Entry point for the "new folder / new document" menu
