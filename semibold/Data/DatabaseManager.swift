@@ -12,10 +12,10 @@ import Foundation
 ///
 /// `makeContainer(syncEnabled:storeURL:)` can build either a local-only
 /// (`NSPersistentContainer`) or iCloud-backed
-/// (`NSPersistentCloudKitContainer`) container; `init` defaults to the
-/// local-only one until the person's saved sync preference is wired up
-/// to choose between them — see
-/// `.claude/features/02-icloud-sync-branching.md`.
+/// (`NSPersistentCloudKitContainer`) container. At launch, `shared` reads
+/// the Keychain session's `SessionMode` once to decide which container to
+/// build — if the person chose iCloud at onboarding, sync is on from the
+/// first database access and never switches at runtime (NO-004 §4.2).
 final class DatabaseManager {
     /// Shared instance used across the app, or `nil` if loading the
     /// on-disk persistent store failed at launch (§15.2 "DB 열기 실패").
@@ -24,9 +24,17 @@ final class DatabaseManager {
     /// underlying error and the root view shows the
     /// "로컬 저장소를 열 수 없습니다." message instead of `HomeView`
     /// (see `SemiboldApp`/`DatabaseUnavailableView`).
+    ///
+    /// `syncEnabled` is determined from the Keychain session at the moment
+    /// this property is first accessed (process start). If no session
+    /// exists (first launch, or after credential revocation), sync
+    /// defaults to `false` — the onboarding flow will create a session
+    /// before `HomeView` is ever shown, but that session takes effect on
+    /// the next launch, not during the current one.
     static let shared: DatabaseManager? = {
+        let syncEnabled = KeychainSessionStore().load()?.mode == .icloud
         do {
-            return try DatabaseManager(storeURL: DatabaseManager.defaultStoreURL())
+            return try DatabaseManager(storeURL: DatabaseManager.defaultStoreURL(), syncEnabled: syncEnabled)
         } catch {
             openError = error
             return nil
@@ -41,12 +49,9 @@ final class DatabaseManager {
     /// The underlying Core Data container. All repositories read/write
     /// through its view context (or background contexts derived from it).
     ///
-    /// Settable (not `let`) so `switchMode(to:storeURL:syncModeStore:)` can
-    /// swap in a newly-loaded container when the person changes their sync
-    /// preference, without replacing the `DatabaseManager` instance itself
-    /// — see that method's doc comment for why callers obtained before a
-    /// switch need to re-resolve this rather than holding onto a stale
-    /// reference.
+    /// Set once at init time and never swapped at runtime — sync mode is
+    /// determined at process start from the Keychain session and fixed for
+    /// the life of the process (NO-004 §4.2).
     private(set) var persistentContainer: NSPersistentContainer
 
     /// The app's compiled Core Data model, loaded once and reused by
@@ -89,9 +94,8 @@ final class DatabaseManager {
     ///   - syncEnabled: Whether to build an iCloud-backed
     ///     (`NSPersistentCloudKitContainer`) container instead of a
     ///     local-only one, via `makeContainer(syncEnabled:storeURL:)`.
-    ///     Hardcoded to `false` at every call site for now — reading this
-    ///     from the person's saved sync preference is wired up in a later
-    ///     step (see `.claude/features/02-icloud-sync-branching.md`).
+    ///     `shared` derives this from the Keychain session's `SessionMode`
+    ///     at process start (NO-004 §4.2); tests pass it directly.
     /// - Throws: if the persistent store can't be loaded (§15.2 "DB 열기
     ///   실패").
     init(storeURL: URL?, syncEnabled: Bool = false) throws {
@@ -114,95 +118,6 @@ final class DatabaseManager {
         persistentContainer = container
     }
 
-    /// Switches which kind of container semi:bold stores data in — local
-    /// only, or iCloud-synced — re-initializing storage for the new mode
-    /// and rolling back to the current one if that fails (NO-002 §7
-    /// "모드 전환 실패").
-    ///
-    /// This is the data-handling half of NO-002 §3.2's "설정 전환 플로우":
-    /// it does the actual container switch once the person has confirmed
-    /// the warning dialog for their chosen direction (로컬 → iCloud or
-    /// iCloud → 로컬) — showing that dialog and the failure alert ("동기화
-    /// 설정을 변경하지 못했습니다") is the settings screen's job, not this
-    /// method's (see `.claude/features/02-icloud-sync-branching.md`,
-    /// out of scope for this brief).
-    ///
-    /// On success: the new container's store is loaded and live, and
-    /// `syncModeStore`'s persisted preference is updated to `newMode`.
-    /// On failure: this instance keeps using its current container/mode —
-    /// nothing is torn down or persisted — and the load error is thrown so
-    /// the caller can surface NO-002 §7's failure alert and revert any
-    /// toggle UI it showed optimistically.
-    ///
-    /// - Important: Existing repositories (`FolderRepository`,
-    ///   `DocumentRepository`, `DocumentBlockRepository`) resolve
-    ///   `DatabaseManager.sharedOrFallbackContext` once, as a default
-    ///   argument, at construction time. A repository instance created
-    ///   *before* a successful `switchMode` call keeps reading/writing
-    ///   through the *old* container's context — callers that switch
-    ///   modes need to construct fresh repositories afterward (or this
-    ///   needs a follow-up to make repositories re-resolve the context
-    ///   live) to actually see the new store. Flagged in this brief's Open
-    ///   Questions for whoever wires this into the settings UI (briefs
-    ///   03/04).
-    ///
-    /// - Parameters:
-    ///   - newMode: The sync mode to switch to. If this equals the mode
-    ///     `syncModeStore` already has stored, the switch still runs (so
-    ///     callers don't need a separate no-op check), but in the common
-    ///     case there's nothing meaningful to roll back to that's
-    ///     different from what's already active.
-    ///   - storeURL: Location of the new container's store file. Defaults
-    ///     to `defaultStoreURL()` (the app's real on-disk store); tests
-    ///     pass a distinct in-memory (`nil`) or temporary-file location to
-    ///     exercise this without touching the real store.
-    ///   - syncModeStore: Where the new mode is persisted on success.
-    ///     Defaults to the standard `UserDefaults`-backed store; tests
-    ///     inject one backed by an ephemeral suite.
-    /// - Throws: The underlying `loadPersistentStores` error if the new
-    ///   container's store fails to load. This instance's
-    ///   `persistentContainer` (and whatever mode `syncModeStore` already
-    ///   has stored) are left unchanged when that happens.
-    ///
-    /// - Important: `persistentContainer` has no internal synchronization.
-    ///   This method must only be called from the main actor (matching
-    ///   every other current caller — `DatabaseManager.shared`'s launch-time
-    ///   check, repositories' main-thread `viewContext` access), and never
-    ///   concurrently with a repository read/write against
-    ///   `persistentContainer.viewContext`. `@MainActor` enforces the
-    ///   former at compile time; the latter is on whatever future caller
-    ///   (briefs 03/04's settings UI) wires this in to get right.
-    @MainActor
-    func switchMode(
-        to newMode: SyncMode,
-        storeURL: URL?,
-        syncModeStore: SyncModeStore = SyncModeStore()
-    ) throws {
-        let newContainer = Self.makeContainer(syncEnabled: newMode == .icloud, storeURL: storeURL)
-
-        // Mirrors `init`'s assumption: for both the local and in-memory
-        // store types this app uses, `loadPersistentStores` finishes
-        // synchronously before returning, so it's safe to check the
-        // captured error immediately after.
-        var loadError: Error?
-        newContainer.loadPersistentStores { _, error in
-            loadError = error
-        }
-        if let loadError {
-            // Roll back: don't persist the new mode, don't touch the
-            // container currently in use — `self` keeps working exactly
-            // as it did before this call.
-            throw loadError
-        }
-
-        newContainer.viewContext.automaticallyMergesChangesFromParent = true
-
-        // Commit: the new store loaded successfully, so this is now the
-        // active container, and the preference is safe to persist.
-        persistentContainer = newContainer
-        syncModeStore.setStoredMode(newMode)
-    }
-
     /// The managed object context repositories should default to:
     /// `shared`'s view context when the on-disk store loaded
     /// successfully, or a throwaway in-memory context otherwise.
@@ -213,6 +128,10 @@ final class DatabaseManager {
     /// would construct a repository, so this fallback context is never
     /// actually read from or written to in that case. It exists purely so
     /// those default arguments stay non-optional/non-throwing.
+    ///
+    /// Because sync mode is fixed at process start (NO-004 §4.2), there
+    /// is no runtime container swap — repositories that resolve this once
+    /// at construction time always see the correct container.
     static var sharedOrFallbackContext: NSManagedObjectContext {
         if let shared {
             return shared.persistentContainer.viewContext
@@ -226,12 +145,6 @@ final class DatabaseManager {
     /// the Apple Developer Console.
     ///
     /// As of this writing, `project.yml`'s `DEVELOPMENT_TEAM` is still
-    /// empty and no `semibold.entitlements` file exists yet — Developer
-    /// Console setup (Team ID, CloudKit container registration) hasn't
-    /// happened. The identifier is fixed here so the branching logic is
-    /// correct and testable now; actual iCloud connectivity can only be
-    /// verified once that setup is complete (see
-    /// `.claude/features/02-icloud-sync-branching.md`).
     static let cloudKitContainerIdentifier = "iCloud.com.semibold.semibold"
 
     /// Builds the persistent container semi:bold should use, branching on
@@ -246,13 +159,6 @@ final class DatabaseManager {
     /// persistent store. Callers load the store the same way
     /// `init(storeURL:)` does.
     ///
-    /// ⚠️ The `syncEnabled: true` branch is safe to *construct* without
-    /// Apple Developer Console setup (Team ID, CloudKit entitlements),
-    /// but calling `loadPersistentStores` on it before that setup exists
-    /// will fail or hang — `project.yml`'s `DEVELOPMENT_TEAM` is empty
-    /// and there's no `semibold.entitlements` file as of this writing.
-    /// Don't wire a real `syncEnabled: true` call path into app code
-    /// until that setup is confirmed done.
     ///
     /// - Parameters:
     ///   - syncEnabled: `true` to build an iCloud-backed
