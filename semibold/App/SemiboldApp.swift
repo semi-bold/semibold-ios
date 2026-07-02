@@ -20,6 +20,11 @@ struct SemiboldApp: App {
     /// person fixes their iCloud settings.
     @State private var pendingAppleUserID: String = ""
 
+    /// The reason iCloud is not available, populated async when the app lands
+    /// on `.iCloudSetupRequired` (NO-004 §5.2). Starts as `.couldNotDetermine`
+    /// so the setup screen has a safe default while the async check runs.
+    @State private var pendingICloudReason: ICloudUnavailableReason = .couldNotDetermine
+
     /// Tracks the current scene phase so the app can detect Apple credential
     /// revocation each time it comes back to the foreground (NO-004 §4.4).
     @Environment(\.scenePhase) private var scenePhase
@@ -38,11 +43,20 @@ struct SemiboldApp: App {
                     launchState = newState
                 }
             case .iCloudSetupRequired:
-                // Placeholder — the real iCloudSetupRequiredView is wired
-                // in the 04 brief. Showing EmptyView here avoids a crash
-                // while keeping the branching logic in place.
-                // `pendingAppleUserID` is available here for the 04 brief.
-                EmptyView()
+                ICloudSetupRequiredView(
+                    reason: pendingICloudReason,
+                    pendingAppleUserID: pendingAppleUserID
+                ) {
+                    launchState = .home
+                }
+                .task {
+                    // Resolve the exact reason asynchronously so the guidance
+                    // message is accurate; `.couldNotDetermine` is the safe
+                    // default while this check is in flight.
+                    if let resolved = await ICloudAvailability.unavailableReason() {
+                        pendingICloudReason = resolved
+                    }
+                }
             case .home:
                 HomeView()
                     .environment(commandCenter)
