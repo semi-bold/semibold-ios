@@ -146,23 +146,22 @@ stop and report to user. Do not guess.
 
 **Open the PR:**
 
-PR 제목 = 브리프의 단일 커밋 제목 그대로 사용:
+PR 제목 = 브리프의 단일 커밋 제목 그대로 사용.
+PR 본문 = `.github/PULL_REQUEST_TEMPLATE.md` 구조를 준수하여 브리프 내용으로 채움:
+- **개요**: 브리프 Scope의 핵심 목적 1–2문장
+- **변경 사항**: 브리프 "In scope" 항목을 bullet로 (실제 구현된 내용 기준)
+- **Acceptance Criteria**: 브리프 AC 항목 전체를 `[x]` / `[ ]` 체크박스로 나열.
+  미충족 항목은 `[ ]` + 짧은 이유.
+- **참고 사항**: `feature-implementer`가 보고한 일탈(deviation)이나 후속 과제가
+  있으면 기재, 없으면 섹션 생략.
+
 ```bash
 COMMIT_TITLE=$(git log --format="%s" feature/<work-code>/<NN-slug> ^<relay-base> | head -1)
 gh pr create \
   --base <relay-base> \
   --head "feature/<work-code>/<NN-slug>" \
   --title "$COMMIT_TITLE" \
-  --body "$(cat <<'EOF'
-## Summary
-<1-3 bullets from brief Scope>
-
-## Acceptance Criteria
-- [x] ...
-
-🤖 Generated with `/work` from `.claude/features/<NN-slug>.md`
-EOF
-)"
+  --body "<위 규칙으로 채운 본문>"
 ```
 Use `--draft` if any AC item remains unmet.
 
