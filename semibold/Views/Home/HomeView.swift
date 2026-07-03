@@ -207,9 +207,7 @@ struct HomeView: View {
 
                 Spacer()
 
-                if KeychainSessionStore().load()?.mode == .local {
-                    switchAccountButton
-                }
+                switchAccountButton
 
                 addButton
             }
@@ -237,27 +235,32 @@ struct HomeView: View {
             )
     }
 
-    /// Appears in the nav bar when the current session is local-only.
-    /// Lets the user return to OnboardingView to sign in with Apple.
+    /// Account button — always visible in the nav bar regardless of mode.
+    /// Lets the user sign out (iCloud mode) or switch to Apple Sign-In
+    /// (local mode) by returning to OnboardingView.
     private var switchAccountButton: some View {
-        Button {
+        let isICloud = KeychainSessionStore().load()?.mode == .icloud
+        return Button {
             isResetConfirmationPresented = true
         } label: {
-            Image(systemName: "person.circle")
+            Image(systemName: isICloud ? "person.circle.fill" : "person.circle")
                 .appTextStyle(AppTheme.Typography.title)
                 .foregroundStyle(AppTheme.Colors.text2)
                 .frame(width: 40, height: 40)
         }
         .confirmationDialog(
-            "Apple 로그인으로 전환",
+            isICloud ? "로그아웃" : "Apple 로그인으로 전환",
             isPresented: $isResetConfirmationPresented
         ) {
-            Button("Apple로 로그인") {
+            Button(isICloud ? "로그아웃" : "Apple로 로그인", role: isICloud ? .destructive : .none) {
                 onResetToOnboarding?()
             }
             Button("취소", role: .cancel) {}
         } message: {
-            Text("로컬 데이터는 유지되며, Apple 로그인 이후에도 로컬로 이용을 선택하면 다시 돌아올 수 있습니다.")
+            Text(isICloud
+                 ? "로그아웃하면 이 기기에서 iCloud 동기화가 중단됩니다. 데이터는 iCloud에 유지됩니다."
+                 : "로컬 데이터는 유지되며, Apple 로그인 이후에도 로컬로 이용을 선택하면 다시 돌아올 수 있습니다."
+            )
         }
     }
 
