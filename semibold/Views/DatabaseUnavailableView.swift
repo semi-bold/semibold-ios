@@ -25,6 +25,14 @@ struct DatabaseUnavailableView: View {
                 .appTextStyle(AppTheme.Typography.body)
                 .foregroundStyle(AppTheme.Colors.text1)
                 .multilineTextAlignment(.center)
+
+            // DEBUG: show the actual error so we can diagnose DB failures
+            if let error = DatabaseManager.openError {
+                Text("DEBUG: \(error.localizedDescription)\n(\((error as NSError).domain) \((error as NSError).code))")
+                    .appTextStyle(AppTheme.Typography.caption)
+                    .foregroundStyle(AppTheme.Colors.text2)
+                    .multilineTextAlignment(.center)
+            }
         }
         .padding(AppTheme.Spacing.lg)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
