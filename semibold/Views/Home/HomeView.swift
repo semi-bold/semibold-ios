@@ -193,7 +193,7 @@ struct HomeView: View {
 
     // MARK: - Navigation bar
 
-    /// Top bar: app name, "Private" space badge, and the add (+) button
+    /// Top bar: app name, account button, and the add (+) button
     /// that starts the new folder/document flows (Planning_2 /
     /// Planning_3).
     private var navBar: some View {
@@ -202,8 +202,6 @@ struct HomeView: View {
                 Text("Semi:bold")
                     .appTextStyle(AppTheme.Typography.title)
                     .foregroundStyle(AppTheme.Colors.text1)
-
-                spaceBadge
 
                 Spacer()
 
@@ -219,20 +217,6 @@ struct HomeView: View {
                 .frame(height: 1)
         }
         .background(AppTheme.Colors.surface)
-    }
-
-    /// "Private" badge — everything on this screen lives in the user's
-    /// Private space (Secret-Lock items aren't distinguished yet).
-    private var spaceBadge: some View {
-        Text("Private")
-            .appTextStyle(AppTheme.Typography.label)
-            .foregroundStyle(AppTheme.Colors.primary)
-            .padding(.horizontal, AppTheme.Spacing.sm)
-            .padding(.vertical, AppTheme.Spacing.xs)
-            .background(
-                AppTheme.Colors.primary.opacity(0.15),
-                in: RoundedRectangle(cornerRadius: AppTheme.Radius.full)
-            )
     }
 
     /// Account button — always visible in the nav bar regardless of mode.
