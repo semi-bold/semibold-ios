@@ -199,9 +199,10 @@ struct HomeView: View {
     private var navBar: some View {
         VStack(spacing: 0) {
             HStack(spacing: AppTheme.Spacing.sm) {
-                Text("Semi:bold")
-                    .appTextStyle(AppTheme.Typography.title)
-                    .foregroundStyle(AppTheme.Colors.Content.primary)
+                Image("AppWordmark")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 22)
 
                 Spacer()
 

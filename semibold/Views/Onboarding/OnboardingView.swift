@@ -31,11 +31,12 @@ struct OnboardingView: View {
             VStack(spacing: AppTheme.Spacing.lg) {
                 Spacer()
 
-                // LogoArea: logo mark + app name + tagline
+                // LogoArea: wordmark + tagline
                 VStack(spacing: 0) {
-                    Text("Semi:bold")
-                        .appTextStyle(AppTheme.Typography.title)
-                        .foregroundStyle(AppTheme.Colors.Content.primary)
+                    Image("AppWordmark")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: 32)
                     Text("문서를 자유롭게, 안전하게")
                         .appTextStyle(AppTheme.Typography.caption)
                         .foregroundStyle(AppTheme.Colors.Content.secondary)
