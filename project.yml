@@ -30,7 +30,9 @@ targets:
       path: semibold/Info.plist
       properties:
         CFBundleDisplayName: Semibold
-        UILaunchScreen: {}
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+          UIImageName: AppWordmark
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
     scheme:
