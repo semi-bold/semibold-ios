@@ -32,7 +32,6 @@ targets:
         CFBundleDisplayName: Semibold
         UILaunchScreen:
           UIColorName: LaunchBackground
-          UIImageName: AppWordmark
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
     scheme:

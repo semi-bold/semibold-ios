@@ -14,6 +14,8 @@ struct SemiboldApp: App {
         isDatabaseAvailable: DatabaseManager.shared != nil
     )
 
+    @State private var isSplashVisible = true
+
     /// Holds the Apple user ID returned by Sign in with Apple when iCloud is
     /// not yet available at the time of sign-in (NO-004 §2.2). The 04 brief's
     /// iCloud-setup screen reads this to complete the Keychain write once the
@@ -31,6 +33,11 @@ struct SemiboldApp: App {
 
     var body: some Scene {
         WindowGroup {
+            if isSplashVisible {
+                SplashView {
+                    isSplashVisible = false
+                }
+            } else {
             // §15.2 "DB 열기 실패": if the local database couldn't be
             // opened/migrated at launch, there's nothing to read from or
             // write to — show that error instead of any other state.
@@ -63,6 +70,7 @@ struct SemiboldApp: App {
                     launchState = .showOnboarding
                 })
                 .environment(commandCenter)
+            }
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
