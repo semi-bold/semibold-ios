@@ -1,45 +1,47 @@
 import SwiftUI
 
-/// Central design-token catalog for semi:bold, ported from
-/// `sketch-autokit/sketch/tokens.py`.
+/// Central design-token catalog for semi:bold, mirroring Figma Variables.
 ///
 /// Screens and components must read colors, spacing, typography, and
-/// corner radii from here rather than hardcoding hex values, point
-/// sizes, or magic numbers — this keeps the app in sync with the
-/// wireframe/planning-spec source of truth.
+/// corner radii from here rather than hardcoding values — this keeps
+/// the app in sync with the Figma design source.
 enum AppTheme {
-    /// Color palette. Mirrors `tokens.py` §1-5 (the dark-mode palette,
-    /// which is the active/uncommented one in that file).
     enum Colors {
-        // 1. Brand colors — primary actions, links, CTAs, status accents.
-        static let primary = Color(hex: "#007AFF")
-        static let secondary = Color(hex: "#34C759")
-        static let danger = Color(hex: "#FF3B30")
-        static let warning = Color(hex: "#FF9500")
+        /// Interactive elements: tappable buttons, links, CTAs.
+        static let accent = Color(hex: "#007AFF")
 
-        // 2. Background layers — darkest to lightest surface.
-        static let background = Color(hex: "#111111")
-        static let surface = Color(hex: "#1C1C1E")
-        static let surface2 = Color(hex: "#2C2C2E")
-        static let surface3 = Color(hex: "#3A3A3C")
+        /// Background layers — darkest (brand base) to lightest surface.
+        enum Neutral {
+            static let n900 = Color(hex: "#111111")
+            static let n800 = Color(hex: "#1C1C1E")
+            static let n700 = Color(hex: "#2C2C2E")
+            static let n600 = Color(hex: "#3A3A3C")
+        }
 
-        // 3. Text — primary, secondary/placeholder, label/caption.
-        static let text1 = Color(hex: "#FFFFFF")
-        static let text2 = Color(hex: "#8E8E93")
-        static let text3 = Color(hex: "#636366")
+        /// Text hierarchy.
+        enum Content {
+            static let primary   = Color(hex: "#FFFFFF")
+            static let secondary = Color(hex: "#8E8E93")
+            static let tertiary  = Color(hex: "#636366")
+        }
 
-        // 4. Separators / borders.
-        static let divider = Color(hex: "#3A3A3C")
-        static let border = Color(hex: "#48484A")
+        /// Separators and borders.
+        enum Stroke {
+            static let divider = Color(hex: "#3A3A3C")
+            static let border  = Color(hex: "#48484A")
+        }
 
-        // 5. Status colors.
-        static let success = Color(hex: "#30D158")
-        static let info = Color(hex: "#64D2FF")
-        static let error = Color(hex: "#FF453A")
+        /// Semantic status colors.
+        enum Feedback {
+            static let success = Color(hex: "#30D158")
+            static let info    = Color(hex: "#64D2FF")
+            static let error   = Color(hex: "#FF453A")
+            static let warning = Color(hex: "#FF9500")
+            static let danger  = Color(hex: "#FF3B30")
+        }
     }
 
-    /// Spacing scale (8pt grid, 4px adjustments allowed). Mirrors
-    /// `tokens.py` §7.
+    /// Spacing scale (8pt grid, 4px adjustments allowed).
     enum Spacing {
         static let xs: CGFloat = 4
         static let sm: CGFloat = 8
@@ -50,7 +52,7 @@ enum AppTheme {
         static let xxxl: CGFloat = 48
     }
 
-    /// Corner radius scale. Mirrors `tokens.py` §9.
+    /// Corner radius scale.
     enum Radius {
         static let sm: CGFloat = 4
         static let md: CGFloat = 8
@@ -60,16 +62,15 @@ enum AppTheme {
     }
 
     /// Typography scale — each style carries the font and its target
-    /// line height, since SwiftUI fonts don't expose line-height
-    /// directly. Mirrors `tokens.py` §8 (size, weight, line-height).
+    /// line height, since SwiftUI fonts don't expose line-height directly.
     enum Typography {
-        static let heading1 = TextStyleToken(size: 28, weight: .bold, lineHeight: 36)
-        static let heading2 = TextStyleToken(size: 24, weight: .bold, lineHeight: 32)
-        static let title = TextStyleToken(size: 20, weight: .semibold, lineHeight: 28)
-        static let body = TextStyleToken(size: 16, weight: .regular, lineHeight: 24)
-        static let caption = TextStyleToken(size: 13, weight: .regular, lineHeight: 18)
-        static let button = TextStyleToken(size: 16, weight: .semibold, lineHeight: 20)
-        static let label = TextStyleToken(size: 13, weight: .semibold, lineHeight: 18)
+        static let heading1 = TextStyleToken(size: 28, weight: .bold,     lineHeight: 36)
+        static let heading2 = TextStyleToken(size: 24, weight: .bold,     lineHeight: 32)
+        static let title    = TextStyleToken(size: 20, weight: .semibold, lineHeight: 28)
+        static let body     = TextStyleToken(size: 16, weight: .regular,  lineHeight: 24)
+        static let caption  = TextStyleToken(size: 13, weight: .regular,  lineHeight: 18)
+        static let button   = TextStyleToken(size: 16, weight: .semibold, lineHeight: 20)
+        static let label    = TextStyleToken(size: 13, weight: .semibold, lineHeight: 18)
     }
 }
 
@@ -80,7 +81,6 @@ struct TextStyleToken {
     let weight: Font.Weight
     let lineHeight: CGFloat
 
-    /// The SwiftUI font for this style.
     var font: Font {
         .system(size: size, weight: weight)
     }
@@ -88,8 +88,7 @@ struct TextStyleToken {
 
 extension View {
     /// Applies a typography token's font and the line spacing needed to
-    /// reach its target line height, so screens can opt into the full
-    /// `TextStyleToken` (not just its font) with one modifier.
+    /// reach its target line height.
     func appTextStyle(_ token: TextStyleToken) -> some View {
         font(token.font)
             .lineSpacing(token.lineHeight - token.size)
@@ -97,8 +96,6 @@ extension View {
 }
 
 private extension Color {
-    /// Creates a `Color` from a `"#RRGGBB"` (or `"#AARRGGBB"`) hex string,
-    /// matching the literal hex values declared in `tokens.py`.
     init(hex: String) {
         var hexString = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         hexString = hexString.replacingOccurrences(of: "#", with: "")

@@ -30,21 +30,21 @@ struct SlashCommandSheet: View {
                 } label: {
                     HStack(spacing: AppTheme.Spacing.md) {
                         Image(systemName: option.iconName)
-                            .foregroundStyle(AppTheme.Colors.text2)
+                            .foregroundStyle(AppTheme.Colors.Content.secondary)
                             .frame(width: AppTheme.Spacing.lg)
 
                         Text(option.title)
                             .appTextStyle(AppTheme.Typography.body)
-                            .foregroundStyle(AppTheme.Colors.text1)
+                            .foregroundStyle(AppTheme.Colors.Content.primary)
 
                         Spacer()
                     }
                 }
-                .listRowBackground(AppTheme.Colors.background)
+                .listRowBackground(AppTheme.Colors.Neutral.n900)
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .background(AppTheme.Colors.background)
+            .background(AppTheme.Colors.Neutral.n900)
             .navigationTitle("Turn into")
             .navigationBarTitleDisplayMode(.inline)
         }

@@ -26,10 +26,10 @@ struct RenameDocumentSheet: View {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                 TextField("Untitled", text: $viewModel.title)
                     .appTextStyle(AppTheme.Typography.body)
-                    .foregroundStyle(AppTheme.Colors.text1)
+                    .foregroundStyle(AppTheme.Colors.Content.primary)
                     .padding(AppTheme.Spacing.md)
                     .background(
-                        AppTheme.Colors.surface2,
+                        AppTheme.Colors.Neutral.n700,
                         in: RoundedRectangle(cornerRadius: AppTheme.Radius.md)
                     )
                     .focused($titleFieldFocused)
@@ -44,13 +44,13 @@ struct RenameDocumentSheet: View {
                 if let errorMessage = viewModel.errorMessage {
                     Text(errorMessage)
                         .appTextStyle(AppTheme.Typography.caption)
-                        .foregroundStyle(AppTheme.Colors.error)
+                        .foregroundStyle(AppTheme.Colors.Feedback.error)
                 }
 
                 Spacer()
             }
             .padding(AppTheme.Spacing.md)
-            .background(AppTheme.Colors.background)
+            .background(AppTheme.Colors.Neutral.n900)
             .navigationTitle("Rename Document")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -58,14 +58,14 @@ struct RenameDocumentSheet: View {
                     Button("Cancel") {
                         dismiss()
                     }
-                    .foregroundStyle(AppTheme.Colors.primary)
+                    .foregroundStyle(AppTheme.Colors.accent)
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         renameDocument()
                     }
-                    .foregroundStyle(AppTheme.Colors.primary)
+                    .foregroundStyle(AppTheme.Colors.accent)
                 }
             }
             .onAppear {

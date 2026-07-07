@@ -19,11 +19,11 @@ struct ParagraphTextField: UIViewRepresentable {
     var textStyle: TextStyleToken = AppTheme.Typography.body
 
     /// The text color this block's content is shown in —
-    /// `AppTheme.Colors.text1` for most blocks, or `.text2` for a
+    /// `AppTheme.Colors.Content.primary` for most blocks, or `.text2` for a
     /// `.blockquote` block's dimmed quote text (§7.1/§7.3's `> quote`
     /// syntax). Defaults to `.text1` so existing call sites don't need to
     /// change.
-    var textColor: Color = AppTheme.Colors.text1
+    var textColor: Color = AppTheme.Colors.Content.primary
 
     /// Whether this block's text is shown in a monospaced font — `true`
     /// for a `.codeBlock` block's code (§7.1/§7.3's ` ```lang ` syntax), so

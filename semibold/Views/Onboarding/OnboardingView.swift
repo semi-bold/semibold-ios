@@ -25,7 +25,7 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
-            AppTheme.Colors.background
+            AppTheme.Colors.Neutral.n900
                 .ignoresSafeArea()
 
             VStack(spacing: AppTheme.Spacing.lg) {
@@ -35,10 +35,10 @@ struct OnboardingView: View {
                 VStack(spacing: 0) {
                     Text("Semi:bold")
                         .appTextStyle(AppTheme.Typography.title)
-                        .foregroundStyle(AppTheme.Colors.text1)
+                        .foregroundStyle(AppTheme.Colors.Content.primary)
                     Text("문서를 자유롭게, 안전하게")
                         .appTextStyle(AppTheme.Typography.caption)
-                        .foregroundStyle(AppTheme.Colors.text2)
+                        .foregroundStyle(AppTheme.Colors.Content.secondary)
                         .padding(.top, AppTheme.Spacing.xs)
                 }
 
@@ -58,14 +58,14 @@ struct OnboardingView: View {
                     // Subtitle explaining the iCloud benefit (below the Apple button)
                     Text("로그인 시 iCloud에 데이터를 자동 저장합니다")
                         .appTextStyle(AppTheme.Typography.caption)
-                        .foregroundStyle(AppTheme.Colors.text2)
+                        .foregroundStyle(AppTheme.Colors.Content.secondary)
                         .multilineTextAlignment(.center)
 
                     // Inline error message (shown on failure/cancel)
                     if let message = errorMessage {
                         Text(message)
                             .appTextStyle(AppTheme.Typography.caption)
-                            .foregroundStyle(AppTheme.Colors.error)
+                            .foregroundStyle(AppTheme.Colors.Feedback.error)
                             .multilineTextAlignment(.center)
                     }
 
@@ -76,7 +76,7 @@ struct OnboardingView: View {
                     } label: {
                         Text("로컬로 이용")
                             .appTextStyle(AppTheme.Typography.caption)
-                            .foregroundStyle(AppTheme.Colors.text3)
+                            .foregroundStyle(AppTheme.Colors.Content.tertiary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -88,7 +88,7 @@ struct OnboardingView: View {
                 // Footer note about local data loss risk
                 Text("로컬로 이용 시 앱 삭제 시 데이터가 유실될 수 있습니다")
                     .appTextStyle(AppTheme.Typography.caption)
-                    .foregroundStyle(AppTheme.Colors.text3)
+                    .foregroundStyle(AppTheme.Colors.Content.tertiary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, AppTheme.Spacing.xl)
                     .padding(.bottom, AppTheme.Spacing.lg)

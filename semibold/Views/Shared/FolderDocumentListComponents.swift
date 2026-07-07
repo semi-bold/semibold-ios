@@ -12,11 +12,11 @@ import SwiftUI
 func sectionHeader(_ title: String) -> some View {
     Text(title)
         .appTextStyle(AppTheme.Typography.label)
-        .foregroundStyle(AppTheme.Colors.text3)
+        .foregroundStyle(AppTheme.Colors.Content.tertiary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, AppTheme.Spacing.md)
         .frame(height: 32)
-        .background(AppTheme.Colors.surface)
+        .background(AppTheme.Colors.Neutral.n800)
         .listRowInsets(EdgeInsets())
 }
 
@@ -24,16 +24,16 @@ func sectionHeader(_ title: String) -> some View {
 func emptyRow(text: String) -> some View {
     Text(text)
         .appTextStyle(AppTheme.Typography.body)
-        .foregroundStyle(AppTheme.Colors.text2)
+        .foregroundStyle(AppTheme.Colors.Content.secondary)
         .padding(.vertical, AppTheme.Spacing.sm)
-        .listRowBackground(AppTheme.Colors.background)
+        .listRowBackground(AppTheme.Colors.Neutral.n900)
 }
 
 /// Swipe-action button labels shared by `FolderRow`/`DocumentRow`, matching
 /// `iOS_HomeViewSwipe`'s `SwipeAction_Edit`/`SwipeAction_Delete` layers
 /// (`Planning_9_SwipeActionFlow` callouts ②③): "편집" in
-/// `AppTheme.Colors.primary` (wireframe `#0a84ff`), "삭제" in
-/// `AppTheme.Colors.danger` with the destructive role (wireframe `#ff3b30`).
+/// `AppTheme.Colors.accent` (wireframe `#0a84ff`), "삭제" in
+/// `AppTheme.Colors.Feedback.danger` with the destructive role (wireframe `#ff3b30`).
 /// Both render as the standard 80pt-wide swipe button SwiftUI gives
 /// `.swipeActions` buttons, matching the wireframe's `w=80` layers.
 @ViewBuilder
@@ -43,9 +43,9 @@ private func editDeleteSwipeActions(onEdit: @escaping () -> Void, onDelete: @esc
     // `.swipeActions(edge: .trailing)` reveals trailing-most action
     // closest to the row's edge first when partially swiped.
     Button("편집", action: onEdit)
-        .tint(AppTheme.Colors.primary)
+        .tint(AppTheme.Colors.accent)
     Button("삭제", role: .destructive, action: onDelete)
-        .tint(AppTheme.Colors.danger)
+        .tint(AppTheme.Colors.Feedback.danger)
 }
 
 /// A single folder row: folder icon, name, and item count. Tapping it
@@ -67,26 +67,26 @@ struct FolderRow: View {
         NavigationLink(value: folder) {
             HStack(spacing: AppTheme.Spacing.md) {
                 Image(systemName: "folder")
-                    .foregroundStyle(AppTheme.Colors.text2)
+                    .foregroundStyle(AppTheme.Colors.Content.secondary)
                     .frame(width: 20, height: 20)
 
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                     Text(folder.name)
                         .appTextStyle(AppTheme.Typography.body)
-                        .foregroundStyle(AppTheme.Colors.text1)
+                        .foregroundStyle(AppTheme.Colors.Content.primary)
 
                     // TODO: replace with the folder's actual child count
                     // once folder contents are loaded.
                     Text("0 items")
                         .appTextStyle(AppTheme.Typography.caption)
-                        .foregroundStyle(AppTheme.Colors.text2)
+                        .foregroundStyle(AppTheme.Colors.Content.secondary)
                 }
 
                 Spacer()
 
                 Image(systemName: "chevron.right")
                     .appTextStyle(AppTheme.Typography.caption)
-                    .foregroundStyle(AppTheme.Colors.text3)
+                    .foregroundStyle(AppTheme.Colors.Content.tertiary)
             }
             .padding(.vertical, AppTheme.Spacing.sm)
         }
@@ -97,7 +97,7 @@ struct FolderRow: View {
         // `.listRowBackground` then needs to sit on the `NavigationLink`
         // itself (not just inside its label content) to take effect.
         .buttonStyle(.plain)
-        .listRowBackground(AppTheme.Colors.background)
+        .listRowBackground(AppTheme.Colors.Neutral.n900)
         .swipeActions(edge: .trailing) {
             editDeleteSwipeActions(onEdit: onEdit, onDelete: onDelete)
         }
@@ -122,17 +122,17 @@ struct DocumentRow: View {
         NavigationLink(value: document) {
             HStack(spacing: AppTheme.Spacing.md) {
                 Image(systemName: "doc.text")
-                    .foregroundStyle(AppTheme.Colors.text2)
+                    .foregroundStyle(AppTheme.Colors.Content.secondary)
                     .frame(width: 20, height: 20)
 
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                     Text(document.title)
                         .appTextStyle(AppTheme.Typography.body)
-                        .foregroundStyle(AppTheme.Colors.text1)
+                        .foregroundStyle(AppTheme.Colors.Content.primary)
 
                     Text(document.updatedAt.formatted(date: .numeric, time: .omitted))
                         .appTextStyle(AppTheme.Typography.caption)
-                        .foregroundStyle(AppTheme.Colors.text2)
+                        .foregroundStyle(AppTheme.Colors.Content.secondary)
                 }
 
                 Spacer()
@@ -142,7 +142,7 @@ struct DocumentRow: View {
         // See `FolderRow`'s matching comment — same `NavigationLink`
         // row-background fix applies here.
         .buttonStyle(.plain)
-        .listRowBackground(AppTheme.Colors.background)
+        .listRowBackground(AppTheme.Colors.Neutral.n900)
         .swipeActions(edge: .trailing) {
             editDeleteSwipeActions(onEdit: onEdit, onDelete: onDelete)
         }

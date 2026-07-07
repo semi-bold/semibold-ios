@@ -63,7 +63,7 @@ struct FolderContentsView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
         }
-        .background(AppTheme.Colors.background)
+        .background(AppTheme.Colors.Neutral.n900)
         .toolbar(.hidden)
         .onAppear {
             viewModel.load()
@@ -181,7 +181,7 @@ struct FolderContentsView: View {
             ZStack {
                 Text(viewModel.folder.name)
                     .appTextStyle(AppTheme.Typography.title)
-                    .foregroundStyle(AppTheme.Colors.text1)
+                    .foregroundStyle(AppTheme.Colors.Content.primary)
 
                 HStack {
                     backButton
@@ -193,10 +193,10 @@ struct FolderContentsView: View {
             .frame(height: 52)
 
             Rectangle()
-                .fill(AppTheme.Colors.divider)
+                .fill(AppTheme.Colors.Stroke.divider)
                 .frame(height: 1)
         }
-        .background(AppTheme.Colors.surface)
+        .background(AppTheme.Colors.Neutral.n800)
     }
 
     /// Returns to the previous screen in the navigation stack
@@ -215,7 +215,7 @@ struct FolderContentsView: View {
         } label: {
             Text(viewModel.backButtonLabel.text)
                 .appTextStyle(AppTheme.Typography.body)
-                .foregroundStyle(AppTheme.Colors.primary)
+                .foregroundStyle(AppTheme.Colors.accent)
         }
     }
 
@@ -227,7 +227,7 @@ struct FolderContentsView: View {
         } label: {
             Image(systemName: "plus")
                 .appTextStyle(AppTheme.Typography.title)
-                .foregroundStyle(AppTheme.Colors.text1)
+                .foregroundStyle(AppTheme.Colors.Content.primary)
                 .frame(width: 24, height: 24)
         }
     }

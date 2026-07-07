@@ -43,14 +43,14 @@ struct ICloudSetupRequiredView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            AppTheme.Colors.background
+            AppTheme.Colors.Neutral.n900
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // StatusBar — 44pt tint strip matching the wireframe `StatusBar`
-                // rect. Uses `AppTheme.Colors.surface` (#1C1C1E), the established
+                // rect. Uses `AppTheme.Colors.Neutral.n800` (#1C1C1E), the established
                 // convention for StatusBar/NavBar backgrounds across the app.
-                AppTheme.Colors.surface
+                AppTheme.Colors.Neutral.n800
                     .frame(height: 44)
                     .ignoresSafeArea(edges: .top)
 
@@ -61,12 +61,12 @@ struct ICloudSetupRequiredView: View {
                 // cloud glyph centred inside (wireframe WarningIcon, y=160).
                 ZStack {
                     RoundedRectangle(cornerRadius: 20)
-                        .fill(AppTheme.Colors.warning.opacity(0.18))
+                        .fill(AppTheme.Colors.Feedback.warning.opacity(0.18))
                         .frame(width: 72, height: 72)
 
                     Text("☁")
                         .font(.system(size: 32, weight: .bold))
-                        .foregroundStyle(AppTheme.Colors.warning)
+                        .foregroundStyle(AppTheme.Colors.Feedback.warning)
                         // wireframe places the icon text at y=12 inside the
                         // 72pt group, so it sits slightly above centre.
                         .offset(y: -4)
@@ -79,10 +79,10 @@ struct ICloudSetupRequiredView: View {
                 // Title — 22pt bold white, centred (wireframe title, y=256)
                 Text(reason.title)
                     .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(AppTheme.Colors.text1)
+                    .foregroundStyle(AppTheme.Colors.Content.primary)
                     .multilineTextAlignment(.center)
                     .frame(height: 32)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, AppTheme.Spacing.lg)
 
                 // Gap from title bottom (288) to body top (304)
                 Spacer().frame(height: 16)
@@ -90,10 +90,10 @@ struct ICloudSetupRequiredView: View {
                 // Body — 15pt regular, muted grey, centred (wireframe body, y=304)
                 Text(reason.message)
                     .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(AppTheme.Colors.text2)
+                    .foregroundStyle(AppTheme.Colors.Content.secondary)
                     .multilineTextAlignment(.center)
                     .frame(minHeight: 52)
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, AppTheme.Spacing.lg)
 
                 // Gap from body bottom (356) to ReasonBadge top (368)
                 Spacer().frame(height: 12)
@@ -102,12 +102,12 @@ struct ICloudSetupRequiredView: View {
                 // (wireframe ReasonBadge group, y=368).
                 ZStack {
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(AppTheme.Colors.warning.opacity(0.18))
+                        .fill(AppTheme.Colors.Feedback.warning.opacity(0.18))
                         .frame(width: 160, height: 28)
 
                     Text(reason.badgeLabel)
                         .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(AppTheme.Colors.warning)
+                        .foregroundStyle(AppTheme.Colors.Feedback.warning)
                 }
                 .frame(width: 160, height: 28)
 
@@ -124,16 +124,16 @@ struct ICloudSetupRequiredView: View {
                     } label: {
                         Text("설정 앱 열기")
                             .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(AppTheme.Colors.text1)
+                            .foregroundStyle(AppTheme.Colors.Content.primary)
                             .frame(maxWidth: .infinity)
                             .frame(height: 52)
                             .background(
                                 RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                                    .fill(AppTheme.Colors.primary)
+                                    .fill(AppTheme.Colors.accent)
                             )
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, AppTheme.Spacing.xl)
 
                     // Gap between the two buttons (wireframe: 484 − 472 = 12pt)
                     Spacer().frame(height: 12)
@@ -148,23 +148,23 @@ struct ICloudSetupRequiredView: View {
                     Group {
                         if isChecking {
                             ProgressView()
-                                .tint(AppTheme.Colors.text1)
+                                .tint(AppTheme.Colors.Content.primary)
                         } else {
                             Text("다시 확인")
                                 .font(.system(size: 16, weight: .regular))
-                                .foregroundStyle(AppTheme.Colors.text1)
+                                .foregroundStyle(AppTheme.Colors.Content.primary)
                         }
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 52)
                     .background(
                         RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                            .fill(AppTheme.Colors.surface3)
+                            .fill(AppTheme.Colors.Neutral.n600)
                     )
                 }
                 .buttonStyle(.plain)
                 .disabled(isChecking)
-                .padding(.horizontal, 32)
+                .padding(.horizontal, AppTheme.Spacing.xl)
 
                 Spacer()
             }

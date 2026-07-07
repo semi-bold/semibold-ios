@@ -33,12 +33,12 @@ struct DetailView: View {
             titleArea
 
             Rectangle()
-                .fill(AppTheme.Colors.divider)
+                .fill(AppTheme.Colors.Stroke.divider)
                 .frame(height: 1)
 
             blockList
         }
-        .background(AppTheme.Colors.background)
+        .background(AppTheme.Colors.Neutral.n900)
         .background(keyboardShortcuts)
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
@@ -219,7 +219,7 @@ struct DetailView: View {
                 } label: {
                     Text(viewModel.backButtonText)
                         .appTextStyle(AppTheme.Typography.body)
-                        .foregroundStyle(AppTheme.Colors.primary)
+                        .foregroundStyle(AppTheme.Colors.accent)
                 }
 
                 Spacer()
@@ -230,10 +230,10 @@ struct DetailView: View {
             .frame(height: 52)
 
             Rectangle()
-                .fill(AppTheme.Colors.divider)
+                .fill(AppTheme.Colors.Stroke.divider)
                 .frame(height: 1)
         }
-        .background(AppTheme.Colors.surface)
+        .background(AppTheme.Colors.Neutral.n800)
     }
 
     /// "파일 저장 또는 공유" (§10.3's final step): shares the document's
@@ -257,7 +257,7 @@ struct DetailView: View {
             )
         ) {
             Image(systemName: "square.and.arrow.up")
-                .foregroundStyle(AppTheme.Colors.primary)
+                .foregroundStyle(AppTheme.Colors.accent)
         }
     }
 
@@ -269,17 +269,17 @@ struct DetailView: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
             Text(viewModel.document.title)
                 .appTextStyle(AppTheme.Typography.heading2)
-                .foregroundStyle(AppTheme.Colors.text1)
+                .foregroundStyle(AppTheme.Colors.Content.primary)
 
             Text(viewModel.document.updatedAt.formatted(date: .numeric, time: .omitted))
                 .appTextStyle(AppTheme.Typography.caption)
-                .foregroundStyle(AppTheme.Colors.text2)
+                .foregroundStyle(AppTheme.Colors.Content.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, AppTheme.Spacing.md)
         .padding(.top, AppTheme.Spacing.sm)
         .frame(height: 72, alignment: .topLeading)
-        .background(AppTheme.Colors.background)
+        .background(AppTheme.Colors.Neutral.n900)
     }
 
     // MARK: - Block list
@@ -328,7 +328,7 @@ struct DetailView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(AppTheme.Colors.background)
+        .background(AppTheme.Colors.Neutral.n900)
         .overlay(alignment: .topLeading) {
             if viewModel.showsEmptyContentPlaceholder {
                 emptyContentPlaceholder
@@ -350,7 +350,7 @@ struct DetailView: View {
     private var emptyContentPlaceholder: some View {
         Text("Markdown으로 작성하거나 / 를 눌러 블록을 추가하세요.")
             .appTextStyle(AppTheme.Typography.body)
-            .foregroundStyle(AppTheme.Colors.text2)
+            .foregroundStyle(AppTheme.Colors.Content.secondary)
             .padding(.horizontal, AppTheme.Spacing.md)
             .padding(.vertical, AppTheme.Spacing.md)
             .allowsHitTesting(false)
@@ -436,11 +436,11 @@ private struct BlockRow: View {
     }
 
     /// The color this block's text is shown in — `.blockquote` text is
-    /// dimmed (`AppTheme.Colors.text2`) to read as a quote, distinct from
+    /// dimmed (`AppTheme.Colors.Content.secondary`) to read as a quote, distinct from
     /// the surrounding paragraph text; every other block type uses the
     /// primary text color.
     private var textColor: Color {
-        block.type == .blockquote ? AppTheme.Colors.text2 : AppTheme.Colors.text1
+        block.type == .blockquote ? AppTheme.Colors.Content.secondary : AppTheme.Colors.Content.primary
     }
 
     /// Whether this row's text is shown in a monospaced font — `true` for
@@ -475,7 +475,7 @@ private struct BlockRow: View {
                 dragHandle
                     .padding(.top, AppTheme.Spacing.md + (textStyle.lineHeight - AppTheme.Spacing.lg) / 2)
                     .padding(.trailing, AppTheme.Spacing.md)
-                    .background(AppTheme.Colors.background)
+                    .background(AppTheme.Colors.Neutral.n900)
             }
         }
     }
@@ -488,7 +488,7 @@ private struct BlockRow: View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: AppTheme.Spacing.sm) {
                 Rectangle()
-                    .fill(AppTheme.Colors.border)
+                    .fill(AppTheme.Colors.Stroke.border)
                     .frame(height: 1)
 
                 dragHandle
@@ -497,10 +497,10 @@ private struct BlockRow: View {
             .padding(.vertical, AppTheme.Spacing.lg)
 
             Rectangle()
-                .fill(AppTheme.Colors.divider)
+                .fill(AppTheme.Colors.Stroke.divider)
                 .frame(height: 1)
         }
-        .background(AppTheme.Colors.background)
+        .background(AppTheme.Colors.Neutral.n900)
     }
 
     /// A small grip icon at the trailing edge of a block row — the drag
@@ -509,7 +509,7 @@ private struct BlockRow: View {
     /// (`DetailView.blockList`'s `.dropDestination` handles the drop).
     private var dragHandle: some View {
         Image(systemName: "line.3.horizontal")
-            .foregroundStyle(AppTheme.Colors.text2)
+            .foregroundStyle(AppTheme.Colors.Content.secondary)
             .frame(width: AppTheme.Spacing.lg, height: AppTheme.Spacing.lg)
             .draggable(block.id)
     }
@@ -520,26 +520,26 @@ private struct BlockRow: View {
                 if isCodeBlock, let codeLanguage = block.codeLanguage {
                     Text(codeLanguage)
                         .appTextStyle(AppTheme.Typography.caption)
-                        .foregroundStyle(AppTheme.Colors.text2)
+                        .foregroundStyle(AppTheme.Colors.Content.secondary)
                 }
 
                 HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
                     if let listMarker {
                         Text(listMarker)
                             .appTextStyle(textStyle)
-                            .foregroundStyle(AppTheme.Colors.text1)
+                            .foregroundStyle(AppTheme.Colors.Content.primary)
                             .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
                     } else if block.type == .checklistItem {
                         Button(action: onToggleChecklist) {
                             Image(systemName: block.isChecked ? "checkmark.square" : "square")
-                                .foregroundStyle(block.isChecked ? AppTheme.Colors.primary : AppTheme.Colors.text2)
+                                .foregroundStyle(block.isChecked ? AppTheme.Colors.accent : AppTheme.Colors.Content.secondary)
                         }
                         .buttonStyle(.plain)
                         .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
                         .frame(height: textStyle.lineHeight, alignment: .center)
                     } else if block.type == .blockquote {
                         Rectangle()
-                            .fill(AppTheme.Colors.border)
+                            .fill(AppTheme.Colors.Stroke.border)
                             .frame(width: AppTheme.Spacing.xs)
                             .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
                     }
@@ -564,13 +564,13 @@ private struct BlockRow: View {
             }
             .padding(.horizontal, AppTheme.Spacing.md)
             .padding(.vertical, AppTheme.Spacing.md)
-            .background(isCodeBlock ? AppTheme.Colors.surface2 : AppTheme.Colors.background)
+            .background(isCodeBlock ? AppTheme.Colors.Neutral.n700 : AppTheme.Colors.Neutral.n900)
 
             Rectangle()
-                .fill(AppTheme.Colors.divider)
+                .fill(AppTheme.Colors.Stroke.divider)
                 .frame(height: 1)
         }
-        .background(AppTheme.Colors.background)
+        .background(AppTheme.Colors.Neutral.n900)
         .onChange(of: block.contentJSON) { _, _ in
             // Keep this row's text in sync when the view model changes
             // `block`'s content without the user typing here directly —
@@ -627,7 +627,7 @@ private struct SwipeToRevealLockAction<Content: View>: View {
             lockButton
 
             content()
-                .background(AppTheme.Colors.background)
+                .background(AppTheme.Colors.Neutral.n900)
                 .offset(x: currentOffset)
                 // `.simultaneousGesture` (rather than `.gesture`) so this
                 // doesn't steal the tap-to-focus/cursor-placement gestures
@@ -694,15 +694,15 @@ private struct SwipeToRevealLockAction<Content: View>: View {
         } label: {
             VStack(spacing: AppTheme.Spacing.xs) {
                 Image(systemName: "lock.fill")
-                    .foregroundStyle(AppTheme.Colors.text1)
+                    .foregroundStyle(AppTheme.Colors.Content.primary)
 
                 Text("잠금")
                     .appTextStyle(AppTheme.Typography.caption)
-                    .foregroundStyle(AppTheme.Colors.text1)
+                    .foregroundStyle(AppTheme.Colors.Content.primary)
             }
             .frame(width: SwipeToRevealLockActionLayout.actionWidth)
             .frame(maxHeight: .infinity)
-            .background(AppTheme.Colors.surface3)
+            .background(AppTheme.Colors.Neutral.n600)
         }
         .buttonStyle(.plain)
     }

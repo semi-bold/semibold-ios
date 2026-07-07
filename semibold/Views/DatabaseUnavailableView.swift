@@ -19,16 +19,16 @@ struct DatabaseUnavailableView: View {
         VStack(spacing: AppTheme.Spacing.md) {
             Image(systemName: "exclamationmark.triangle")
                 .appTextStyle(AppTheme.Typography.heading1)
-                .foregroundStyle(AppTheme.Colors.error)
+                .foregroundStyle(AppTheme.Colors.Feedback.error)
 
             Text(AppErrorMessages.databaseUnavailable)
                 .appTextStyle(AppTheme.Typography.body)
-                .foregroundStyle(AppTheme.Colors.text1)
+                .foregroundStyle(AppTheme.Colors.Content.primary)
                 .multilineTextAlignment(.center)
         }
         .padding(AppTheme.Spacing.lg)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(AppTheme.Colors.background)
+        .background(AppTheme.Colors.Neutral.n900)
     }
 }
 

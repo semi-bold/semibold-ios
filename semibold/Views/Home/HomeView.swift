@@ -57,7 +57,7 @@ struct HomeView: View {
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
             }
-            .background(AppTheme.Colors.background)
+            .background(AppTheme.Colors.Neutral.n900)
             .toolbar(.hidden)
             .navigationDestination(for: Folder.self) { folder in
                 // Registered once at the stack root so every push in the
@@ -201,7 +201,7 @@ struct HomeView: View {
             HStack(spacing: AppTheme.Spacing.sm) {
                 Text("Semi:bold")
                     .appTextStyle(AppTheme.Typography.title)
-                    .foregroundStyle(AppTheme.Colors.text1)
+                    .foregroundStyle(AppTheme.Colors.Content.primary)
 
                 Spacer()
 
@@ -213,10 +213,10 @@ struct HomeView: View {
             .frame(height: 52)
 
             Rectangle()
-                .fill(AppTheme.Colors.divider)
+                .fill(AppTheme.Colors.Stroke.divider)
                 .frame(height: 1)
         }
-        .background(AppTheme.Colors.surface)
+        .background(AppTheme.Colors.Neutral.n800)
     }
 
     /// Account button — always visible in the nav bar regardless of mode.
@@ -229,7 +229,7 @@ struct HomeView: View {
         } label: {
             Image(systemName: isICloud ? "person.circle.fill" : "person.circle")
                 .appTextStyle(AppTheme.Typography.title)
-                .foregroundStyle(AppTheme.Colors.text2)
+                .foregroundStyle(AppTheme.Colors.Content.secondary)
                 .frame(width: 40, height: 40)
         }
         .confirmationDialog(
@@ -258,10 +258,10 @@ struct HomeView: View {
         } label: {
             Image(systemName: "plus")
                 .appTextStyle(AppTheme.Typography.title)
-                .foregroundStyle(AppTheme.Colors.primary)
+                .foregroundStyle(AppTheme.Colors.accent)
                 .frame(width: 40, height: 40)
                 .background(
-                    AppTheme.Colors.primary.opacity(0.18),
+                    AppTheme.Colors.accent.opacity(0.18),
                     in: RoundedRectangle(cornerRadius: AppTheme.Radius.full)
                 )
         }
