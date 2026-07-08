@@ -83,10 +83,6 @@ struct FolderRow: View {
                 }
 
                 Spacer()
-
-                Image(systemName: "chevron.right")
-                    .appTextStyle(AppTheme.Typography.caption)
-                    .foregroundStyle(AppTheme.Colors.Content.tertiary)
             }
             .padding(.vertical, AppTheme.Spacing.sm)
         }
