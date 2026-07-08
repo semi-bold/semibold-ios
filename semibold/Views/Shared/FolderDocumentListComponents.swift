@@ -64,7 +64,15 @@ struct FolderRow: View {
     var onDelete: () -> Void = {}
 
     var body: some View {
-        NavigationLink(value: folder) {
+        // ZStack with an invisible NavigationLink behind the visible content:
+        // NavigationLink(label: EmptyView) has no size and emits no disclosure
+        // indicator, so the only chevron is the one drawn explicitly below —
+        // immune to animation-frame timing that briefly exposed the auto
+        // indicator alongside the manual one.
+        ZStack {
+            NavigationLink(value: folder) { EmptyView() }
+                .opacity(0)
+
             HStack(spacing: AppTheme.Spacing.md) {
                 Image(systemName: "folder")
                     .foregroundStyle(AppTheme.Colors.Content.secondary)
@@ -83,16 +91,13 @@ struct FolderRow: View {
                 }
 
                 Spacer()
+
+                Image(systemName: "chevron.right")
+                    .appTextStyle(AppTheme.Typography.caption)
+                    .foregroundStyle(AppTheme.Colors.Content.tertiary)
             }
             .padding(.vertical, AppTheme.Spacing.sm)
         }
-        // `NavigationLink` inside a `List` row otherwise paints its own
-        // system row background (white) over whatever `listRowBackground`
-        // is set, regardless of where that modifier is applied relative
-        // to it — `.buttonStyle(.plain)` stops it from doing that, and
-        // `.listRowBackground` then needs to sit on the `NavigationLink`
-        // itself (not just inside its label content) to take effect.
-        .buttonStyle(.plain)
         .listRowBackground(AppTheme.Colors.Neutral.n900)
         .swipeActions(edge: .trailing) {
             editDeleteSwipeActions(onEdit: onEdit, onDelete: onDelete)
