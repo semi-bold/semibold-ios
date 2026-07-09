@@ -50,29 +50,17 @@ private func editDeleteSwipeActions(onEdit: @escaping () -> Void, onDelete: @esc
 
 /// A single folder row: folder icon, name, and item count. Tapping it
 /// pushes whatever `.navigationDestination(for: Folder.self)` resolves
-/// to (registered once at the `NavigationStack` root in `HomeView`) —
-/// wrapping `NavigationLink` here, instead of at each call site, is what
-/// keeps the row-background fix below from having to be repeated/
-/// remembered in `HomeView`/`FolderContentsView` separately.
+/// to (registered once at the `NavigationStack` root in `HomeView`).
 ///
 /// Swiping left reveals "편집"/"삭제" actions (`iOS_HomeViewSwipe`,
-/// `Planning_9_SwipeActionFlow` callouts ①–③). The actual rename/soft-delete
-/// behavior is wired by the caller via `onEdit`/`onDelete`.
+/// `Planning_9_SwipeActionFlow` callouts ①–③).
 struct FolderRow: View {
     let folder: Folder
     var onEdit: () -> Void = {}
     var onDelete: () -> Void = {}
 
     var body: some View {
-        // ZStack with an invisible NavigationLink behind the visible content:
-        // NavigationLink(label: EmptyView) has no size and emits no disclosure
-        // indicator, so the only chevron is the one drawn explicitly below —
-        // immune to animation-frame timing that briefly exposed the auto
-        // indicator alongside the manual one.
-        ZStack {
-            NavigationLink(value: folder) { EmptyView() }
-                .opacity(0)
-
+        NavigationLink(value: folder) {
             HStack(spacing: AppTheme.Spacing.md) {
                 Image(systemName: "folder")
                     .foregroundStyle(AppTheme.Colors.Content.secondary)
@@ -91,10 +79,6 @@ struct FolderRow: View {
                 }
 
                 Spacer()
-
-                Image(systemName: "chevron.right")
-                    .appTextStyle(AppTheme.Typography.caption)
-                    .foregroundStyle(AppTheme.Colors.Content.tertiary)
             }
             .padding(.vertical, AppTheme.Spacing.sm)
         }
@@ -107,13 +91,10 @@ struct FolderRow: View {
 
 /// A single document row: document icon, title, and last-updated date.
 /// Tapping it pushes whatever `.navigationDestination(for: Document.self)`
-/// resolves to (registered once at the `NavigationStack` root in
-/// `HomeView`) — see `FolderRow`'s doc comment for why `NavigationLink`
-/// is wrapped here rather than at each call site.
+/// resolves to (registered once at the `NavigationStack` root in `HomeView`).
 ///
 /// Swiping left reveals "편집"/"삭제" actions (`iOS_HomeViewSwipe`,
-/// `Planning_9_SwipeActionFlow` callouts ①–③). The actual rename/soft-delete
-/// behavior is wired by the caller via `onEdit`/`onDelete`.
+/// `Planning_9_SwipeActionFlow` callouts ①–③).
 struct DocumentRow: View {
     let document: Document
     var onEdit: () -> Void = {}
@@ -140,9 +121,6 @@ struct DocumentRow: View {
             }
             .padding(.vertical, AppTheme.Spacing.sm)
         }
-        // See `FolderRow`'s matching comment — same `NavigationLink`
-        // row-background fix applies here.
-        .buttonStyle(.plain)
         .listRowBackground(AppTheme.Colors.Neutral.n900)
         .swipeActions(edge: .trailing) {
             editDeleteSwipeActions(onEdit: onEdit, onDelete: onDelete)
