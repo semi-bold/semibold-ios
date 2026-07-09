@@ -3,12 +3,6 @@ import AuthenticationServices
 
 @main
 struct SemiboldApp: App {
-    init() {
-        // iOS 15 changed UITableView's default sectionHeaderTopPadding from 0
-        // to 22pt, adding unwanted space above every List section header.
-        UITableView.appearance().sectionHeaderTopPadding = 0
-    }
-
     /// Shared trigger point for the macOS menu/keyboard-shortcut commands
     /// below — see `AppCommandCenter`.
     @State private var commandCenter = AppCommandCenter()

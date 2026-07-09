@@ -55,6 +55,7 @@ struct HomeView: View {
                     documentSection
                 }
                 .listStyle(.plain)
+                .listSectionSpacing(0)
                 .scrollContentBackground(.hidden)
             }
             .background(AppTheme.Colors.Neutral.n900)
