@@ -59,6 +59,17 @@ struct DocumentRepository {
         return try context.count(for: request) > 0
     }
 
+    /// Returns the number of live (non-soft-deleted) documents directly
+    /// inside `folderId`. Used alongside `FolderRepository.childCount(of:)`
+    /// to display the total item count on each folder row.
+    func count(in folderId: String) throws -> Int {
+        let request = DocumentEntity.fetchRequest()
+        let deletedPredicate = NSPredicate(format: "deletedAt == nil")
+        let folderPredicate = NSPredicate(format: "folder.id == %@", folderId)
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [deletedPredicate, folderPredicate])
+        return try context.count(for: request)
+    }
+
     /// Saves changes to an existing document, refreshing `updatedAt`.
     @discardableResult
     func update(_ document: Document) throws -> Document {

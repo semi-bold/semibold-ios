@@ -54,6 +54,7 @@ struct HomeView: View {
                     folderSection(
                         folders: viewModel.folders,
                         emptyText: "첫 폴더를 만들어보세요.",
+                        childCountFor: { viewModel.childCount(for: $0) },
                         onEdit: { entryBeingRenamed = .folder($0) },
                         onDelete: { entryPendingDelete = .folder($0) }
                     )

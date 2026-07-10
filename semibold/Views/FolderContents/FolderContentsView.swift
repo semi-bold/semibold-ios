@@ -60,6 +60,7 @@ struct FolderContentsView: View {
                 folderSection(
                     folders: viewModel.folders,
                     emptyText: "하위 폴더가 없습니다.",
+                    childCountFor: { viewModel.childCount(for: $0) },
                     onEdit: { entryBeingRenamed = .folder($0) },
                     onDelete: { entryPendingDelete = .folder($0) }
                 )

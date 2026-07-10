@@ -32,6 +32,7 @@ func emptyRow(text: String) -> some View {
 func folderSection(
     folders: [Folder],
     emptyText: String,
+    childCountFor: @escaping (Folder) -> Int,
     onEdit: @escaping (Folder) -> Void,
     onDelete: @escaping (Folder) -> Void
 ) -> some View {
@@ -42,6 +43,7 @@ func folderSection(
             ForEach(folders) { folder in
                 FolderRow(
                     folder: folder,
+                    childCount: childCountFor(folder),
                     onEdit: { onEdit(folder) },
                     onDelete: { onDelete(folder) }
                 )
@@ -125,6 +127,7 @@ struct EntryRow<Value: Hashable>: View {
 /// Folder row — passes folder-specific props into `EntryRow`.
 struct FolderRow: View {
     let folder: Folder
+    var childCount: Int = 0
     var onEdit: () -> Void = {}
     var onDelete: () -> Void = {}
 
@@ -133,8 +136,7 @@ struct FolderRow: View {
             value: folder,
             icon: "folder",
             name: folder.name,
-            // TODO: replace with actual child count once folder contents load.
-            subText: "0 items",
+            subText: childCount == 1 ? "1 item" : "\(childCount) items",
             onEdit: onEdit,
             onDelete: onDelete
         )

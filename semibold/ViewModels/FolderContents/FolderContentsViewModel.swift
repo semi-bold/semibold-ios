@@ -80,6 +80,14 @@ final class FolderContentsViewModel {
         load()
     }
 
+    /// Total number of direct children (sub-folders + documents) inside
+    /// `folder`, for display in `FolderRow`'s subText.
+    func childCount(for folder: Folder) -> Int {
+        let subFolders = (try? folderRepository.childCount(of: folder.id)) ?? 0
+        let docs = (try? documentRepository.count(in: folder.id)) ?? 0
+        return subFolders + docs
+    }
+
     /// Whether `folder` has any live (non-soft-deleted) nested folders or
     /// documents — used by the "삭제" swipe action's confirmation alert
     /// to warn that deleting it will also take its contents out of view

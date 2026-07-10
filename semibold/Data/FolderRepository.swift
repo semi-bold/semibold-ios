@@ -60,6 +60,17 @@ struct FolderRepository {
         return try context.count(for: request) > 0
     }
 
+    /// Returns the number of live (non-soft-deleted) direct child folders
+    /// of `parentId`. Used alongside `DocumentRepository.count(in:)` to
+    /// display the total item count on each folder row.
+    func childCount(of parentId: String) throws -> Int {
+        let request = FolderEntity.fetchRequest()
+        let deletedPredicate = NSPredicate(format: "deletedAt == nil")
+        let parentPredicate = NSPredicate(format: "parent.id == %@", parentId)
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [deletedPredicate, parentPredicate])
+        return try context.count(for: request)
+    }
+
     /// Saves changes to an existing folder, refreshing `updatedAt`.
     @discardableResult
     func update(_ folder: Folder) throws -> Folder {
