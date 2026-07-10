@@ -27,6 +27,54 @@ func emptyRow(text: String) -> some View {
         .listRowBackground(AppTheme.Colors.Neutral.n900)
 }
 
+// MARK: - Shared sections
+
+func folderSection(
+    folders: [Folder],
+    emptyText: String,
+    onEdit: @escaping (Folder) -> Void,
+    onDelete: @escaping (Folder) -> Void
+) -> some View {
+    Section {
+        if folders.isEmpty {
+            emptyRow(text: emptyText)
+        } else {
+            ForEach(folders) { folder in
+                FolderRow(
+                    folder: folder,
+                    onEdit: { onEdit(folder) },
+                    onDelete: { onDelete(folder) }
+                )
+            }
+        }
+    } header: {
+        sectionHeader("폴더")
+    }
+}
+
+func documentSection(
+    documents: [Document],
+    emptyText: String,
+    onEdit: @escaping (Document) -> Void,
+    onDelete: @escaping (Document) -> Void
+) -> some View {
+    Section {
+        if documents.isEmpty {
+            emptyRow(text: emptyText)
+        } else {
+            ForEach(documents) { document in
+                DocumentRow(
+                    document: document,
+                    onEdit: { onEdit(document) },
+                    onDelete: { onDelete(document) }
+                )
+            }
+        }
+    } header: {
+        sectionHeader("문서")
+    }
+}
+
 // MARK: - Base row
 
 /// Base list row for any Entry (Folder or Document). Owns the shared

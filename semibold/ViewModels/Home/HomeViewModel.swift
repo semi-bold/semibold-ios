@@ -1,3 +1,4 @@
+import CoreData
 import Foundation
 
 /// Drives `HomeView` — the Private Layer's top-level folder/document
@@ -17,6 +18,7 @@ final class HomeViewModel {
 
     private let folderRepository: FolderRepository
     private let documentRepository: DocumentRepository
+    private var remoteChangeObserver: Any?
 
     init(
         folderRepository: FolderRepository = FolderRepository(),
@@ -24,6 +26,28 @@ final class HomeViewModel {
     ) {
         self.folderRepository = folderRepository
         self.documentRepository = documentRepository
+
+        // When NSPersistentCloudKitContainer merges iCloud changes into the
+        // view context, reload so the list stays current. Using
+        // didChangeObjectsNotification (fired on the main thread AFTER the
+        // viewContext merge completes) avoids the timing race where
+        // NSPersistentStoreRemoteChange fires before automaticallyMerges-
+        // ChangesFromParent has had a chance to update the context.
+        if let viewContext = DatabaseManager.shared?.persistentContainer.viewContext {
+            remoteChangeObserver = NotificationCenter.default.addObserver(
+                forName: NSManagedObjectContext.didChangeObjectsNotification,
+                object: viewContext,
+                queue: .main
+            ) { [weak self] _ in
+                self?.load()
+            }
+        }
+    }
+
+    deinit {
+        if let observer = remoteChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     /// Reloads the root-level folders and documents shown on the home

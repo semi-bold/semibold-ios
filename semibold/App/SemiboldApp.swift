@@ -47,6 +47,7 @@ struct SemiboldApp: App {
             case .showOnboarding:
                 OnboardingView { newState, appleUserID in
                     pendingAppleUserID = appleUserID
+                    DatabaseManager.resetShared()
                     launchState = newState
                 }
             case .iCloudSetupRequired:
@@ -67,6 +68,7 @@ struct SemiboldApp: App {
             case .home:
                 HomeView(onResetToOnboarding: {
                     KeychainSessionStore().delete()
+                    DatabaseManager.resetShared()
                     launchState = .showOnboarding
                 })
                 .environment(commandCenter)
@@ -121,6 +123,7 @@ struct SemiboldApp: App {
                 guard state == .revoked || state == .notFound else { return }
                 DispatchQueue.main.async {
                     KeychainSessionStore().delete()
+                    DatabaseManager.resetShared()
                     launchState = .showOnboarding
                 }
             }

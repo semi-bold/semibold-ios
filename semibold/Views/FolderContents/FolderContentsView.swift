@@ -57,8 +57,18 @@ struct FolderContentsView: View {
             navBar
 
             List {
-                folderSection
-                documentSection
+                folderSection(
+                    folders: viewModel.folders,
+                    emptyText: "하위 폴더가 없습니다.",
+                    onEdit: { entryBeingRenamed = .folder($0) },
+                    onDelete: { entryPendingDelete = .folder($0) }
+                )
+                documentSection(
+                    documents: viewModel.documents,
+                    emptyText: "이 폴더에 문서가 없습니다.",
+                    onEdit: { entryBeingRenamed = .document($0) },
+                    onDelete: { entryPendingDelete = .document($0) }
+                )
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -232,62 +242,6 @@ struct FolderContentsView: View {
         }
     }
 
-    // MARK: - Nested folders section
-
-    private var folderSection: some View {
-        Section {
-            if viewModel.folders.isEmpty {
-                emptyRow(text: "하위 폴더가 없습니다.")
-            } else {
-                ForEach(viewModel.folders) { folder in
-                    // Tapping a nested folder pushes this same screen
-                    // again for that folder, recursing as deep as the
-                    // tree goes (`Planning_6_FolderNavigationFlow`
-                    // callout ④). The destination is registered once at
-                    // the `NavigationStack` root in `HomeView`, so this
-                    // push lands on the same stack as every other one.
-                    // "편집"/"삭제" open `RenameFolderSheet`/a confirmation
-                    // alert (`Planning_9_SwipeActionFlow` callouts ①–③).
-                    // `FolderRow` itself wraps the `NavigationLink`.
-                    FolderRow(
-                        folder: folder,
-                        onEdit: { entryBeingRenamed = .folder(folder) },
-                        onDelete: { entryPendingDelete = .folder(folder) }
-                    )
-                }
-            }
-        } header: {
-            sectionHeader("하위 폴더")
-        }
-    }
-
-    // MARK: - Documents section
-
-    private var documentSection: some View {
-        Section {
-            if viewModel.documents.isEmpty {
-                emptyRow(text: "이 폴더에 문서가 없습니다.")
-            } else {
-                ForEach(viewModel.documents) { document in
-                    // Tapping a document pushes `DetailView` for it
-                    // (`Planning_6_FolderNavigationFlow` callout ⑤). The
-                    // destination is registered once at the
-                    // `NavigationStack` root in `HomeView`, so this push
-                    // lands on the same stack as every other one.
-                    // "편집"/"삭제" open `RenameDocumentSheet`/a confirmation
-                    // alert (`Planning_9_SwipeActionFlow` callouts ①–③).
-                    // `DocumentRow` itself wraps the `NavigationLink`.
-                    DocumentRow(
-                        document: document,
-                        onEdit: { entryBeingRenamed = .document(document) },
-                        onDelete: { entryPendingDelete = .document(document) }
-                    )
-                }
-            }
-        } header: {
-            sectionHeader("문서")
-        }
-    }
 }
 
 #Preview {

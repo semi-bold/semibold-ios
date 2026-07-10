@@ -17,33 +17,44 @@ import Foundation
 /// build — if the person chose iCloud at onboarding, sync is on from the
 /// first database access and never switches at runtime (NO-004 §4.2).
 final class DatabaseManager {
+    private static var _sharedInstance: DatabaseManager?
+    private static var _sharedInitialized = false
+
     /// Shared instance used across the app, or `nil` if loading the
-    /// on-disk persistent store failed at launch (§15.2 "DB 열기 실패").
+    /// on-disk persistent store failed (§15.2 "DB 열기 실패").
     ///
-    /// Computed once and cached: if this is `nil`, `openError` holds the
-    /// underlying error and the root view shows the
-    /// "로컬 저장소를 열 수 없습니다." message instead of `HomeView`
-    /// (see `SemiboldApp`/`DatabaseUnavailableView`).
-    ///
-    /// `syncEnabled` is determined from the Keychain session at the moment
-    /// this property is first accessed (process start). If no session
-    /// exists (first launch, or after credential revocation), sync
-    /// defaults to `false` — the onboarding flow will create a session
-    /// before `HomeView` is ever shown, but that session takes effect on
-    /// the next launch, not during the current one.
-    static let shared: DatabaseManager? = {
+    /// Computed on first access and cached. The cache is invalidated by
+    /// `resetShared()` — which `SemiboldApp` calls whenever the Keychain
+    /// session changes (local ↔ iCloud mode switch) so the next access
+    /// opens the correct store for the new session.
+    static var shared: DatabaseManager? {
+        if _sharedInitialized { return _sharedInstance }
         let session = KeychainSessionStore().load()
         let syncEnabled = session?.mode == .icloud
         let storeURL = syncEnabled
             ? DatabaseManager.cloudStoreURL()
             : DatabaseManager.localStoreURL()
         do {
-            return try DatabaseManager(storeURL: storeURL, syncEnabled: syncEnabled)
+            _sharedInstance = try DatabaseManager(storeURL: storeURL, syncEnabled: syncEnabled)
+            openError = nil
         } catch {
             openError = error
-            return nil
+            _sharedInstance = nil
         }
-    }()
+        _sharedInitialized = true
+        return _sharedInstance
+    }
+
+    /// Invalidates the cached `shared` instance so it is recomputed from
+    /// the current Keychain session on the next access. Call this after
+    /// saving or deleting a Keychain session (mode switch) and before
+    /// transitioning the UI to `HomeView`, so the new home screen opens
+    /// the correct store.
+    static func resetShared() {
+        _sharedInitialized = false
+        _sharedInstance = nil
+        openError = nil
+    }
 
     /// The error from loading the on-disk persistent store, if `shared`
     /// is `nil`. `nil` while the store loaded successfully (the normal
@@ -133,9 +144,10 @@ final class DatabaseManager {
     /// actually read from or written to in that case. It exists purely so
     /// those default arguments stay non-optional/non-throwing.
     ///
-    /// Because sync mode is fixed at process start (NO-004 §4.2), there
-    /// is no runtime container swap — repositories that resolve this once
-    /// at construction time always see the correct container.
+    /// Repositories resolve this once at construction time. Because
+    /// `SemiboldApp` calls `resetShared()` before any mode-switch
+    /// transition re-shows `HomeView`, newly constructed repositories
+    /// always see the correct container for the active session.
     static var sharedOrFallbackContext: NSManagedObjectContext {
         if let shared {
             return shared.persistentContainer.viewContext
