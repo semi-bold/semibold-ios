@@ -99,6 +99,52 @@ frame structure, component layout, and Variable values directly — do not
 rely on cached descriptions. Color/spacing/typography values from Figma
 Variables map to `AppTheme.swift` tokens (see §2 and §3).
 
+### Figma MCP — 접근 방법 및 알려진 이슈
+
+**파일 키:** `<FIGMA_FILE_KEY_REMOVED>`
+(URL: `https://www.figma.com/design/<FIGMA_FILE_KEY_REMOVED>/semi-bold`)
+
+**페이지 구성 (node ID):**
+
+| 페이지 | node ID |
+|---|---|
+| Cover | `22:2` |
+| Design System | `0:1` |
+| Screens | `0:556` |
+| Flows | `0:1389` |
+
+**⚠️ `get_metadata` 버그:** nodeId 없이 호출하면 `Cover` 페이지 하나만
+반환한다 (서버 버그). **페이지 목록 조회에는 `get_metadata` 대신
+`use_figma`를 사용할 것:**
+
+```js
+// 모든 페이지 목록
+return figma.root.children.map(p => ({ id: p.id, name: p.name }))
+
+// Screens 페이지의 최상위 프레임 목록
+const page = figma.root.children.find(p => p.id === "0:556")
+await figma.setCurrentPageAsync(page)
+return page.children.map(n => ({ id: n.id, name: n.name }))
+```
+
+**Screens 페이지 주요 프레임:**
+
+| 프레임 | node ID | 대응 SwiftUI |
+|---|---|---|
+| `Screen_Home` | `0:1003` | `HomeView` |
+| `iOS_FolderContents` | `0:1163` | `FolderContentsView` |
+| `Screen_Detail` | `0:1069` | `DetailView` |
+| `Screen_Splash` | `26:2` | `SplashView` |
+| `iOS_Onboarding` | `0:1349` | `OnboardingView` |
+| `iOS_iCloudSetupRequired` | `0:1369` | `ICloudSetupRequiredView` |
+| `iOS_AddMenu` | `0:1133` | add confirmation dialog |
+| `iOS_HomeViewSwipe` | `0:1223` | swipe actions |
+
+**일반 조회 순서:**
+1. `use_figma`로 페이지/프레임 node ID 확인
+2. `get_design_context(fileKey, nodeId)`로 레이아웃·색상·텍스트 읽기
+3. `get_metadata(fileKey, nodeId)`로 계층 구조 XML 읽기
+
 ---
 
 ## 2. Tech Stack
