@@ -140,10 +140,8 @@ return page.children.map(n => ({ id: n.id, name: n.name }))
 | `iOS_AddMenu` | `0:1133` | add confirmation dialog |
 | `iOS_HomeViewSwipe` | `0:1223` | swipe actions |
 
-**일반 조회 순서:**
-1. `use_figma`로 페이지/프레임 node ID 확인
-2. `get_design_context(fileKey, nodeId)`로 레이아웃·색상·텍스트 읽기
-3. `get_metadata(fileKey, nodeId)`로 계층 구조 XML 읽기
+**조회 방법:** 텍스트·색상·구조·스크린샷 모두 `use_figma` 하나로 가능.
+`get_metadata` / `get_design_context`는 보조 수단이며 필수 아님.
 
 ---
 
