@@ -99,7 +99,40 @@ frame structure, component layout, and Variable values directly — do not
 rely on cached descriptions. Color/spacing/typography values from Figma
 Variables map to `AppTheme.swift` tokens (see §2 and §3).
 
-### Figma MCP — 접근 방법 및 알려진 이슈
+### Figma MCP — 설치 및 사용 방법
+
+#### 설치 (처음 설정하는 경우)
+
+**방법 1 — 공식 Claude Code 플러그인 (권장):**
+```bash
+claude plugin install figma@claude-plugins-official
+```
+설치 후 Claude Code 내에서 `/plugin` 또는 `/mcp` 명령으로 Figma 인증을
+완료하고 연결 상태를 확인한다.
+
+**방법 2 — 원격 MCP 서버 (플러그인이 동작하지 않을 경우 대안):**
+```bash
+# 프로젝트 범위
+claude mcp add --transport http figma https://mcp.figma.com/mcp
+
+# 전역 설정이 필요한 경우
+claude mcp add --scope user --transport http figma https://mcp.figma.com/mcp
+```
+
+**❌ 사용 금지:** `npx @figma/mcp` 방식, `FIGMA_API_KEY`를 `~/.claude.json`에
+평문 저장하는 방식은 사용하지 않는다.
+
+#### 연결 확인 테스트
+
+설치 후 아래 프롬프트로 동작을 검증한다:
+```
+Use the Figma MCP server.
+Open this Figma file: https://www.figma.com/design/<FIGMA_FILE_KEY_REMOVED>/semi-bold
+Summarize the frame structure, components, variables, and layout constraints.
+Do not modify the file.
+```
+
+#### 파일 정보
 
 **파일 키:** `<FIGMA_FILE_KEY_REMOVED>`
 (URL: `https://www.figma.com/design/<FIGMA_FILE_KEY_REMOVED>/semi-bold`)
@@ -112,20 +145,6 @@ Variables map to `AppTheme.swift` tokens (see §2 and §3).
 | Design System | `0:1` |
 | Screens | `0:556` |
 | Flows | `0:1389` |
-
-**⚠️ `get_metadata` 버그:** nodeId 없이 호출하면 `Cover` 페이지 하나만
-반환한다 (서버 버그). **페이지 목록 조회에는 `get_metadata` 대신
-`use_figma`를 사용할 것:**
-
-```js
-// 모든 페이지 목록
-return figma.root.children.map(p => ({ id: p.id, name: p.name }))
-
-// Screens 페이지의 최상위 프레임 목록
-const page = figma.root.children.find(p => p.id === "0:556")
-await figma.setCurrentPageAsync(page)
-return page.children.map(n => ({ id: n.id, name: n.name }))
-```
 
 **Screens 페이지 주요 프레임:**
 
@@ -140,8 +159,26 @@ return page.children.map(n => ({ id: n.id, name: n.name }))
 | `iOS_AddMenu` | `0:1133` | add confirmation dialog |
 | `iOS_HomeViewSwipe` | `0:1223` | swipe actions |
 
-**조회 방법:** 텍스트·색상·구조·스크린샷 모두 `use_figma` 하나로 가능.
-`get_metadata` / `get_design_context`는 보조 수단이며 필수 아님.
+#### 조회 방법
+
+Figma 조회는 **`use_figma` 단독으로** 처리한다. 텍스트·색상·구조·스크린샷
+모두 Plugin API로 접근 가능하다.
+
+```js
+// 모든 페이지 목록
+return figma.root.children.map(p => ({ id: p.id, name: p.name }))
+
+// Screens 페이지의 최상위 프레임 목록
+const page = figma.root.children.find(p => p.id === "0:556")
+await figma.setCurrentPageAsync(page)
+return page.children.map(n => ({ id: n.id, name: n.name }))
+
+// 특정 프레임 스크린샷
+const page = figma.root.children.find(p => p.id === "0:556")
+await figma.setCurrentPageAsync(page)
+const frame = page.children.find(n => n.id === "0:1003")
+return await frame.screenshot()
+```
 
 ---
 
