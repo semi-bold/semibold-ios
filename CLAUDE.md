@@ -124,18 +124,19 @@ claude mcp add --scope user --transport http figma https://mcp.figma.com/mcp
 
 #### 연결 확인 테스트
 
-설치 후 아래 프롬프트로 동작을 검증한다:
+설치 후 아래 프롬프트로 동작을 검증한다 (`<Figma 링크>`는 프로젝트 오너에게
+문의하거나 세션 시작 시 직접 붙여넣는다 — URL/파일키는 git에 커밋하지 않는다):
 ```
 Use the Figma MCP server.
-Open this Figma file: https://www.figma.com/design/<FIGMA_FILE_KEY_REMOVED>/semi-bold
+Open this Figma file: <Figma 링크>
 Summarize the frame structure, components, variables, and layout constraints.
 Do not modify the file.
 ```
 
 #### 파일 정보
 
-**파일 키:** `<FIGMA_FILE_KEY_REMOVED>`
-(URL: `https://www.figma.com/design/<FIGMA_FILE_KEY_REMOVED>/semi-bold`)
+**파일 키 / URL:** git에 커밋하지 않는다. 세션 시작 시 직접 제공하거나
+프로젝트 오너에게 문의한다.
 
 **페이지 구성 (node ID):**
 
