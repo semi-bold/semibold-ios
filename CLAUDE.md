@@ -85,11 +85,8 @@ Figma Variables (color/spacing/type)    → AppTheme.swift tokens
 - `Screen_*` frames are the literal layout reference — match element
   placement, hierarchy, and sizing using the iPhone canvas (390×844)
   as the design baseline.
-- `Planning_N_*` frames embed numbered callout badges (①②③…) with a
-  UI/UX-perspective description list and a `mermaid` flow diagram. Treat
-  each callout as a concrete UI element/state to produce in order.
-  They deliberately omit storage details — get the data model from
-  `tasks/<work-code>.md` (or legacy `PLANNING.md` §6/§9) instead.
+- `Planning_N_*` frames describe UI/UX flow with numbered callout badges;
+  get data model details from `tasks/<work-code>.md` instead.
 
 Keep SwiftUI view/type names aligned with these frame names so anyone
 can jump between Figma and the codebase.
@@ -138,48 +135,11 @@ Do not modify the file.
 **파일 키 / URL:** git에 커밋하지 않는다. 세션 시작 시 직접 제공하거나
 프로젝트 오너에게 문의한다.
 
-**페이지 구성 (node ID):**
-
-| 페이지 | node ID |
-|---|---|
-| Cover | `22:2` |
-| Design System | `0:1` |
-| Screens | `0:556` |
-| Flows | `0:1389` |
-
-**Screens 페이지 주요 프레임:**
-
-| 프레임 | node ID | 대응 SwiftUI |
-|---|---|---|
-| `Screen_Home` | `0:1003` | `HomeView` |
-| `iOS_FolderContents` | `0:1163` | `FolderContentsView` |
-| `Screen_Detail` | `0:1069` | `DetailView` |
-| `Screen_Splash` | `26:2` | `SplashView` |
-| `iOS_Onboarding` | `0:1349` | `OnboardingView` |
-| `iOS_iCloudSetupRequired` | `0:1369` | `ICloudSetupRequiredView` |
-| `iOS_AddMenu` | `0:1133` | add confirmation dialog |
-| `iOS_HomeViewSwipe` | `0:1223` | swipe actions |
-
 #### 조회 방법
 
-Figma 조회는 **`use_figma` 단독으로** 처리한다. 텍스트·색상·구조·스크린샷
-모두 Plugin API로 접근 가능하다.
-
-```js
-// 모든 페이지 목록
-return figma.root.children.map(p => ({ id: p.id, name: p.name }))
-
-// Screens 페이지의 최상위 프레임 목록
-const page = figma.root.children.find(p => p.id === "0:556")
-await figma.setCurrentPageAsync(page)
-return page.children.map(n => ({ id: n.id, name: n.name }))
-
-// 특정 프레임 스크린샷
-const page = figma.root.children.find(p => p.id === "0:556")
-await figma.setCurrentPageAsync(page)
-const frame = page.children.find(n => n.id === "0:1003")
-return await frame.screenshot()
-```
+Figma 조회는 **`use_figma` 단독으로** 처리한다. 페이지 구성·프레임 목록은
+매 세션마다 `use_figma`로 직접 확인한다 (node ID는 Figma 변경 시 바뀔 수
+있으므로 문서에 고정하지 않는다).
 
 ---
 
