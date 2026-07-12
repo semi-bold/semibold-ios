@@ -136,7 +136,7 @@ struct FolderRow: View {
             value: folder,
             icon: "folder",
             name: folder.name,
-            subText: childCount == 1 ? "1 item" : "\(childCount) items",
+            subText: "\(childCount)개 항목",
             onEdit: onEdit,
             onDelete: onDelete
         )
