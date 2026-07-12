@@ -1,16 +1,16 @@
 ---
 name: release
-description: Mark a release version in package.json and README from a production PR link, then push to dev
+description: Mark a release version in project.yml (MARKETING_VERSION) and README from a production PR link, then push to dev
 ---
 
-You are the release version manager for Partnerble.
+You are the release version manager for semi:bold (semibold-ios).
 
 When the user runs `/release`, you:
 1. Ask for the production PR link (`dev → main`)
 2. Read the PR title to extract the version
 3. Check out `dev` and pull latest
-4. Update `package.json` and `README.md` with the version
-5. Commit and push to `dev`
+4. Update `project.yml` (`MARKETING_VERSION`) and `README.md` with the version
+5. Regenerate the Xcode project, commit, and push to `dev`
 6. Guide the user on remaining steps
 
 ---
@@ -49,33 +49,53 @@ git pull origin dev
 
 ### Step 4 — 버전 업데이트
 
-#### 4-1. `package.json`
+#### 4-1. `project.yml`
 
-`"version"` 필드를 추출한 버전(숫자만, `v` 접두사 제외)으로 교체한다.
+`semibold` 타겟의 `settings.base.MARKETING_VERSION` 값을 추출한 버전(숫자만,
+`v` 접두사 제외)으로 교체한다. 키가 없으면 `settings.base` 블록에 새로
+추가한다 (`semibold`, `semiboldTests` 타겟 모두 존재하지만 앱 버전은
+`semibold` 타겟에만 설정한다).
 
-```json
-"version": "0.1.1"
+```yaml
+targets:
+  semibold:
+    settings:
+      base:
+        MARKETING_VERSION: "0.1.1"
 ```
 
 Read 툴로 파일을 읽고 Edit 툴로 정확히 교체한다.
 
+`project.yml`은 CLAUDE.md §2 규칙에 따라 `semibold.xcodeproj`의 source of
+truth다 — 반드시 `project.yml`을 고치고 `xcodegen generate`로 `.xcodeproj`에
+반영한다. `.xcodeproj`를 직접 편집하지 않는다. `*.xcodeproj`는 `.gitignore`
+대상이라 생성 결과 자체는 커밋하지 않는다 — 로컬 빌드가 최신 버전을 반영하도록
+재생성만 하면 된다.
+
+```bash
+xcodegen generate
+```
+
 #### 4-2. `README.md`
 
-파일 최상단(첫 줄 `# Partnerble` 바로 아래)에 버전 배지 라인을 추가하거나 기존 배지를 교체한다.
+파일 최상단(첫 줄 `# semibold-ios` 바로 아래)에 버전 배지 라인을 추가하거나
+기존 배지를 교체한다.
 
 ```markdown
-# Partnerble
+# semibold-ios
 
 ![version](https://img.shields.io/badge/version-v0.1.1-blue)
 ```
 
 - 이미 `![version](...)` 배지가 있으면 버전 숫자만 교체한다.
-- 없으면 `# Partnerble` 바로 아래 빈 줄 뒤에 추가한다.
+- 없으면 `# semibold-ios` 바로 아래 빈 줄 뒤에 추가한다.
+- CLAUDE.md §4 규칙상 README는 빌드/설정 정보만 담는다 — 버전 배지는
+  빌드 산출물 식별 정보이므로 허용 범위 안에 있다.
 
 ### Step 5 — 커밋 및 push
 
 ```bash
-git add package.json README.md
+git add project.yml README.md
 git commit -m "chore: release v0.1.1"
 git push origin dev
 ```
@@ -101,8 +121,8 @@ git push origin dev
 ## Tools You Can Use
 
 - **AskUserQuestion** — PR 링크 입력받기
-- **Bash** — `gh pr view`, git 명령어
-- **Read** — `package.json`, `README.md` 읽기
+- **Bash** — `gh pr view`, git 명령어, `xcodegen generate`
+- **Read** — `project.yml`, `README.md` 읽기
 - **Edit** — 버전 교체
 
 ---
@@ -120,10 +140,11 @@ gh pr view 3 --json title,baseRefName,headRefName
 
 git checkout dev && git pull origin dev
 
-[package.json] "version": "0.1.0" → "0.1.1"
+[project.yml] MARKETING_VERSION: "0.1.0" → "0.1.1"
+xcodegen generate
 [README.md] 배지 추가: ![version](...-v0.1.1-blue)
 
-git add package.json README.md
+git add project.yml README.md
 git commit -m "chore: release v0.1.1"
 git push origin dev
 
@@ -140,7 +161,11 @@ git push origin dev
 ## Important Notes
 
 - 반드시 `dev` 브랜치에서만 작업한다 — `main`에 직접 커밋하지 않는다
-- `package.json`의 버전은 `v` 접두사 없이 숫자만 (`0.1.1`)
+- `project.yml`의 `MARKETING_VERSION`은 `v` 접두사 없이 숫자만 (`0.1.1`)
 - `README.md`의 배지는 `v` 접두사 포함 (`v0.1.1`)
+- `project.yml`을 고친 뒤에는 반드시 `xcodegen generate`로 `.xcodeproj`를
+  재생성한다 — `project.yml`이 source of truth이므로 `.xcodeproj`를 직접
+  편집하지 않는다 (CLAUDE.md §2). `.xcodeproj`는 `.gitignore` 대상이라
+  커밋 대상에는 포함하지 않는다
 - PR의 base가 `main`이 아니거나 head가 `dev`가 아니면 실행을 중단하고 사용자에게 알린다
 - **⛔ 절대 금지**: `main` 브랜치에 push하거나 머지하지 않는다
