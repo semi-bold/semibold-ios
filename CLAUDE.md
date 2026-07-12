@@ -4,8 +4,8 @@ This file is always referenced by Claude Code. Rules here apply
 automatically in every conversation about this project.
 
 semi:bold is a local-first, block-based document app (Folder → Document →
-Block) built with SwiftUI. Product spec and visual design live in a
-sibling repo, **not** here — read them before writing or changing any
+Block) built with SwiftUI. Product spec and visual design live in
+separate repos, **not** here — read them before writing or changing any
 screen, flow, or data model. Do not duplicate their content into this
 file; they change independently of Swift coding conventions.
 
@@ -16,81 +16,130 @@ file; they change independently of Swift coding conventions.
 ```
 semi-bold/
  ├─ semibold-ios/        ← this repo (Swift app)
- └─ sketch-autokit/      ← planning docs + Sketch wireframe generator
-     ├─ docs/
-     │   ├─ PLANNING.md  ← feature scope, screens, flows, DB schema
-     │   └─ SERVICE.md   ← Private/Secret/Public structure, access policy
-     └─ semi-bold.sketch ← generated wireframes & planning specs
-         (screens/wireframe.py → Screen_*, screens/planning.py → Planning_N_*Flow)
+ ├─ semibold-docs/       ← planning docs (task specs, PLANNING.md, SERVICE.md)
+ │   ├─ tasks/<work-code>.md ← per-work-code task spec (primary —
+ │   │             read first for the work code `/work` assigned)
+ │   ├─ PLANNING.md  ← legacy: feature scope, screens, flows, DB
+ │   │                  schema (fallback for anything tasks/* doesn't cover)
+ │   └─ SERVICE.md   ← access policy, data structure
+ └─ Figma             ← wireframes & design tokens (read via Figma MCP)
+     Frame "Screen_<Name>"          → SwiftUI view "<Name>View"
+     Frame "Planning_<n>_<FlowName>" → flow spec with callout badges
+     Variables (color/spacing/type) → AppTheme.swift design tokens
 ```
 
-Relative to this repo: `../sketch-autokit/docs/PLANNING.md` and
-`../sketch-autokit/docs/SERVICE.md`.
+Relative to this repo: `../semibold-docs/tasks/<work-code>.md`,
+`../semibold-docs/PLANNING.md`, and `../semibold-docs/SERVICE.md`.
 
 Before implementing or changing a screen/flow/model:
 
-1. Read the relevant section of `PLANNING.md` (screen structure, user
-   flows, feature requirements, block/markdown model, DB schema) and
-   `SERVICE.md` (Private/Secret/Public scope and access policy) for
-   current, authoritative details — don't rely on a cached summary.
-2. Check whether a matching wireframe or planning spec already exists in
-   `sketch-autokit` (see §1) and build to match it rather than inventing
-   a different layout or flow.
-3. If a request conflicts with these docs, or no matching wireframe/spec
+1. Read `../semibold-docs/tasks/<work-code>.md` for the work code
+   `/work` assigned to this batch of `.claude/features/` briefs (see
+   `.claude/skills/work/SKILL.md`), if it exists — it's the primary,
+   current spec. Fall back to the relevant section of `PLANNING.md`
+   (legacy — screen structure, user flows, feature requirements,
+   block/markdown model, DB schema) for anything `tasks/*` doesn't cover.
+   Always read `SERVICE.md` for current, authoritative data structure
+   details — don't rely on a cached summary.
+2. Check whether a matching frame (`Screen_*` / `Planning_N_*`) exists in
+   Figma (see §1) and build to match it rather than inventing a different
+   layout or flow.
+3. If a request conflicts with these docs, or no matching frame/spec
    exists yet, say so explicitly rather than improvising silently.
 
 **Feature briefs (`.claude/features/`).** Before starting non-trivial work
 on a feature, write a brief to `.claude/features/<slug>.md` (copy
 `.claude/features/TEMPLATE.md`) that records: which `Screen_*` /
-`Planning_N_*Flow` / PLANNING.md sections it maps to, scope/out-of-scope,
-any decisions or deviations from the docs, and acceptance criteria. This
-is the persistent record of choices made during planning — anyone (or any
-agent, on any machine) picking up the implementation should read this
-brief first, then PLANNING.md/SERVICE.md/wireframes for design and data
-details it doesn't restate.
+`Planning_N_*Flow` / `tasks/<work-code>.md` (or legacy `PLANNING.md`)
+sections it maps to, scope/out-of-scope, any decisions or deviations from
+the docs, and acceptance criteria. This is the working record for the
+current batch of work — anyone (or any agent, on any machine) picking up
+the implementation should read this brief first, then
+`tasks/<work-code>.md`/`PLANNING.md`/`SERVICE.md`/wireframes for design
+and data details it doesn't restate. Briefs are deleted once the whole
+batch is `done` (see `.claude/skills/work/SKILL.md` Completion) — git
+history retains their content for reference.
 
 If a brief has prerequisites (must come after another brief), prefix its
-filename with a two-digit order number (`01-`, `02-`, …) matching
-`PLANNING.md` §18's phase order, so the build order is clear from the
-directory listing alone. Briefs without ordering dependencies (e.g.
-tooling work) don't need a prefix.
+filename with a two-digit order number (`01-`, `02-`, …) matching the
+phase order in `tasks/<work-code>.md` (or, for legacy phases,
+`PLANNING.md` §18), so the build order is clear from the directory
+listing alone. Briefs without ordering dependencies (e.g. tooling work)
+don't need a prefix.
 
 ---
 
-## 1. Mapping Wireframes & Planning Specs to SwiftUI Screens
+## 1. Mapping Figma Frames & Planning Specs to SwiftUI Screens
 
-`sketch-autokit` generates two kinds of artifacts in `semi-bold.sketch`,
-and the implementation should trace back to them 1:1 by name:
+Figma is the design source of truth. Implementation should trace back
+to Figma frames 1:1 by name:
 
 ```
-Wireframe artboard "Screen_<Name>"            → SwiftUI view "<Name>View"
-Planning doc "Planning_<n>_<FlowName>"        → flow described in PLANNING.md §5,
-                                                 numbered to match its callouts
+Figma frame "Screen_<Name>"              → SwiftUI view "<Name>View"
+Figma frame "Planning_<n>_<FlowName>"   → flow described in tasks/<work-code>.md
+                                            (or legacy PLANNING.md §5),
+                                            numbered to match its callouts
+Figma Variables (color/spacing/type)    → AppTheme.swift tokens
 ```
 
-- Wireframes (`screens/wireframe.py`, `Screen_*`) are the literal layout
-  reference — match element placement/hierarchy/sizing, using the same
-  iPhone canvas (390×844) as the design baseline.
-- Planning specs (`screens/planning.py`, `Planning_<n>_*Flow`) embed
-  numbered callout badges (①②③…) with a matching UI/UX-perspective
-  description list and a `mermaid` flow diagram. Treat each callout as a
-  concrete UI element/state to produce in order, and the diagram as the
-  state machine your view/view-model implements. They deliberately omit
-  storage details — get the data model from `PLANNING.md` §6/§9 instead.
+- `Screen_*` frames are the literal layout reference — match element
+  placement, hierarchy, and sizing using the iPhone canvas (390×844)
+  as the design baseline.
+- `Planning_N_*` frames describe UI/UX flow with numbered callout badges;
+  get data model details from `tasks/<work-code>.md` instead.
 
-Keep SwiftUI view/type names aligned with these artifact names so anyone
-can jump between the Sketch file and the codebase.
+Keep SwiftUI view/type names aligned with these frame names so anyone
+can jump between Figma and the codebase.
 
-**Read the design from the Python source, not the `.sketch` binary.**
-`screens/wireframe.py`, `screens/planning.py`, `components/atoms.py`, and
-`sketch/tokens.py` declare every layer's exact position, size, color
-token, and text — they're the actual design source (the `.sketch` file is
-just generated output from them, and rendering it requires the Sketch
-macOS app, which Claude can't do). Reconstruct the layout pixel-for-pixel
-from these files: component structure from `atoms.py`, layout/composition
-from `wireframe.py`/`planning.py`, and color/spacing/type values from
-`tokens.py` — then translate those same values into the SwiftUI view and
-its design-tokens type (see §2).
+**Read the design via Figma MCP.** Use the Figma MCP server to inspect
+frame structure, component layout, and Variable values directly — do not
+rely on cached descriptions. Color/spacing/typography values from Figma
+Variables map to `AppTheme.swift` tokens (see §2 and §3).
+
+### Figma MCP — 설치 및 사용 방법
+
+#### 설치 (처음 설정하는 경우)
+
+**방법 1 — 공식 Claude Code 플러그인 (권장):**
+```bash
+claude plugin install figma@claude-plugins-official
+```
+설치 후 Claude Code 내에서 `/plugin` 또는 `/mcp` 명령으로 Figma 인증을
+완료하고 연결 상태를 확인한다.
+
+**방법 2 — 원격 MCP 서버 (플러그인이 동작하지 않을 경우 대안):**
+```bash
+# 프로젝트 범위
+claude mcp add --transport http figma https://mcp.figma.com/mcp
+
+# 전역 설정이 필요한 경우
+claude mcp add --scope user --transport http figma https://mcp.figma.com/mcp
+```
+
+**❌ 사용 금지:** `npx @figma/mcp` 방식, `FIGMA_API_KEY`를 `~/.claude.json`에
+평문 저장하는 방식은 사용하지 않는다.
+
+#### 연결 확인 테스트
+
+설치 후 아래 프롬프트로 동작을 검증한다 (`<Figma 링크>`는 프로젝트 오너에게
+문의하거나 세션 시작 시 직접 붙여넣는다 — URL/파일키는 git에 커밋하지 않는다):
+```
+Use the Figma MCP server.
+Open this Figma file: <Figma 링크>
+Summarize the frame structure, components, variables, and layout constraints.
+Do not modify the file.
+```
+
+#### 파일 정보
+
+**파일 키 / URL:** git에 커밋하지 않는다. 세션 시작 시 직접 제공하거나
+프로젝트 오너에게 문의한다.
+
+#### 조회 방법
+
+Figma 조회는 **`use_figma` 단독으로** 처리한다. 페이지 구성·프레임 목록은
+매 세션마다 `use_figma`로 직접 확인한다 (node ID는 Figma 변경 시 바뀔 수
+있으므로 문서에 고정하지 않는다).
 
 ---
 
@@ -99,13 +148,18 @@ its design-tokens type (see §2).
 | Layer | Choice |
 |---|---|
 | UI | SwiftUI + `@Observable` (MVVM) |
-| Local DB | GRDB.swift (SQLite) |
+| Local DB | Core Data (`NSPersistentContainer` / `NSPersistentCloudKitContainer`) |
 | Lint | SwiftLint (SPM plugin) |
 | Project generation | XcodeGen (`project.yml`) |
 
-No additional architecture libraries. Do not introduce Core Data, TCA,
-Combine-heavy patterns, or a remote backend without an explicit decision
-to do so.
+No additional architecture libraries. Do not introduce TCA, Combine-heavy
+patterns, or a remote backend without an explicit decision to do so.
+
+**Core Data, not GRDB.** The data layer was migrated from GRDB (SQLite)
+to Core Data for work code NO-002 (iCloud sync via
+`NSPersistentCloudKitContainer` — see
+`../semibold-docs/tasks/NO-002.md`). This is an explicit,
+already-made decision — do not reintroduce GRDB or raw `sqlite3` calls.
 
 **`semibold.xcodeproj` is generated from `project.yml` and is not the
 source of truth.** Add new targets, source groups, or SPM dependencies by
@@ -121,15 +175,20 @@ automatically on the next `generate`.
 - **SwiftUI-first.** Use `@Observable` view-models. Drop to UIKit only
   where SwiftUI genuinely can't do the job (e.g. custom block-editor text
   handling).
-- **GRDB** owns all SQLite access. Don't bypass it with raw
-  `sqlite3` C calls. Migrations go in a versioned `DatabaseMigrator`
-  block — never alter the schema outside of migrations.
-- Name Swift model types/fields after the DB schema in `PLANNING.md` §9
-  (`sortOrder`, `parentId`, `contentJSON`, `markdownSource`, …) so the
-  data layer maps directly onto it — don't invent parallel naming.
+- **Core Data** (`semibold/Data/SemiboldModel.xcdatamodeld`) owns all
+  local persistence. Don't bypass it with raw `sqlite3` calls. Schema
+  changes go in the versioned `.xcdatamodeld` model — never alter
+  storage outside of it. Repositories (`FolderRepository`,
+  `DocumentRepository`, `DocumentBlockRepository`) map `NSManagedObject`
+  entities to/from the plain Swift model structs so the rest of the app
+  never touches Core Data types directly.
+- Name Swift model types/fields after the DB schema in
+  `tasks/<work-code>.md` (or legacy `PLANNING.md` §9) (`sortOrder`,
+  `parentId`, `contentJSON`, `markdownSource`, …) so the data layer maps
+  directly onto it — don't invent parallel naming.
 - Centralize colors/spacing/typography in one `AppTheme` type rather than
-  hardcoding values in views — mirrors the `sketch/tokens.py` rule on the
-  design side, and keeps both in sync when the palette changes.
+  hardcoding values in views — mirrors Figma Variables on the design side,
+  and keeps both in sync when the palette changes.
 - Keep core models/view-models shared across iOS and macOS targets; let
   only navigation chrome and input affordances diverge per platform.
 - Keep functional/UX explanations (comments, PR text) at a planner's
@@ -159,19 +218,30 @@ Items that belong in CLAUDE.md (like the constraints above), not README.
 
 ---
 
-## 5. What You Can Ask Claude
+## 5. Git 작업 규칙
+
+- **commit**: 자동 진행한다.
+- **push**: 반드시 사용자 동의를 받은 후 진행한다. 동의 없이 push하지 않는다.
+- **민감 정보**: API 키, URL, 파일 키, 토큰, 비밀번호 등 접근 자격증명은
+  어떤 파일에도 커밋하지 않는다. CLAUDE.md 포함.
+  민감 정보가 필요한 경우 세션 내 대화로만 전달받는다.
+
+---
+
+## 6. What You Can Ask Claude
 
 ```
-"Implement the folder list screen to match Screen_Home in the wireframe"
+"Implement the folder list screen to match the Screen_Home frame in Figma"
 "Build the folder-create flow per Planning_2_FolderCreateFlow / PLANNING §5.2"
 "Add support for the <X> block type per PLANNING §7–8"
 ```
 
 ---
 
-## Reference
+## 7. Reference
 
-- Planning & data model: `../sketch-autokit/docs/PLANNING.md`
-- Service / access-policy structure: `../sketch-autokit/docs/SERVICE.md`
-- Wireframes & planning specs: `../sketch-autokit/semi-bold.sketch`
-  (`screens/wireframe.py`, `screens/planning.py`)
+- Per-work-code task spec (primary): `../semibold-docs/tasks/<work-code>.md`
+- Planning & data model (legacy fallback): `../semibold-docs/PLANNING.md`
+- Service / access-policy structure: `../semibold-docs/SERVICE.md`
+- Wireframes & design tokens: Figma (read via Figma MCP)
+  — frame names `Screen_*` / `Planning_N_*`, Variables → `AppTheme.swift`

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="23507" systemVersion="24A335" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithSwiftData="YES" userDefinedModelVersionIdentifier="">
+    <entity name="Folder" representedClassName="FolderEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="id" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="name" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="sortOrder" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <relationship name="parent" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Folder" inverseName="children" inverseEntity="Folder"/>
+        <relationship name="children" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="Folder" inverseName="parent" inverseEntity="Folder"/>
+        <relationship name="documents" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="Document" inverseName="folder" inverseEntity="Document"/>
+    </entity>
+    <entity name="Document" representedClassName="DocumentEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="id" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="title" attributeType="String" defaultValueString="Untitled" usesScalarValueType="NO"/>
+        <attribute name="sortOrder" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <relationship name="folder" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Folder" inverseName="documents" inverseEntity="Folder"/>
+        <relationship name="blocks" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="DocumentBlock" inverseName="document" inverseEntity="DocumentBlock"/>
+    </entity>
+    <entity name="DocumentBlock" representedClassName="DocumentBlockEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="id" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="sortOrder" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="type" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="contentJSON" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="markdownSource" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <relationship name="document" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Document" inverseName="blocks" inverseEntity="Document"/>
+        <relationship name="parent" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="DocumentBlock" inverseName="children" inverseEntity="DocumentBlock"/>
+        <relationship name="children" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="DocumentBlock" inverseName="parent" inverseEntity="DocumentBlock"/>
+    </entity>
+</model>
