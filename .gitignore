@@ -15,3 +15,6 @@ build/
 
 # xcode-build-server (VSCode SourceKit-LSP) — machine-specific paths
 buildServer.json
+
+# Local database snapshots (copied from device/simulator for inspection)
+.database/
