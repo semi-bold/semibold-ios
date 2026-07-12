@@ -258,7 +258,17 @@ Items that belong in CLAUDE.md (like the constraints above), not README.
 
 ---
 
-## 5. What You Can Ask Claude
+## 5. Git 작업 규칙
+
+- **commit**: 자동 진행한다.
+- **push**: 반드시 사용자 동의를 받은 후 진행한다. 동의 없이 push하지 않는다.
+- **민감 정보**: API 키, URL, 파일 키, 토큰, 비밀번호 등 접근 자격증명은
+  어떤 파일에도 커밋하지 않는다. CLAUDE.md 포함.
+  민감 정보가 필요한 경우 세션 내 대화로만 전달받는다.
+
+---
+
+## 6. What You Can Ask Claude
 
 ```
 "Implement the folder list screen to match the Screen_Home frame in Figma"
@@ -268,7 +278,7 @@ Items that belong in CLAUDE.md (like the constraints above), not README.
 
 ---
 
-## Reference
+## 7. Reference
 
 - Per-work-code task spec (primary): `../semibold-docs/tasks/<work-code>.md`
 - Planning & data model (legacy fallback): `../semibold-docs/PLANNING.md`
