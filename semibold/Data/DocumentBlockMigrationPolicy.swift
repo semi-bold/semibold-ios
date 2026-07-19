@@ -40,15 +40,6 @@ final class DocumentBlockMigrationPolicy: NSEntityMigrationPolicy {
         let documentId = (sInstance.value(forKey: "document") as? NSManagedObject)?.value(forKey: "id") as? String
         let parentItemId = (sInstance.value(forKey: "parent") as? NSManagedObject)?.value(forKey: "id") as? String
 
-        // An unrecognized/legacy `type` string falls back to `.paragraph`
-        // rather than throwing — `tasks/NO-005.md` §7 "알 수 없는
-        // contentType을 만난 경우: 임의로 삭제하지 않고 읽기 전용으로 보존"
-        // (the block's original text still carries over; only its kind
-        // is downgraded to the safest default).
-        let blockType = typeRaw.flatMap(BlockType.init(rawValue:)) ?? .paragraph
-        let content = BlockContent.decode(from: contentJSON, type: blockType)
-        let decomposition = TextDecomposition.decompose(content)
-
         // DocumentItem — position/hierarchy only (STORAGE_ARCHITECTURE.md §3.2).
         let documentItem = NSEntityDescription.insertNewObject(forEntityName: "DocumentItem", into: destinationContext)
         documentItem.setValue(blockId, forKey: "id")
@@ -64,23 +55,46 @@ final class DocumentBlockMigrationPolicy: NSEntityMigrationPolicy {
         // TextItem — 1:1 with the DocumentItem above via `itemId` == its `id`.
         let textItem = NSEntityDescription.insertNewObject(forEntityName: "TextItem", into: destinationContext)
         textItem.setValue(blockId, forKey: "itemId")
-        textItem.setValue(Self.textKind(for: blockType), forKey: "textKind")
-        textItem.setValue(decomposition.plainText, forKey: "plainText")
-        textItem.setValue(Self.headingLevel(for: content), forKey: "headingLevel")
-        textItem.setValue(Self.isChecked(for: content), forKey: "isChecked")
-        // `alignment`/`customStyleId` have no equivalent in the pre-NO-005
-        // block model, so every migrated block leaves them unset.
 
-        // TextMark — one row per inline mark BlockContent recorded.
-        for mark in decomposition.marks {
-            let textMark = NSEntityDescription.insertNewObject(forEntityName: "TextMark", into: destinationContext)
-            textMark.setValue(UUID().uuidString, forKey: "id")
-            textMark.setValue(blockId, forKey: "itemId")
-            textMark.setValue(Int64(mark.startOffset), forKey: "startOffset")
-            textMark.setValue(Int64(mark.endOffset), forKey: "endOffset")
-            textMark.setValue(mark.markType, forKey: "markType")
-            textMark.setValue(mark.valueMode, forKey: "valueMode")
-            textMark.setValue(mark.valueText, forKey: "valueText")
+        if let blockType = typeRaw.flatMap(BlockType.init(rawValue:)) {
+            let content = BlockContent.decode(from: contentJSON, type: blockType)
+            let decomposition = TextDecomposition.decompose(content)
+
+            textItem.setValue(Self.textKind(for: blockType), forKey: "textKind")
+            textItem.setValue(decomposition.plainText, forKey: "plainText")
+            textItem.setValue(Self.headingLevel(for: content), forKey: "headingLevel")
+            textItem.setValue(Self.isChecked(for: content), forKey: "isChecked")
+            // `alignment`/`customStyleId` have no equivalent in the pre-NO-005
+            // block model, so every migrated block leaves them unset.
+
+            // TextMark — one row per inline mark BlockContent recorded.
+            for mark in decomposition.marks {
+                let textMark = NSEntityDescription.insertNewObject(forEntityName: "TextMark", into: destinationContext)
+                textMark.setValue(UUID().uuidString, forKey: "id")
+                textMark.setValue(blockId, forKey: "itemId")
+                textMark.setValue(Int64(mark.startOffset), forKey: "startOffset")
+                textMark.setValue(Int64(mark.endOffset), forKey: "endOffset")
+                textMark.setValue(mark.markType, forKey: "markType")
+                textMark.setValue(mark.valueMode, forKey: "valueMode")
+                textMark.setValue(mark.valueText, forKey: "valueText")
+            }
+        } else {
+            // An unrecognized/legacy `type` string can't be safely
+            // reinterpreted as any known `BlockType` — decoding its
+            // `contentJSON` against the wrong shape (e.g. `.paragraph`'s
+            // `{type, text}`) would silently produce an empty result and
+            // lose the block's real content. Per `tasks/NO-005.md` §7
+            // "알 수 없는 contentType을 만난 경우: 임의로 삭제하지 않고
+            // 읽기 전용으로 보존", preserve the untouched, raw
+            // `contentJSON` as `plainText` instead, and mark the kind as
+            // `"unknown"` so the editor can render it read-only rather
+            // than mistaking it for real paragraph text. Mark
+            // decomposition is skipped — there's no reliable shape to
+            // parse offsets/marks out of.
+            textItem.setValue("unknown", forKey: "textKind")
+            textItem.setValue(contentJSON, forKey: "plainText")
+            textItem.setValue(nil, forKey: "headingLevel")
+            textItem.setValue(nil, forKey: "isChecked")
         }
 
         // Required so `NSMigrationManager` can resolve "the DocumentItem
