@@ -42,6 +42,16 @@ enum StoreMigrationCoordinator {
         /// actually opens) failed. The backup has been restored to
         /// `storeURL`, so the person is back on their pre-migration data.
         case storeSwapFailed(underlying: Error)
+        /// Swapping the migrated store into place failed (`underlying`),
+        /// *and* the attempt to restore `storeURL` from the pre-migration
+        /// backup afterward also failed (`rollbackError`). Unlike
+        /// `storeSwapFailed`, this does **not** mean the person is safely
+        /// back on their pre-migration data — `storeURL` may be missing or
+        /// partially written, and this needs surfacing distinctly (rather
+        /// than being reported as an ordinary migration failure) so it can
+        /// be treated as a data-at-risk situation, not just a failed
+        /// upgrade.
+        case rollbackFailed(underlying: Error, rollbackError: Error)
 
         var errorDescription: String? {
             switch self {
@@ -53,6 +63,9 @@ enum StoreMigrationCoordinator {
                 return "Store migration failed: \(underlying.localizedDescription)"
             case .storeSwapFailed(let underlying):
                 return "Couldn't switch to the migrated store: \(underlying.localizedDescription)"
+            case .rollbackFailed(let underlying, let rollbackError):
+                return "Store migration failed (\(underlying.localizedDescription)) and restoring the pre-migration "
+                    + "backup also failed (\(rollbackError.localizedDescription)) — the existing data may be at risk."
             }
         }
     }
@@ -77,10 +90,14 @@ enum StoreMigrationCoordinator {
     /// back up the pre-migration store, run the custom
     /// `SemiboldMigrationMapping` migration into a staging file, verify the
     /// staging file actually opens, then atomically swap it into place at
-    /// `storeURL`. Any failure along the way restores `storeURL` from the
-    /// backup this method just made (so the file left behind is always
-    /// either the fully-migrated store or the original pre-migration store
-    /// — never a partial/corrupted one) and rethrows as `MigrationError`.
+    /// `storeURL`. `storeURL` is only ever read from — never written to —
+    /// until that final swap, so a failure before the swap (backup, or
+    /// migration-to-staging) simply rethrows as `MigrationError`, leaving
+    /// `storeURL` untouched; only a failure during or after the swap itself
+    /// restores `storeURL` from the backup this method just made. Either
+    /// way, the file left behind at `storeURL` is always either the
+    /// fully-migrated store or the original pre-migration store — never a
+    /// partial/corrupted one.
     ///
     /// - Parameters:
     ///   - storeURL: The on-disk SQLite store `DatabaseManager` is about to
@@ -146,11 +163,12 @@ enum StoreMigrationCoordinator {
         } catch {
             removeStoreFiles(at: stagingURL)
             // `storeURL` was only ever read from during migration, never
-            // written to, so this restore is a defensive no-op in
-            // practice — but it keeps this failure path going through the
-            // same, single rollback routine every other failure path uses
-            // (AC7 "롤백하는 경로가 구현되어 있고").
-            try? restoreBackup(from: backupURL, to: storeURL)
+            // written to (migration reads `storeURL` and writes to the
+            // separate staging file) — so there is nothing at `storeURL`
+            // to roll back, and calling `restoreBackup` here would only
+            // expose the still-untouched, still-good `storeURL` to
+            // unnecessary risk. Just propagate the failure; the backup
+            // stays on disk for the next launch to retry from.
             throw MigrationError.migrationFailed(underlying: error)
         }
 
@@ -164,7 +182,19 @@ enum StoreMigrationCoordinator {
             try verifyStoreLoads(at: storeURL, model: destinationModel)
         } catch {
             removeStoreFiles(at: stagingURL)
-            try? restoreBackup(from: backupURL, to: storeURL)
+            // Unlike the migration-to-staging failure above, `storeURL`
+            // may genuinely have been mutated here (the swap started or
+            // completed before verification failed), so it needs rolling
+            // back from the backup. Do not swallow a rollback failure: if
+            // it happens, that's a more severe, distinct situation than an
+            // ordinary migration failure (the person's data may now be at
+            // risk, not just un-upgraded), so it must surface as its own
+            // error rather than being reported as a plain `storeSwapFailed`.
+            do {
+                try restoreBackup(from: backupURL, to: storeURL)
+            } catch let rollbackError {
+                throw MigrationError.rollbackFailed(underlying: error, rollbackError: rollbackError)
+            }
             throw MigrationError.storeSwapFailed(underlying: error)
         }
 
@@ -198,52 +228,116 @@ enum StoreMigrationCoordinator {
 
     /// Restores `storeURL` (and its sidecars) from `backupURL`, so a failed
     /// migration leaves the person on their original, pre-migration data
-    /// rather than a partially-written store. Copies (not moves) from the
-    /// backup, so the backup itself is still there if this needs to run
-    /// again on a subsequent launch (§7 "다음 실행 시 백업 스냅샷에서 재시도").
+    /// rather than a partially-written store.
+    ///
+    /// This never deletes anything at `storeURL` until a complete, verified
+    /// copy of the backup is already sitting on disk ready to swap in: it
+    /// first copies the backup to a disposable restore-staging location
+    /// (mirroring how `migrateStoreIfNeeded` stages a migrated store before
+    /// touching `storeURL`), and only once that copy has fully succeeded
+    /// does it hand off to the same atomic swap `swapInMigratedStore` uses.
+    /// If the copy step throws partway (disk full, permissions, interrupted
+    /// process), `storeURL` is untouched — worst case this leaves a partial
+    /// file at the restore-staging location, which the next attempt clears
+    /// before retrying.
+    ///
+    /// Reads (not moves) from `backupURL`, so the backup itself is still
+    /// there if this needs to run again on a subsequent launch (§7 "다음
+    /// 실행 시 백업 스냅샷에서 재시도").
     private static func restoreBackup(from backupURL: URL, to storeURL: URL) throws {
         let fileManager = FileManager.default
-        removeStoreFiles(at: storeURL)
+        let restoreStagingURL = self.restoreStagingURL(for: storeURL)
+        removeStoreFiles(at: restoreStagingURL) // clear any leftover from a prior interrupted restore
 
-        try fileManager.copyItem(at: backupURL, to: storeURL)
+        try fileManager.copyItem(at: backupURL, to: restoreStagingURL)
         for suffix in sidecarSuffixes {
             let source = sidecarURL(for: backupURL, suffix: suffix)
             guard fileManager.fileExists(atPath: source.path) else { continue }
-            try fileManager.copyItem(at: source, to: sidecarURL(for: storeURL, suffix: suffix))
+            try fileManager.copyItem(at: source, to: sidecarURL(for: restoreStagingURL, suffix: suffix))
+        }
+
+        // The staged copy is now a complete duplicate of the backup,
+        // confirmed on disk. Only now is it safe to swap it into
+        // `storeURL`'s place.
+        do {
+            try swapInMigratedStore(from: restoreStagingURL, to: storeURL)
+        } catch {
+            removeStoreFiles(at: restoreStagingURL)
+            throw error
         }
     }
 
-    /// Moves the freshly-migrated store at `stagingURL` into `storeURL`'s
-    /// place. The main file swap goes through
+    /// Atomically swaps the store at `sourceURL` (a fully-written,
+    /// disposable staging copy — either a freshly-migrated store or a
+    /// freshly-staged restore-from-backup copy) into `storeURL`'s place.
+    ///
+    /// The main file swap goes through
     /// `FileManager.replaceItemAt(_:withItemAt:)`, which is the standard
-    /// atomic file-replace API; the `-wal`/`-shm` sidecars (which that API
+    /// atomic file-replace API. The `-wal`/`-shm` sidecars (which that API
     /// doesn't know about) are staged under temporary names *before* the
-    /// main swap and only renamed into their final names afterward, so the
-    /// main file — the one thing `isConfiguration(withName:
-    /// compatibleWithStoreMetadata:)` inspects on the next launch — only
-    /// ever flips in a single atomic step.
-    private static func swapInMigratedStore(from stagingURL: URL, to storeURL: URL) throws {
+    /// main swap, but `storeURL`'s *existing* sidecars are only removed
+    /// *after* the main file swap has succeeded — never before. Deleting
+    /// them first would leave a window where `storeURL`'s pre-swap main
+    /// file is still the one on disk but has lost its WAL journal; for a
+    /// WAL-mode SQLite store that was previously terminated abnormally
+    /// (e.g. a backgrounded/OOM-killed app — a normal iOS event), some
+    /// committed data can live only in that WAL file, so deleting it early
+    /// could silently and permanently lose data even if the process is
+    /// killed before `replaceItemAt` runs.
+    ///
+    /// Once `replaceItemAt` has succeeded, `storeURL`'s old sidecars no
+    /// longer apply to the new main file (a WAL is only meaningful
+    /// alongside the exact file it was journaling for), so they need to be
+    /// cleared out and, where a staged replacement exists, replaced with
+    /// it. For every suffix that has a staged replacement, that suffix's
+    /// old sidecar is removed and its replacement moved into place as one
+    /// tight, back-to-back step — never interleaved with work on any other
+    /// suffix — so there is no window where that suffix's old sidecar is
+    /// gone but its replacement isn't yet at its final path. Only a suffix
+    /// with *no* staged replacement (the migrated/restored store simply
+    /// had none, e.g. a cleanly-checkpointed source with no `-wal`/`-shm`)
+    /// has its stale old sidecar removed on its own — there's nothing
+    /// replacing it, so nothing to race against.
+    private static func swapInMigratedStore(from sourceURL: URL, to storeURL: URL) throws {
         let fileManager = FileManager.default
 
-        var pendingSidecarRenames: [(from: URL, to: URL)] = []
+        // Stage the source's sidecars under temporary "incoming" names next
+        // to the destination, without touching any of the destination's
+        // existing files yet.
+        var pendingSidecarRenames: [(suffix: String, from: URL, to: URL)] = []
         for suffix in sidecarSuffixes {
-            let stagingSidecar = sidecarURL(for: stagingURL, suffix: suffix)
-            guard fileManager.fileExists(atPath: stagingSidecar.path) else { continue }
-            let incoming = stagingSidecar.appendingPathExtension("incoming")
+            let sourceSidecar = sidecarURL(for: sourceURL, suffix: suffix)
+            guard fileManager.fileExists(atPath: sourceSidecar.path) else { continue }
+            let incoming = sidecarURL(for: storeURL, suffix: suffix).appendingPathExtension("incoming")
             try? fileManager.removeItem(at: incoming)
-            try fileManager.moveItem(at: stagingSidecar, to: incoming)
-            pendingSidecarRenames.append((from: incoming, to: sidecarURL(for: storeURL, suffix: suffix)))
+            try fileManager.moveItem(at: sourceSidecar, to: incoming)
+            pendingSidecarRenames.append((suffix: suffix, from: incoming, to: sidecarURL(for: storeURL, suffix: suffix)))
         }
 
-        for suffix in sidecarSuffixes {
-            try? fileManager.removeItem(at: sidecarURL(for: storeURL, suffix: suffix))
-        }
+        // The one atomic step that actually changes what's "the store" at
+        // `storeURL` — up to and including this call, `storeURL`'s
+        // original main file *and* its original sidecars are both still
+        // fully intact together.
+        _ = try fileManager.replaceItemAt(storeURL, withItemAt: sourceURL)
 
-        _ = try fileManager.replaceItemAt(storeURL, withItemAt: stagingURL)
-
+        // Only now that the main file has flipped do the old sidecars (which
+        // no longer correspond to what's on disk) get cleared. Suffixes with
+        // a staged replacement are handled first, one suffix at a time, via
+        // `replaceItemAt` — the same atomic-replace primitive used for the
+        // main store file above, not a separate remove-then-move pair — so
+        // there's no window where a suffix's old sidecar is gone and its
+        // replacement isn't yet in place. `replaceItemAt` also handles the
+        // case where the suffix has no existing old file at `rename.to`: it
+        // simply moves `rename.from` into place, same as a plain move.
+        // Only after that do suffixes with no replacement get their stale
+        // old sidecar removed on its own — safe because nothing is standing
+        // in to take its place.
+        let suffixesWithReplacement = Set(pendingSidecarRenames.map(\.suffix))
         for rename in pendingSidecarRenames {
-            try? fileManager.removeItem(at: rename.to)
-            try fileManager.moveItem(at: rename.from, to: rename.to)
+            _ = try fileManager.replaceItemAt(rename.to, withItemAt: rename.from)
+        }
+        for suffix in sidecarSuffixes where !suffixesWithReplacement.contains(suffix) {
+            try? fileManager.removeItem(at: sidecarURL(for: storeURL, suffix: suffix))
         }
     }
 
@@ -291,6 +385,16 @@ enum StoreMigrationCoordinator {
     /// to the real store so the final swap is a same-volume move/replace.
     static func stagingURL(for storeURL: URL) -> URL {
         renamedStoreURL(storeURL, suffix: "migrating")
+    }
+
+    /// Where `restoreBackup` stages a full copy of `backupURL` while it's
+    /// being written, before swapping it into `storeURL`'s place. Kept next
+    /// to the real store for the same same-volume move/replace reason as
+    /// `stagingURL(for:)`, and named distinctly from it so a migration
+    /// staging file and a restore staging file can never collide if a
+    /// migration failure and a rollback ever needed to coexist mid-attempt.
+    static func restoreStagingURL(for storeURL: URL) -> URL {
+        renamedStoreURL(storeURL, suffix: "restoring")
     }
 
     private static func renamedStoreURL(_ storeURL: URL, suffix: String) -> URL {
