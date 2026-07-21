@@ -1,19 +1,20 @@
 import Foundation
 
-/// Converts a legacy integer `DocumentBlock.sortOrder` into the
-/// string-based fractional index `DocumentItem.orderKey` uses
+/// Builds the string-based fractional index `DocumentItem.orderKey` uses
 /// (`tasks/NO-005.md` §2.2) — a string order key that lets a new item be
 /// inserted between two existing siblings later without renumbering the
 /// whole list.
 ///
-/// This is only the migration-time conversion: it reproduces a
-/// deterministic, lexicographically-sortable key per old `sortOrder`
-/// value, not a general-purpose fractional-index generator (that belongs
-/// to the DocumentItem repository layer, `tasks/NO-005.md` §4.3, out of
-/// this brief's scope). Siblings are spaced 100 apart internally (matching
-/// the spacing `STORAGE_ARCHITECTURE.md` §4's `"000100"`/`"000200"`
-/// worked example uses, so a later insert between two migrated items
-/// still has room) — the emitted string is wider than that example
+/// `fromLegacySortOrder` is the migration-time conversion: it reproduces a
+/// deterministic, lexicographically-sortable key per old
+/// `DocumentBlock.sortOrder` value. `between(_:_:)` is the general-purpose
+/// counterpart the DocumentItem repository layer's live callers use
+/// (`tasks/NO-005.md` §4.3) — `DetailViewModel` (NO-005's ViewModel
+/// migration) calls it when creating/reordering a block, instead of
+/// renumbering every sibling. Both keep siblings spaced 100 apart
+/// internally (matching the spacing `STORAGE_ARCHITECTURE.md` §4's
+/// `"000100"`/`"000200"` worked example uses, so a later insert between two
+/// items still has room) — the emitted string is wider than that example
 /// because of the fixed padding/offset below, e.g. `sortOrder = 0` →
 /// `"0100000000"`, not `"000100"`.
 enum OrderKey {
@@ -68,5 +69,118 @@ enum OrderKey {
         let spaced = min(shifted, maxSpaced / 100) * 100
         let digits = String(spaced)
         return String(repeating: "0", count: paddedWidth - digits.count) + digits
+    }
+
+    /// The spacing `fromLegacySortOrder` leaves between two consecutive
+    /// migrated siblings — reused by `after`/`before` below so a freshly
+    /// created item next to migrated ones keeps the same headroom for
+    /// further inserts.
+    private static let spacing: Int64 = 100
+
+    /// Builds a fresh `orderKey` for a new sibling, given its immediate
+    /// neighbors' current `orderKey`s (`nil` meaning "no sibling on that
+    /// side" — the very start/end of the list, or an otherwise-empty
+    /// parent). This is the live, general-purpose counterpart to
+    /// `fromLegacySortOrder` this file's original scope note deferred to
+    /// "the DocumentItem repository layer" (`tasks/NO-005.md` §2.2) —
+    /// `DetailViewModel` (`markdown-phase4`'s NO-005 ViewModel migration)
+    /// is that caller, using this instead of renumbering every sibling on
+    /// every block create/reorder.
+    ///
+    /// Only ever touches the ONE item being inserted/moved — every other
+    /// sibling's `orderKey` stays exactly as it was, which is the whole
+    /// point of a fractional/string order key over the old integer
+    /// `sortOrder` (`tasks/NO-005.md` §2.2's motivation).
+    static func between(_ lower: String?, _ upper: String?) -> String {
+        switch (lower, upper) {
+        case (nil, nil):
+            return fromLegacySortOrder(0)
+        case (nil, let upper?):
+            return before(upper)
+        case (let lower?, nil):
+            return after(lower)
+        case (let lower?, let upper?):
+            return digitMidpoint(lower, upper)
+        }
+    }
+
+    /// A key spaced `spacing` after `previous`, for appending a sibling
+    /// with nothing after it (e.g. a new block added at the end of the
+    /// document). Falls back to `digitMidpoint` (open-ended above) if
+    /// `previous` isn't in the plain fixed-width numeric shape this
+    /// spacing arithmetic expects — e.g. it was itself produced by an
+    /// earlier `digitMidpoint` digit-growth fallback.
+    private static func after(_ previous: String) -> String {
+        guard previous.count == paddedWidth, let value = Int64(previous) else {
+            return digitMidpoint(previous, nil)
+        }
+        let next = min(value + spacing, maxSpaced)
+        guard next > value else { return digitMidpoint(previous, nil) }
+        let digits = String(next)
+        return String(repeating: "0", count: paddedWidth - digits.count) + digits
+    }
+
+    /// A key spaced `spacing` before `next`, for inserting a sibling with
+    /// nothing before it (e.g. moving a block to the very top). Mirrors
+    /// `after` above, floored at 0.
+    private static func before(_ next: String) -> String {
+        guard next.count == paddedWidth, let value = Int64(next), value > 0 else {
+            return digitMidpoint(nil, next)
+        }
+        let previous = max(value - spacing, 0)
+        guard previous < value else { return digitMidpoint(nil, next) }
+        let digits = String(previous)
+        return String(repeating: "0", count: paddedWidth - digits.count) + digits
+    }
+
+    /// Finds a decimal digit string strictly between `lower` and `upper`
+    /// (each `nil` meaning an open bound — 0 below, or "no ceiling" above)
+    /// by walking digit-by-digit until there's room for a value strictly
+    /// between the two at that position, growing the result by one more
+    /// digit at a time only when it has to. A missing digit on either
+    /// side (one key shorter than the other, or a `nil` bound) is treated
+    /// as `0`, EXCEPT a `nil` `upper` bound, which is treated as one past
+    /// `9` at every position so there's always room above any finite
+    /// `lower` value.
+    ///
+    /// Every key this method returns keeps `lower`'s existing digits as
+    /// its own prefix wherever it had to grow past the shorter of the two
+    /// inputs — since a longer string that shares a shorter one's digits
+    /// as a prefix always sorts after it lexicographically (`"12" <
+    /// "120"` the same way `"12" < "125"` does), this preserves the
+    /// "plain string comparison agrees with fraction order" guarantee
+    /// `fromLegacySortOrder`'s doc comment establishes, even once keys
+    /// stop sharing one fixed width.
+    ///
+    /// Bounded to `maxDigitGrowth` digits of growth so a caller can never
+    /// hit an infinite loop even if `lower`/`upper` were passed in an
+    /// already-invalid order (`lower >= upper`) — falls back to `lower`
+    /// (or `""`) with a single disambiguating digit appended in that case.
+    private static func digitMidpoint(_ lower: String?, _ upper: String?) -> String {
+        let lowerDigits = Array(lower ?? "")
+        let upperDigits = upper.map(Array.init)
+        var result = ""
+        var index = 0
+        let maxDigitGrowth = 64
+
+        while index < maxDigitGrowth {
+            let lowDigit = index < lowerDigits.count ? (lowerDigits[index].wholeNumberValue ?? 0) : 0
+            let highDigit: Int
+            if let upperDigits {
+                highDigit = index < upperDigits.count ? (upperDigits[index].wholeNumberValue ?? 0) : 0
+            } else {
+                // No upper bound — always leave room above `lowDigit`.
+                highDigit = 10
+            }
+
+            if highDigit - lowDigit >= 2 {
+                result.append(Character(String(lowDigit + (highDigit - lowDigit) / 2)))
+                return result
+            }
+            result.append(Character(String(lowDigit)))
+            index += 1
+        }
+
+        return (lower ?? "") + "5"
     }
 }

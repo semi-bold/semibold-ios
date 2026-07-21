@@ -1,9 +1,13 @@
 import Foundation
 
-/// Markdown prefix-detection and `markdownSource` helpers for
-/// `DetailViewModel.updateBlockText`'s block-type conversions
-/// (`markdown-phase4` AC1-AC5: heading/list/checklist/blockquote/code
-/// block).
+/// Markdown prefix-detection helpers for `DetailViewModel.updateBlockText`'s
+/// block-type conversions (`markdown-phase4` AC1-AC5: heading/list/
+/// checklist/blockquote/code block), plus the `markdownSource`-rebuilding
+/// helpers `DetailView`'s Markdown-export bridge (see
+/// `DetailView.swift`'s `markdownBridgeBlocks`) uses to reconstruct each
+/// block's literal Markdown line from its `textKind`/plain text, since
+/// `TextContent` itself has no `markdownSource` field to store one in
+/// (`DOCUMENT_MODEL.md` §4.1's `text_items` shape only has `plain_text`).
 ///
 /// Split out of `DetailViewModel.swift` (which had grown past SwiftLint's
 /// `file_length` warning threshold) once AC4 (blockquote) added another
@@ -19,11 +23,8 @@ extension DetailViewModel {
         /// The heading level (1-3), from the number of leading `#`s.
         let level: Int
         /// The text after the prefix, shown in the editor and stored as
-        /// the heading's `RichTextSpan`.
+        /// `TextContent.plainText`.
         let text: String
-        /// The full literal Markdown (`"# Title"`, …) to keep as
-        /// `markdownSource` for round-tripping (§8.1 comment).
-        let markdownSource: String
     }
 
     /// Detects whether `text` (the block's full text right after this
@@ -49,21 +50,11 @@ extension DetailViewModel {
         guard afterHashes.first == " " else { return nil }
 
         let remainder = String(afterHashes.dropFirst())
-        return HeadingConversion(level: hashCount, text: remainder, markdownSource: text)
+        return HeadingConversion(level: hashCount, text: remainder)
     }
 
-    /// Reads the `level` (1-3) out of a `.heading` block's `contentJSON`,
-    /// defaulting to 1 if it's missing/malformed.
-    static func headingLevel(forContentJSON json: String) -> Int {
-        if case .heading(let content) = BlockContent.decode(from: json, type: .heading) {
-            return content.level
-        }
-        return 1
-    }
-
-    /// Rebuilds the literal Markdown `markdownSource` (`"# Title"`, …) for
-    /// a heading block at `level` holding `text`, so further edits keep
-    /// round-tripping correctly.
+    /// Rebuilds the literal Markdown (`"# Title"`, …) for a heading block
+    /// at `level` holding `text`, for the Markdown-export bridge.
     static func headingMarkdownSource(level: Int, text: String) -> String {
         String(repeating: "#", count: level) + " " + text
     }
@@ -71,24 +62,12 @@ extension DetailViewModel {
     /// A detected Markdown list-item prefix (`- ` or `<n>. `), ready to
     /// apply to a block.
     struct ListConversion {
-        /// The block type to convert to (`.bulletedListItem` or
-        /// `.numberedListItem`).
-        let type: BlockType
+        /// The `TextContent.textKind` to convert to — `TextItemKind
+        /// .bulletedListItem` or `.numberedListItem`.
+        let textKind: String
         /// The text after the prefix, shown in the editor and stored as
-        /// the list item's `RichTextSpan`.
+        /// `TextContent.plainText`.
         let text: String
-        /// The full literal Markdown (`"- item"`, `"1. item"`) to keep as
-        /// `markdownSource` for round-tripping (§8.1 comment).
-        let markdownSource: String
-
-        /// Builds this conversion's `contentJSON` for `text`, matching
-        /// `type`.
-        func contentJSON(text: String) -> String {
-            switch type {
-            case .numberedListItem: return BlockContent.numberedListItemJSON(text: text)
-            default: return BlockContent.bulletedListItemJSON(text: text)
-            }
-        }
     }
 
     /// Detects whether `text` (the block's full text right after this
@@ -111,7 +90,7 @@ extension DetailViewModel {
     static func listConversion(forTypedText text: String) -> ListConversion? {
         if text.hasPrefix("- "), checklistConversion(forTypedText: text) == nil {
             let remainder = String(text.dropFirst(2))
-            return ListConversion(type: .bulletedListItem, text: remainder, markdownSource: text)
+            return ListConversion(textKind: TextItemKind.bulletedListItem, text: remainder)
         }
 
         var digitCount = 0
@@ -128,19 +107,17 @@ extension DetailViewModel {
         guard afterDigits.first == ".", afterDigits.dropFirst().first == " " else { return nil }
 
         let remainder = String(afterDigits.dropFirst(2))
-        return ListConversion(type: .numberedListItem, text: remainder, markdownSource: text)
+        return ListConversion(textKind: TextItemKind.numberedListItem, text: remainder)
     }
 
-    /// Rebuilds the literal Markdown `markdownSource` (`"- item"`) for a
-    /// bulleted list item holding `text`, so further edits keep
-    /// round-tripping correctly.
+    /// Rebuilds the literal Markdown (`"- item"`) for a bulleted list item
+    /// holding `text`, for the Markdown-export bridge.
     static func bulletedListMarkdownSource(text: String) -> String {
         "- " + text
     }
 
-    /// Rebuilds the literal Markdown `markdownSource` (`"<n>. item"`) for a
-    /// numbered list item at `number` holding `text`, so further edits keep
-    /// round-tripping correctly.
+    /// Rebuilds the literal Markdown (`"<n>. item"`) for a numbered list
+    /// item at `number` holding `text`, for the Markdown-export bridge.
     static func numberedListMarkdownSource(number: Int, text: String) -> String {
         "\(number). " + text
     }
@@ -152,11 +129,8 @@ extension DetailViewModel {
         /// (`- [ ] `).
         let checked: Bool
         /// The text after the prefix, shown in the editor and stored as
-        /// the checklist item's `RichTextSpan`.
+        /// `TextContent.plainText`.
         let text: String
-        /// The full literal Markdown (`"- [ ] task"`, `"- [x] task"`) to
-        /// keep as `markdownSource` for round-tripping (§8.1 comment).
-        let markdownSource: String
     }
 
     /// Detects whether `text` (the block's full text right after this
@@ -168,8 +142,8 @@ extension DetailViewModel {
     /// caller leaves the block as a paragraph (or falls through to
     /// `listConversion(forTypedText:)`'s plain `- item` bulleted-list
     /// check). This check runs BEFORE that bulleted-list check in
-    /// `updateBlockText`, so `"- [ ] task"`/`"- [x] task"` convert to
-    /// `.checklistItem` rather than `.bulletedListItem` with a literal
+    /// `updateBlockText`, so `"- [ ] task"`/`"- [x] task"` convert to a
+    /// checklist item rather than a bulleted list item with a literal
     /// `"[ ] task"`/`"[x] task"` as their text.
     ///
     /// Per §7.3's literal syntax table, only the lowercase `x` marks a
@@ -179,19 +153,18 @@ extension DetailViewModel {
     static func checklistConversion(forTypedText text: String) -> ChecklistConversion? {
         if text.hasPrefix("- [ ] ") {
             let remainder = String(text.dropFirst("- [ ] ".count))
-            return ChecklistConversion(checked: false, text: remainder, markdownSource: text)
+            return ChecklistConversion(checked: false, text: remainder)
         }
         if text.hasPrefix("- [x] ") {
             let remainder = String(text.dropFirst("- [x] ".count))
-            return ChecklistConversion(checked: true, text: remainder, markdownSource: text)
+            return ChecklistConversion(checked: true, text: remainder)
         }
         return nil
     }
 
-    /// Rebuilds the literal Markdown `markdownSource` (`"- [ ] task"` /
-    /// `"- [x] task"`) for a checklist item holding `text`, based on its
-    /// current `checked` state, so further edits and toggles keep
-    /// round-tripping correctly.
+    /// Rebuilds the literal Markdown (`"- [ ] task"` / `"- [x] task"`) for
+    /// a checklist item holding `text`, based on its current `checked`
+    /// state, for the Markdown-export bridge.
     static func checklistMarkdownSource(checked: Bool, text: String) -> String {
         (checked ? "- [x] " : "- [ ] ") + text
     }
@@ -200,11 +173,8 @@ extension DetailViewModel {
     /// block.
     struct BlockquoteConversion {
         /// The text after the prefix, shown in the editor and stored as
-        /// the blockquote's `RichTextSpan`.
+        /// `TextContent.plainText`.
         let text: String
-        /// The full literal Markdown (`"> quote"`) to keep as
-        /// `markdownSource` for round-tripping (§8.1 comment).
-        let markdownSource: String
     }
 
     /// Detects whether `text` (the block's full text right after this
@@ -222,12 +192,11 @@ extension DetailViewModel {
     static func blockquoteConversion(forTypedText text: String) -> BlockquoteConversion? {
         guard text.hasPrefix("> ") else { return nil }
         let remainder = String(text.dropFirst(2))
-        return BlockquoteConversion(text: remainder, markdownSource: text)
+        return BlockquoteConversion(text: remainder)
     }
 
-    /// Rebuilds the literal Markdown `markdownSource` (`"> quote"`) for a
-    /// blockquote block holding `text`, so further edits keep
-    /// round-tripping correctly.
+    /// Rebuilds the literal Markdown (`"> quote"`) for a blockquote block
+    /// holding `text`, for the Markdown-export bridge.
     static func blockquoteMarkdownSource(text: String) -> String {
         "> " + text
     }
@@ -237,12 +206,12 @@ extension DetailViewModel {
     struct CodeBlockConversion {
         /// The language identifier typed right after the opening fence
         /// (e.g. `"swift"` for ` ```swift `), or `nil` if the fence had no
-        /// language.
+        /// language. Not persisted — see `updateBlockText`'s doc comment.
         let language: String?
         /// Any text typed after the fence (and its language, and the single
         /// space separating them, if present) — becomes the code block's
-        /// initial `code` content. Empty if the user has only typed the
-        /// fence (and language) so far.
+        /// initial `TextContent.plainText`. Empty if the user has only
+        /// typed the fence (and language) so far.
         let code: String
     }
 
@@ -282,11 +251,10 @@ extension DetailViewModel {
         return CodeBlockConversion(language: language.isEmpty ? nil : language, code: String(remainder))
     }
 
-    /// Rebuilds the literal Markdown `markdownSource` for a code block at
-    /// `language` (or no language) holding `code`, keeping the closing
-    /// fence so the block round-trips as ` ```<language>\n<code>\n``` `
-    /// (§8.1 comment), rebuilt on every edit like AC1-AC4's
-    /// `*MarkdownSource` builders.
+    /// Rebuilds the literal Markdown for a code block at `language` (or no
+    /// language) holding `code`, keeping the closing fence so the block
+    /// round-trips as ` ```<language>\n<code>\n``` ` (§8.1 comment), for the
+    /// Markdown-export bridge.
     static func codeBlockMarkdownSource(language: String?, code: String) -> String {
         "```\(language ?? "")\n\(code)\n```"
     }

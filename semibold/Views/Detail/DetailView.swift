@@ -249,7 +249,7 @@ struct DetailView: View {
     /// requests the export — not on every `body` re-evaluation (e.g. every
     /// keystroke).
     private var exportShareLink: some View {
-        let export = MarkdownDocumentExport(documentTitle: viewModel.document.title, blocks: viewModel.blocks)
+        let export = MarkdownDocumentExport(documentTitle: viewModel.document.title, blocks: markdownExportBlocks)
         return ShareLink(
             item: export,
             preview: SharePreview(
@@ -258,6 +258,113 @@ struct DetailView: View {
         ) {
             Image(systemName: "square.and.arrow.up")
                 .foregroundStyle(AppTheme.Colors.accent)
+        }
+    }
+
+    /// Bridges `DetailViewModel`'s NO-005 `[DocumentItem]`/`TextContent`
+    /// content back into the pre-NO-005 `[DocumentBlock]` shape
+    /// `MarkdownExporter`/`MarkdownDocumentExport` still expect. Rewriting
+    /// those two types against `TextItem`/`TextMark` directly is AC6 — a
+    /// separate, later migration session (`tasks/NO-005.md` §8 Phase 5) —
+    /// so this keeps the existing "파일 저장 또는 공유" export button working
+    /// unchanged in the meantime, reconstructing each block's `contentJSON`/
+    /// `markdownSource` from its `textKind`/plain text on demand.
+    ///
+    /// Inline formatting marks aren't folded back in here (see
+    /// `DetailViewModel.marksByItemId`'s doc comment on why this editor
+    /// doesn't generate them from typed Markdown yet) — a block's `plainText`
+    /// already keeps any Markdown delimiters the user typed literally, so a
+    /// plain paragraph/heading/etc. block still exports its bold/italic/etc.
+    /// text correctly; only content that already carried `TextMark` rows
+    /// from migrated pre-NO-005 data would export without them until AC6.
+    private var markdownExportBlocks: [DocumentBlock] {
+        viewModel.items.map { item in
+            let content = viewModel.textContent(forItemId: item.id)
+            let type = Self.blockType(forTextKind: content.textKind)
+            let (contentJSON, markdownSource) = Self.exportPayload(
+                for: type,
+                content: content,
+                numberedListNumber: viewModel.numberedListNumber(forItemId: item.id)
+            )
+            return DocumentBlock(
+                id: item.id,
+                documentId: item.documentId,
+                sortOrder: 0,
+                type: type,
+                contentJSON: contentJSON,
+                markdownSource: markdownSource,
+                createdAt: item.createdAt,
+                updatedAt: item.updatedAt
+            )
+        }
+    }
+
+    /// The pre-NO-005 `BlockType` that corresponds to `textKind`, the
+    /// reverse of `DocumentBlockMigrationPolicy.textKind(for:)`. Falls back
+    /// to `.paragraph` for `TextItemKind.unknown` (content this build
+    /// doesn't recognize) — export has no better option than treating it as
+    /// plain text.
+    private static func blockType(forTextKind textKind: String) -> BlockType {
+        switch textKind {
+        case TextItemKind.heading: return .heading
+        case TextItemKind.quote: return .blockquote
+        case TextItemKind.checklist: return .checklistItem
+        case TextItemKind.bulletedListItem: return .bulletedListItem
+        case TextItemKind.numberedListItem: return .numberedListItem
+        case TextItemKind.codeBlock: return .codeBlock
+        case TextItemKind.divider: return .divider
+        default: return .paragraph
+        }
+    }
+
+    /// The `contentJSON`/`markdownSource` pair `markdownExportBlocks` needs
+    /// for one block, rebuilt from `content` using the same builders
+    /// `DetailViewModel+MarkdownConversion.swift` uses for live editing.
+    private static func exportPayload(
+        for type: BlockType,
+        content: TextContent,
+        numberedListNumber: Int
+    ) -> (contentJSON: String, markdownSource: String?) {
+        switch type {
+        case .paragraph:
+            return (BlockContent.paragraphJSON(text: content.plainText), content.plainText)
+        case .heading:
+            let level = content.headingLevel ?? 1
+            return (
+                BlockContent.headingJSON(level: level, text: content.plainText),
+                DetailViewModel.headingMarkdownSource(level: level, text: content.plainText)
+            )
+        case .bulletedListItem:
+            return (
+                BlockContent.bulletedListItemJSON(text: content.plainText),
+                DetailViewModel.bulletedListMarkdownSource(text: content.plainText)
+            )
+        case .numberedListItem:
+            return (
+                BlockContent.numberedListItemJSON(text: content.plainText),
+                DetailViewModel.numberedListMarkdownSource(number: numberedListNumber, text: content.plainText)
+            )
+        case .checklistItem:
+            let checked = content.isChecked ?? false
+            return (
+                BlockContent.checklistItemJSON(checked: checked, text: content.plainText),
+                DetailViewModel.checklistMarkdownSource(checked: checked, text: content.plainText)
+            )
+        case .blockquote:
+            return (
+                BlockContent.blockquoteJSON(text: content.plainText),
+                DetailViewModel.blockquoteMarkdownSource(text: content.plainText)
+            )
+        case .codeBlock:
+            // The code fence's language identifier isn't stored on
+            // `TextContent` (see `updateBlockText`'s doc comment) — exports
+            // as a plain, language-less fence.
+            return (
+                BlockContent.codeBlockJSON(language: nil, code: content.plainText),
+                DetailViewModel.codeBlockMarkdownSource(language: nil, code: content.plainText)
+            )
+        case .divider:
+            return (BlockContent.dividerJSON(), nil)
         }
     }
 
@@ -291,37 +398,39 @@ struct DetailView: View {
     private var blockList: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(viewModel.blocks) { block in
+                ForEach(viewModel.items) { item in
                     BlockRow(
-                        block: block,
+                        item: item,
+                        content: viewModel.textContent(forItemId: item.id),
+                        numberedListNumber: viewModel.numberedListNumber(forItemId: item.id),
                         focusedBlockId: $focusedBlockId,
                         cursorOffsetToApply: $cursorOffsetToApply,
                         onTextChange: { text in
-                            viewModel.updateBlockText(block.id, text: text)
+                            viewModel.updateBlockText(item.id, text: text)
                         },
                         onEnter: { text, cursorOffset in
-                            viewModel.insertBlock(after: block.id, currentText: text, cursorOffset: cursorOffset)
+                            viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                         },
                         onBackspaceAtStart: { text in
-                            viewModel.mergeOrDeleteBlock(block.id, currentText: text)
+                            viewModel.mergeOrDeleteBlock(item.id, currentText: text)
                         },
                         onToggleChecklist: {
-                            viewModel.toggleChecklistItem(blockId: block.id)
+                            viewModel.toggleChecklistItem(blockId: item.id)
                         },
                         onLockTapped: {
-                            viewModel.lockBlockTapped(block.id)
+                            viewModel.lockBlockTapped(item.id)
                         }
                     )
                     // Drag & drop block reordering (§12.3): dropping
                     // another block onto this row moves it to this row's
                     // position (PLANNING §11.2 "블록 생성/삭제/순서 변경: 즉시
                     // 저장" — `moveBlock(id:beforeBlockId:)` persists the new
-                    // `sortOrder`s right away, no debounce). The drag itself
+                    // `orderKey` right away, no debounce). The drag itself
                     // starts from `BlockRow`'s trailing grip handle, so it
                     // doesn't conflict with tapping into the row to edit.
                     .dropDestination(for: String.self) { droppedIds, _ in
                         guard let draggedBlockId = droppedIds.first else { return false }
-                        viewModel.moveBlock(id: draggedBlockId, beforeBlockId: block.id)
+                        viewModel.moveBlock(id: draggedBlockId, beforeBlockId: item.id)
                         return true
                     }
                 }
@@ -362,17 +471,28 @@ struct DetailView: View {
 /// a text input for the block's content with a divider below
 /// (`Block_Editing`'s cursor when focused — callout ②).
 ///
-/// `.bulletedListItem`/`.numberedListItem` blocks show a `•`/`<n>.` marker
-/// before the editable text (§7.1/§7.3's `- item` / `1. item` syntax).
-/// `.checklistItem` blocks show a tappable checkbox in that same leading
-/// column — tapping it toggles the task's done/not-done state (§7.1).
-/// `.blockquote` blocks show a vertical rule in that same leading column and
-/// dim the quoted text, marking it as a quote (§7.1/§7.3's `> quote`
-/// syntax). `.codeBlock` blocks show their code in a monospaced font on a
-/// distinguishing surface background, with the fence's language identifier
-/// (if any) as a small label above the code (§7.1/§7.3's ` ```lang ` syntax).
+/// Bulleted/numbered list items show a `•`/`<n>.` marker before the
+/// editable text (§7.1/§7.3's `- item` / `1. item` syntax). Checklist
+/// items show a tappable checkbox in that same leading column — tapping it
+/// toggles the task's done/not-done state (§7.1). Blockquote blocks show a
+/// vertical rule in that same leading column and dim the quoted text,
+/// marking it as a quote (§7.1/§7.3's `> quote` syntax). Code blocks show
+/// their code in a monospaced font on a distinguishing surface background
+/// (§7.1/§7.3's ` ```lang ` syntax).
+///
+/// Backed by a `DocumentItem` (`item` — position/hierarchy) plus that
+/// item's `TextContent` (`content` — the actual text), per
+/// `DetailViewModel`'s NO-005 model, rather than the old single
+/// `DocumentBlock`. `content.textKind` is compared against `TextItemKind`'s
+/// constants rather than a closed `BlockType` enum — see
+/// `DetailViewModel.swift`'s `TextItemKind` doc comment.
 private struct BlockRow: View {
-    let block: DocumentBlock
+    let item: DocumentItem
+    let content: TextContent
+    /// This row's position among consecutive numbered-list-item siblings
+    /// (`DetailViewModel.numberedListNumber(forItemId:)`) — only meaningful
+    /// when `content.textKind == TextItemKind.numberedListItem`.
+    let numberedListNumber: Int
     var focusedBlockId: FocusState<String?>.Binding
     @Binding var cursorOffsetToApply: Int?
     let onTextChange: (String) -> Void
@@ -384,7 +504,9 @@ private struct BlockRow: View {
     @State private var text: String
 
     init(
-        block: DocumentBlock,
+        item: DocumentItem,
+        content: TextContent,
+        numberedListNumber: Int,
         focusedBlockId: FocusState<String?>.Binding,
         cursorOffsetToApply: Binding<Int?>,
         onTextChange: @escaping (String) -> Void,
@@ -393,7 +515,9 @@ private struct BlockRow: View {
         onToggleChecklist: @escaping () -> Void,
         onLockTapped: @escaping () -> Void
     ) {
-        self.block = block
+        self.item = item
+        self.content = content
+        self.numberedListNumber = numberedListNumber
         self.focusedBlockId = focusedBlockId
         self._cursorOffsetToApply = cursorOffsetToApply
         self.onTextChange = onTextChange
@@ -401,7 +525,7 @@ private struct BlockRow: View {
         self.onBackspaceAtStart = onBackspaceAtStart
         self.onToggleChecklist = onToggleChecklist
         self.onLockTapped = onLockTapped
-        _text = State(initialValue: block.displayText)
+        _text = State(initialValue: content.plainText)
     }
 
     /// The typography this block's text is shown in — heading levels 1-3
@@ -409,51 +533,47 @@ private struct BlockRow: View {
     /// (§7.1/§7.3's `# `/`## `/`### ` conversions); every other block type
     /// uses `.body`.
     private var textStyle: TextStyleToken {
-        switch block.type {
-        case .heading:
-            switch block.headingLevel {
-            case 1: return AppTheme.Typography.heading1
-            case 2: return AppTheme.Typography.heading2
-            default: return AppTheme.Typography.title
-            }
-        default:
-            return AppTheme.Typography.body
+        guard content.textKind == TextItemKind.heading else { return AppTheme.Typography.body }
+        switch content.headingLevel {
+        case 1: return AppTheme.Typography.heading1
+        case 2: return AppTheme.Typography.heading2
+        default: return AppTheme.Typography.title
         }
     }
 
-    /// The marker shown before a list item's text — a bullet for
-    /// `.bulletedListItem`, the item's number followed by a period for
-    /// `.numberedListItem` (§7.1/§7.3's `- item` / `1. item` syntax). `nil`
-    /// for every other block type, which shows no marker. `.checklistItem`
-    /// blocks show a checkbox instead, and `.blockquote` blocks show a
-    /// vertical rule, in the same leading column — see `body`.
+    /// The marker shown before a list item's text — a bullet for a
+    /// bulleted list item, the item's number followed by a period for a
+    /// numbered list item (§7.1/§7.3's `- item` / `1. item` syntax). `nil`
+    /// for every other block type, which shows no marker. Checklist items
+    /// show a checkbox instead, and blockquote blocks show a vertical
+    /// rule, in the same leading column — see `body`.
     private var listMarker: String? {
-        switch block.type {
-        case .bulletedListItem: return "•"
-        case .numberedListItem: return "\(block.numberedListNumber ?? 1)."
+        switch content.textKind {
+        case TextItemKind.bulletedListItem: return "•"
+        case TextItemKind.numberedListItem: return "\(numberedListNumber)."
         default: return nil
         }
     }
 
-    /// The color this block's text is shown in — `.blockquote` text is
+    /// The color this block's text is shown in — blockquote text is
     /// dimmed (`AppTheme.Colors.Content.secondary`) to read as a quote, distinct from
     /// the surrounding paragraph text; every other block type uses the
     /// primary text color.
     private var textColor: Color {
-        block.type == .blockquote ? AppTheme.Colors.Content.secondary : AppTheme.Colors.Content.primary
+        content.textKind == TextItemKind.quote ? AppTheme.Colors.Content.secondary : AppTheme.Colors.Content.primary
     }
 
     /// Whether this row's text is shown in a monospaced font — `true` for
-    /// `.codeBlock` blocks (§7.1/§7.3's ` ```lang ` syntax), so code reads
+    /// code blocks (§7.1/§7.3's ` ```lang ` syntax), so code reads
     /// distinctly from prose.
     private var isCodeBlock: Bool {
-        block.type == .codeBlock
+        content.textKind == TextItemKind.codeBlock
     }
 
-    /// Whether this block is a `.divider` — rendered as a horizontal rule
+    /// Whether this block is a divider — rendered as a horizontal rule
     /// with no editable text (the Slash Command "Divider" option, §12.2).
     private var isDivider: Bool {
-        block.type == .divider
+        content.textKind == TextItemKind.divider
     }
 
     var body: some View {
@@ -480,7 +600,7 @@ private struct BlockRow: View {
         }
     }
 
-    /// A `.divider` block's row: a horizontal rule, matching the visual
+    /// A divider block's row: a horizontal rule, matching the visual
     /// language of a Markdown `---` divider. Not editable — there's no
     /// `ParagraphTextField` for a divider since it has no text content
     /// (§8.1 `{ type: "divider" }`).
@@ -511,17 +631,17 @@ private struct BlockRow: View {
         Image(systemName: "line.3.horizontal")
             .foregroundStyle(AppTheme.Colors.Content.secondary)
             .frame(width: AppTheme.Spacing.lg, height: AppTheme.Spacing.lg)
-            .draggable(block.id)
+            .draggable(item.id)
     }
 
     private var editableBody: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                if isCodeBlock, let codeLanguage = block.codeLanguage {
-                    Text(codeLanguage)
-                        .appTextStyle(AppTheme.Typography.caption)
-                        .foregroundStyle(AppTheme.Colors.Content.secondary)
-                }
+                // A code block's fence language identifier (e.g. `swift`
+                // for ` ```swift `) isn't modeled on `TextContent` — see
+                // `DetailViewModel.updateBlockText`'s doc comment — so
+                // unlike the pre-NO-005 editor, no language caption shows
+                // above the code here.
 
                 HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
                     if let listMarker {
@@ -529,15 +649,16 @@ private struct BlockRow: View {
                             .appTextStyle(textStyle)
                             .foregroundStyle(AppTheme.Colors.Content.primary)
                             .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
-                    } else if block.type == .checklistItem {
+                    } else if content.textKind == TextItemKind.checklist {
+                        let isChecked = content.isChecked ?? false
                         Button(action: onToggleChecklist) {
-                            Image(systemName: block.isChecked ? "checkmark.square" : "square")
-                                .foregroundStyle(block.isChecked ? AppTheme.Colors.accent : AppTheme.Colors.Content.secondary)
+                            Image(systemName: isChecked ? "checkmark.square" : "square")
+                                .foregroundStyle(isChecked ? AppTheme.Colors.accent : AppTheme.Colors.Content.secondary)
                         }
                         .buttonStyle(.plain)
                         .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
                         .frame(height: textStyle.lineHeight, alignment: .center)
-                    } else if block.type == .blockquote {
+                    } else if content.textKind == TextItemKind.quote {
                         Rectangle()
                             .fill(AppTheme.Colors.Stroke.border)
                             .frame(width: AppTheme.Spacing.xs)
@@ -556,10 +677,10 @@ private struct BlockRow: View {
                         onBackspaceAtStart: {
                             onBackspaceAtStart(text)
                         },
-                        cursorOffsetToApply: focusedBlockId.wrappedValue == block.id ? $cursorOffsetToApply : .constant(nil)
+                        cursorOffsetToApply: focusedBlockId.wrappedValue == item.id ? $cursorOffsetToApply : .constant(nil)
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .focused(focusedBlockId, equals: block.id)
+                    .focused(focusedBlockId, equals: item.id)
                 }
             }
             .padding(.horizontal, AppTheme.Spacing.md)
@@ -571,14 +692,11 @@ private struct BlockRow: View {
                 .frame(height: 1)
         }
         .background(AppTheme.Colors.Neutral.n900)
-        .onChange(of: block.contentJSON) { _, _ in
+        .onChange(of: content.plainText) { _, newText in
             // Keep this row's text in sync when the view model changes
-            // `block`'s content without the user typing here directly —
+            // `content`'s text without the user typing here directly —
             // e.g. a later block's Backspace-at-start merge appends its
-            // text onto the end of this block, or this same block just
-            // converted from paragraph to heading (its displayed text
-            // drops the `#` prefix).
-            let newText = block.displayText
+            // text onto the end of this block.
             if text != newText {
                 text = newText
             }
