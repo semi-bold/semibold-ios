@@ -237,19 +237,25 @@ struct DetailView: View {
     }
 
     /// "파일 저장 또는 공유" (§10.3's final step): shares the document's
-    /// blocks as a Markdown `.md` file, using `ShareLink`'s standard sheet —
+    /// content as a Markdown `.md` file, using `ShareLink`'s standard sheet —
     /// which already covers both "Save to Files" and sharing to other apps
     /// from one control.
     ///
     /// `ShareLink(item:)` takes a `MarkdownDocumentExport` (a `Transferable`
-    /// wrapping this document's title and current blocks) rather than a
-    /// pre-rendered file `URL`. That defers `MarkdownExporter.render` and the
+    /// wrapping this document's title and its currently-loaded
+    /// `items`/`textContents`/`marksByItemId`) rather than a pre-rendered
+    /// file `URL`. That defers `MarkdownExporter.render` and the
     /// temporary-file write to `MarkdownDocumentExport`'s `exporting` closure,
     /// which only runs when the user taps this button and the system actually
     /// requests the export — not on every `body` re-evaluation (e.g. every
     /// keystroke).
     private var exportShareLink: some View {
-        let export = MarkdownDocumentExport(documentTitle: viewModel.document.title, blocks: markdownExportBlocks)
+        let export = MarkdownDocumentExport(
+            documentTitle: viewModel.document.title,
+            items: viewModel.items,
+            textContents: viewModel.textContents,
+            marksByItemId: viewModel.marksByItemId
+        )
         return ShareLink(
             item: export,
             preview: SharePreview(
@@ -258,134 +264,6 @@ struct DetailView: View {
         ) {
             Image(systemName: "square.and.arrow.up")
                 .foregroundStyle(AppTheme.Colors.accent)
-        }
-    }
-
-    /// Bridges `DetailViewModel`'s NO-005 `[DocumentItem]`/`TextContent`
-    /// content back into the pre-NO-005 `[DocumentBlock]` shape
-    /// `MarkdownExporter`/`MarkdownDocumentExport` still expect. Rewriting
-    /// those two types against `TextItem`/`TextMark` directly is AC6 — a
-    /// separate, later migration session (`tasks/NO-005.md` §8 Phase 5) —
-    /// so this keeps the existing "파일 저장 또는 공유" export button working
-    /// unchanged in the meantime, reconstructing each block's `contentJSON`/
-    /// `markdownSource` from its `textKind`/plain text on demand.
-    ///
-    /// A block's formatting comes from one of two places depending on how
-    /// its text got here: freshly typed content still keeps any Markdown
-    /// delimiters the user literally typed in `plainText` itself (this
-    /// session's editor doesn't strip them — see `BlockContent+
-    /// InlineMarks.swift`'s deviation note), so it exports correctly as-is.
-    /// Content that went through the pre-NO-005 migration instead has clean
-    /// `plainText` with its formatting moved into separate `TextMark` rows
-    /// (`TextDecomposition`) — for that case, `TextMarkdownReconstruction`
-    /// wraps the marked ranges back in their delimiters before export, so
-    /// bold/italic/strike/inline-code/link formatting survives the round
-    /// trip instead of silently disappearing.
-    private var markdownExportBlocks: [DocumentBlock] {
-        viewModel.items.map { item in
-            let content = viewModel.textContent(forItemId: item.id)
-            let marks = viewModel.marksByItemId[item.id] ?? []
-            let markdownText = TextMarkdownReconstruction.markdownText(plainText: content.plainText, marks: marks)
-            let type = Self.blockType(forTextKind: content.textKind)
-            let (contentJSON, markdownSource) = Self.exportPayload(
-                for: type,
-                content: content,
-                markdownText: markdownText,
-                numberedListNumber: viewModel.numberedListNumber(forItemId: item.id)
-            )
-            return DocumentBlock(
-                id: item.id,
-                documentId: item.documentId,
-                sortOrder: 0,
-                type: type,
-                contentJSON: contentJSON,
-                markdownSource: markdownSource,
-                createdAt: item.createdAt,
-                updatedAt: item.updatedAt
-            )
-        }
-    }
-
-    /// The pre-NO-005 `BlockType` that corresponds to `textKind`, the
-    /// reverse of `DocumentBlockMigrationPolicy.textKind(for:)`. Falls back
-    /// to `.paragraph` for `TextItemKind.unknown` (content this build
-    /// doesn't recognize) — export has no better option than treating it as
-    /// plain text.
-    private static func blockType(forTextKind textKind: String) -> BlockType {
-        switch textKind {
-        case TextItemKind.heading: return .heading
-        case TextItemKind.quote: return .blockquote
-        case TextItemKind.checklist: return .checklistItem
-        case TextItemKind.bulletedListItem: return .bulletedListItem
-        case TextItemKind.numberedListItem: return .numberedListItem
-        case TextItemKind.codeBlock: return .codeBlock
-        case TextItemKind.divider: return .divider
-        default: return .paragraph
-        }
-    }
-
-    /// The `contentJSON`/`markdownSource` pair `markdownExportBlocks` needs
-    /// for one block, rebuilt using the same builders
-    /// `DetailViewModel+MarkdownConversion.swift` uses for live editing.
-    ///
-    /// Built from `markdownText` (delimiter-literal — either `content
-    /// .plainText` itself, for freshly typed content, or that text with its
-    /// `TextMark`s' formatting wrapped back in via
-    /// `TextMarkdownReconstruction`, for migrated content — see
-    /// `markdownExportBlocks`), not `content.plainText` directly, so
-    /// `BlockContent.*JSON(text:)`'s `RichTextSpan.parse` and the
-    /// `*MarkdownSource` builders below both see the marked-up text either
-    /// way. `content` itself is still consulted for its non-text fields
-    /// (`headingLevel`, `isChecked`) a plain `String` doesn't carry.
-    private static func exportPayload(
-        for type: BlockType,
-        content: TextContent,
-        markdownText: String,
-        numberedListNumber: Int
-    ) -> (contentJSON: String, markdownSource: String?) {
-        switch type {
-        case .paragraph:
-            return (BlockContent.paragraphJSON(text: markdownText), markdownText)
-        case .heading:
-            let level = content.headingLevel ?? 1
-            return (
-                BlockContent.headingJSON(level: level, text: markdownText),
-                DetailViewModel.headingMarkdownSource(level: level, text: markdownText)
-            )
-        case .bulletedListItem:
-            return (
-                BlockContent.bulletedListItemJSON(text: markdownText),
-                DetailViewModel.bulletedListMarkdownSource(text: markdownText)
-            )
-        case .numberedListItem:
-            return (
-                BlockContent.numberedListItemJSON(text: markdownText),
-                DetailViewModel.numberedListMarkdownSource(number: numberedListNumber, text: markdownText)
-            )
-        case .checklistItem:
-            let checked = content.isChecked ?? false
-            return (
-                BlockContent.checklistItemJSON(checked: checked, text: markdownText),
-                DetailViewModel.checklistMarkdownSource(checked: checked, text: markdownText)
-            )
-        case .blockquote:
-            return (
-                BlockContent.blockquoteJSON(text: markdownText),
-                DetailViewModel.blockquoteMarkdownSource(text: markdownText)
-            )
-        case .codeBlock:
-            // The code fence's language identifier isn't stored on
-            // `TextContent` (see `updateBlockText`'s doc comment) — exports
-            // as a plain, language-less fence. Code text is never
-            // reconstructed from `TextMark`s (code blocks carry no inline
-            // formatting), so `markdownText` here is always just
-            // `content.plainText` unchanged.
-            return (
-                BlockContent.codeBlockJSON(language: nil, code: markdownText),
-                DetailViewModel.codeBlockMarkdownSource(language: nil, code: markdownText)
-            )
-        case .divider:
-            return (BlockContent.dividerJSON(), nil)
         }
     }
 
