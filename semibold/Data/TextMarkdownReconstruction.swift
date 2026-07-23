@@ -12,12 +12,10 @@ import Foundation
 /// (`RichTextSpan.parse(markdownText:)`) finds nothing, so without this,
 /// exporting a migrated document to Markdown silently drops all of its
 /// bold/italic/strike/inline-code/link formatting. Used by
-/// `DetailView`'s `[DocumentBlock]` export bridge (`markdown-phase4`'s
-/// NO-005 ViewModel migration, AC6 gap) to reconstruct a delimiter-literal
-/// string it can feed straight into the existing `BlockContent.*JSON(text:)`
-/// / `DetailViewModel.*MarkdownSource(text:)` builders unchanged — those
-/// already re-parse a delimiter-literal string via `RichTextSpan.parse`, so
-/// this only needs to produce that string, not build `RichTextSpan`s itself.
+/// `MarkdownExporter.markdownLine(for:marks:numberedListNumber:)`
+/// (`tasks/NO-005.md` §8 Phase 5, AC6) to reconstruct each item's
+/// delimiter-literal Markdown line directly from `TextContent`/`TextMark`,
+/// without going through `DocumentBlock`/`BlockContent` at all.
 enum TextMarkdownReconstruction {
     /// Wraps each of `marks`' UTF-16 range of `plainText` back in its
     /// Markdown delimiter. Returns `plainText` unchanged when `marks` is

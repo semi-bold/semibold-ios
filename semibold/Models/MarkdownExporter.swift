@@ -81,7 +81,8 @@ enum MarkdownExporter {
             if let previousKind, !shouldOmitBlankLine(between: previousKind, and: content.textKind) {
                 lines.append("")
             }
-            lines.append(markdownLine(for: content, marks: marksByItemId[item.id] ?? [], numberedListNumber: numberedListRunLength))
+            let marks = marksByItemId[item.id] ?? []
+            lines.append(markdownLine(for: content, marks: marks, numberedListNumber: numberedListRunLength))
             previousKind = content.textKind
         }
 

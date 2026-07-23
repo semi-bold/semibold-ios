@@ -2,12 +2,8 @@ import Foundation
 
 /// Markdown prefix-detection helpers for `DetailViewModel.updateBlockText`'s
 /// block-type conversions (`markdown-phase4` AC1-AC5: heading/list/
-/// checklist/blockquote/code block), plus the `markdownSource`-rebuilding
-/// helpers `DetailView`'s Markdown-export bridge (see
-/// `DetailView.swift`'s `markdownBridgeBlocks`) uses to reconstruct each
-/// block's literal Markdown line from its `textKind`/plain text, since
-/// `TextContent` itself has no `markdownSource` field to store one in
-/// (`DOCUMENT_MODEL.md` §4.1's `text_items` shape only has `plain_text`).
+/// checklist/blockquote/code block) — detecting when typed text matches a
+/// Markdown prefix and what the block should convert to.
 ///
 /// Split out of `DetailViewModel.swift` (which had grown past SwiftLint's
 /// `file_length` warning threshold) once AC4 (blockquote) added another
@@ -51,12 +47,6 @@ extension DetailViewModel {
 
         let remainder = String(afterHashes.dropFirst())
         return HeadingConversion(level: hashCount, text: remainder)
-    }
-
-    /// Rebuilds the literal Markdown (`"# Title"`, …) for a heading block
-    /// at `level` holding `text`, for the Markdown-export bridge.
-    static func headingMarkdownSource(level: Int, text: String) -> String {
-        String(repeating: "#", count: level) + " " + text
     }
 
     /// A detected Markdown list-item prefix (`- ` or `<n>. `), ready to
@@ -110,18 +100,6 @@ extension DetailViewModel {
         return ListConversion(textKind: TextItemKind.numberedListItem, text: remainder)
     }
 
-    /// Rebuilds the literal Markdown (`"- item"`) for a bulleted list item
-    /// holding `text`, for the Markdown-export bridge.
-    static func bulletedListMarkdownSource(text: String) -> String {
-        "- " + text
-    }
-
-    /// Rebuilds the literal Markdown (`"<n>. item"`) for a numbered list
-    /// item at `number` holding `text`, for the Markdown-export bridge.
-    static func numberedListMarkdownSource(number: Int, text: String) -> String {
-        "\(number). " + text
-    }
-
     /// A detected Markdown checklist-item prefix (`- [ ] ` or `- [x] `),
     /// ready to apply to a block.
     struct ChecklistConversion {
@@ -162,13 +140,6 @@ extension DetailViewModel {
         return nil
     }
 
-    /// Rebuilds the literal Markdown (`"- [ ] task"` / `"- [x] task"`) for
-    /// a checklist item holding `text`, based on its current `checked`
-    /// state, for the Markdown-export bridge.
-    static func checklistMarkdownSource(checked: Bool, text: String) -> String {
-        (checked ? "- [x] " : "- [ ] ") + text
-    }
-
     /// A detected Markdown blockquote prefix (`> `), ready to apply to a
     /// block.
     struct BlockquoteConversion {
@@ -193,12 +164,6 @@ extension DetailViewModel {
         guard text.hasPrefix("> ") else { return nil }
         let remainder = String(text.dropFirst(2))
         return BlockquoteConversion(text: remainder)
-    }
-
-    /// Rebuilds the literal Markdown (`"> quote"`) for a blockquote block
-    /// holding `text`, for the Markdown-export bridge.
-    static func blockquoteMarkdownSource(text: String) -> String {
-        "> " + text
     }
 
     /// A detected Markdown code-fence prefix (` ``` ` or ` ```<lang> `),
@@ -249,13 +214,5 @@ extension DetailViewModel {
         }
 
         return CodeBlockConversion(language: language.isEmpty ? nil : language, code: String(remainder))
-    }
-
-    /// Rebuilds the literal Markdown for a code block at `language` (or no
-    /// language) holding `code`, keeping the closing fence so the block
-    /// round-trips as ` ```<language>\n<code>\n``` ` (§8.1 comment), for the
-    /// Markdown-export bridge.
-    static func codeBlockMarkdownSource(language: String?, code: String) -> String {
-        "```\(language ?? "")\n\(code)\n```"
     }
 }
