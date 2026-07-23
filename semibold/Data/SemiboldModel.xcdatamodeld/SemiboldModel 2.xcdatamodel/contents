@@ -21,7 +21,6 @@
         <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <relationship name="folder" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Folder" inverseName="documents" inverseEntity="Folder"/>
-        <relationship name="items" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="DocumentItem"/>
     </entity>
     <entity name="DocumentItem" representedClassName="DocumentItemEntity" syncable="YES" codeGenerationType="class">
         <attribute name="id" optional="YES" attributeType="String" usesScalarValueType="NO"/>
