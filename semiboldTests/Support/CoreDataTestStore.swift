@@ -30,13 +30,21 @@ struct CoreDataTestStore {
     /// call per container, each produce a *new* model instance; Core Data
     /// then sees multiple model objects all claiming the same
     /// `codeGenerationType="class"`-generated entity classes
-    /// (`FolderEntity`/`DocumentEntity`/`DocumentBlockEntity`), which is
-    /// what produces the "Failed to find a unique match for an
+    /// (`FolderEntity`/`DocumentEntity`/`DocumentItemEntity`/
+    /// `TextItemEntity`/`TextMarkEntity`/`AssetEntity`/`MediaItemEntity`),
+    /// which is what produces the "Failed to find a unique match for an
     /// NSEntityDescription to a managed object subclass" warning.
     /// `semiboldTests` links against `semibold` (and runs hosted inside
     /// its process), so reusing `DatabaseManager.model` here keeps every
     /// container in the process — the app's on-disk store and every
     /// per-test in-memory store — pointing at the same model object.
+    /// `DatabaseManager.model` itself always resolves to
+    /// `SemiboldModel.xcdatamodeld`'s current version (`.xccurrentversion`,
+    /// currently `SemiboldModel 2.xcdatamodel` — the `tasks/NO-005.md`
+    /// schema with `Document`/`DocumentItem`/`TextItem`/`TextMark`/
+    /// `Asset`/`MediaItem`), so this store stays in sync automatically as
+    /// the current version changes — no version-specific name to update
+    /// here.
     init() throws {
         let container = NSPersistentContainer(
             name: "SemiboldModel",
