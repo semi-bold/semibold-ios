@@ -270,20 +270,27 @@ struct DetailView: View {
     /// unchanged in the meantime, reconstructing each block's `contentJSON`/
     /// `markdownSource` from its `textKind`/plain text on demand.
     ///
-    /// Inline formatting marks aren't folded back in here (see
-    /// `DetailViewModel.marksByItemId`'s doc comment on why this editor
-    /// doesn't generate them from typed Markdown yet) — a block's `plainText`
-    /// already keeps any Markdown delimiters the user typed literally, so a
-    /// plain paragraph/heading/etc. block still exports its bold/italic/etc.
-    /// text correctly; only content that already carried `TextMark` rows
-    /// from migrated pre-NO-005 data would export without them until AC6.
+    /// A block's formatting comes from one of two places depending on how
+    /// its text got here: freshly typed content still keeps any Markdown
+    /// delimiters the user literally typed in `plainText` itself (this
+    /// session's editor doesn't strip them — see `BlockContent+
+    /// InlineMarks.swift`'s deviation note), so it exports correctly as-is.
+    /// Content that went through the pre-NO-005 migration instead has clean
+    /// `plainText` with its formatting moved into separate `TextMark` rows
+    /// (`TextDecomposition`) — for that case, `TextMarkdownReconstruction`
+    /// wraps the marked ranges back in their delimiters before export, so
+    /// bold/italic/strike/inline-code/link formatting survives the round
+    /// trip instead of silently disappearing.
     private var markdownExportBlocks: [DocumentBlock] {
         viewModel.items.map { item in
             let content = viewModel.textContent(forItemId: item.id)
+            let marks = viewModel.marksByItemId[item.id] ?? []
+            let markdownText = TextMarkdownReconstruction.markdownText(plainText: content.plainText, marks: marks)
             let type = Self.blockType(forTextKind: content.textKind)
             let (contentJSON, markdownSource) = Self.exportPayload(
                 for: type,
                 content: content,
+                markdownText: markdownText,
                 numberedListNumber: viewModel.numberedListNumber(forItemId: item.id)
             )
             return DocumentBlock(
@@ -318,50 +325,64 @@ struct DetailView: View {
     }
 
     /// The `contentJSON`/`markdownSource` pair `markdownExportBlocks` needs
-    /// for one block, rebuilt from `content` using the same builders
+    /// for one block, rebuilt using the same builders
     /// `DetailViewModel+MarkdownConversion.swift` uses for live editing.
+    ///
+    /// Built from `markdownText` (delimiter-literal — either `content
+    /// .plainText` itself, for freshly typed content, or that text with its
+    /// `TextMark`s' formatting wrapped back in via
+    /// `TextMarkdownReconstruction`, for migrated content — see
+    /// `markdownExportBlocks`), not `content.plainText` directly, so
+    /// `BlockContent.*JSON(text:)`'s `RichTextSpan.parse` and the
+    /// `*MarkdownSource` builders below both see the marked-up text either
+    /// way. `content` itself is still consulted for its non-text fields
+    /// (`headingLevel`, `isChecked`) a plain `String` doesn't carry.
     private static func exportPayload(
         for type: BlockType,
         content: TextContent,
+        markdownText: String,
         numberedListNumber: Int
     ) -> (contentJSON: String, markdownSource: String?) {
         switch type {
         case .paragraph:
-            return (BlockContent.paragraphJSON(text: content.plainText), content.plainText)
+            return (BlockContent.paragraphJSON(text: markdownText), markdownText)
         case .heading:
             let level = content.headingLevel ?? 1
             return (
-                BlockContent.headingJSON(level: level, text: content.plainText),
-                DetailViewModel.headingMarkdownSource(level: level, text: content.plainText)
+                BlockContent.headingJSON(level: level, text: markdownText),
+                DetailViewModel.headingMarkdownSource(level: level, text: markdownText)
             )
         case .bulletedListItem:
             return (
-                BlockContent.bulletedListItemJSON(text: content.plainText),
-                DetailViewModel.bulletedListMarkdownSource(text: content.plainText)
+                BlockContent.bulletedListItemJSON(text: markdownText),
+                DetailViewModel.bulletedListMarkdownSource(text: markdownText)
             )
         case .numberedListItem:
             return (
-                BlockContent.numberedListItemJSON(text: content.plainText),
-                DetailViewModel.numberedListMarkdownSource(number: numberedListNumber, text: content.plainText)
+                BlockContent.numberedListItemJSON(text: markdownText),
+                DetailViewModel.numberedListMarkdownSource(number: numberedListNumber, text: markdownText)
             )
         case .checklistItem:
             let checked = content.isChecked ?? false
             return (
-                BlockContent.checklistItemJSON(checked: checked, text: content.plainText),
-                DetailViewModel.checklistMarkdownSource(checked: checked, text: content.plainText)
+                BlockContent.checklistItemJSON(checked: checked, text: markdownText),
+                DetailViewModel.checklistMarkdownSource(checked: checked, text: markdownText)
             )
         case .blockquote:
             return (
-                BlockContent.blockquoteJSON(text: content.plainText),
-                DetailViewModel.blockquoteMarkdownSource(text: content.plainText)
+                BlockContent.blockquoteJSON(text: markdownText),
+                DetailViewModel.blockquoteMarkdownSource(text: markdownText)
             )
         case .codeBlock:
             // The code fence's language identifier isn't stored on
             // `TextContent` (see `updateBlockText`'s doc comment) — exports
-            // as a plain, language-less fence.
+            // as a plain, language-less fence. Code text is never
+            // reconstructed from `TextMark`s (code blocks carry no inline
+            // formatting), so `markdownText` here is always just
+            // `content.plainText` unchanged.
             return (
-                BlockContent.codeBlockJSON(language: nil, code: content.plainText),
-                DetailViewModel.codeBlockMarkdownSource(language: nil, code: content.plainText)
+                BlockContent.codeBlockJSON(language: nil, code: markdownText),
+                DetailViewModel.codeBlockMarkdownSource(language: nil, code: markdownText)
             )
         case .divider:
             return (BlockContent.dividerJSON(), nil)

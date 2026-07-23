@@ -100,10 +100,22 @@ final class DetailViewModel {
     /// (`STORAGE_ARCHITECTURE.md` §5.5 step 4). Loaded alongside
     /// `textContents` so a document round-tripped through the pre-NO-005
     /// migration keeps its bold/italic/link spans available to callers
-    /// that need them (e.g. Markdown export) — this editor's own plain-text
-    /// editing doesn't re-derive marks from typed Markdown yet (see
-    /// `updateBlockText`'s doc comment), so edits made here don't add to or
-    /// remove from a block's existing marks.
+    /// that need them (e.g. Markdown export's `TextMarkdownReconstruction`).
+    ///
+    /// **Invalidated, not adjusted, on edit.** This editor's own plain-text
+    /// editing doesn't re-derive marks from typed Markdown (see
+    /// `updateBlockText`'s doc comment), and it has no way to know whether a
+    /// text edit shifted the substrings an existing mark's `startOffset`/
+    /// `endOffset` used to point at. So rather than leaving stale offsets
+    /// around — which `TextMarkdownReconstruction` would happily apply to
+    /// whatever now sits at those offsets, silently wrapping the wrong
+    /// substring in `**`/`*`/etc. — `persistBlock` clears a block's entry
+    /// here (and its underlying `TextMark` rows, via `TextMarkRepository
+    /// .deleteAll(itemId:)`) the moment that block is saved with existing
+    /// marks on it. A migrated block loses its formatting the first time
+    /// it's edited in this editor (reverting to plain delimiter-literal
+    /// text going forward); this is an intentionally simple, honest
+    /// degradation rather than diff-based offset adjustment.
     private(set) var marksByItemId: [String: [TextMark]] = [:]
 
     /// Each media item's detail, keyed by `DocumentItem.id`
@@ -333,9 +345,11 @@ final class DetailViewModel {
     /// plain `UITextView`-backed input round-trips what the user typed
     /// without the delimiters vanishing mid-edit. This means edits made
     /// here don't parse `text` into `TextMark` rows the way
-    /// `DocumentBlockMigrationPolicy`'s migrated content does — see
-    /// `marksByItemId`'s doc comment; flagged as a gap for a future
-    /// WYSIWYG-editing pass to close.
+    /// `DocumentBlockMigrationPolicy`'s migrated content does — and, per
+    /// `marksByItemId`'s doc comment, `persistBlock` invalidates (drops)
+    /// any `TextMark`s the block already had once this edit is saved,
+    /// rather than leaving them pointing at stale offsets in the new text;
+    /// flagged as a gap for a future WYSIWYG-editing pass to close.
     func updateBlockText(_ blockId: String, text: String) {
         guard items.contains(where: { $0.id == blockId }) else { return }
         let currentKind = textContent(forItemId: blockId).textKind
@@ -447,11 +461,25 @@ final class DetailViewModel {
     /// so `+SlashCommand.swift`/`+KeyboardShortcuts.swift` (Swift's
     /// `private` is file-scoped) can persist their own structural edits the
     /// same way `updateBlockText`'s conversions do.
+    ///
+    /// Every save routed through here — this is the single choke point all
+    /// of `updateBlockText`'s conversions, `insertBlock`'s split,
+    /// `mergeOrDeleteBlock`'s merge, `toggleChecklistItem`, and
+    /// `+KeyboardShortcuts.swift`'s shortcuts all persist through — also
+    /// invalidates `blockId`'s existing `TextMark`s first if it has any
+    /// (`marksByItemId`'s doc comment explains why: this editor can't tell
+    /// whether/how a save shifted the text those marks' offsets pointed at,
+    /// so it drops them rather than risk exporting formatting onto the
+    /// wrong substring).
     func persistBlock(_ blockId: String) {
         guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
         let content = textContent(forItemId: blockId)
 
         do {
+            if let existingMarks = marksByItemId[blockId], !existingMarks.isEmpty {
+                try textMarkRepository.deleteAll(itemId: blockId)
+                marksByItemId[blockId] = nil
+            }
             textContents[blockId] = try textItemRepository.update(content)
             var item = items[index]
             item.revision += 1

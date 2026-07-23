@@ -152,18 +152,33 @@ enum OrderKey {
     /// `fromLegacySortOrder`'s doc comment establishes, even once keys
     /// stop sharing one fixed width.
     ///
-    /// Bounded to `maxDigitGrowth` digits of growth so a caller can never
-    /// hit an infinite loop even if `lower`/`upper` were passed in an
-    /// already-invalid order (`lower >= upper`) — falls back to `lower`
-    /// (or `""`) with a single disambiguating digit appended in that case.
+    /// Bounded to `maxDigitGrowth` digits of growth PAST the longer of
+    /// `lower`/`upper`'s own length, so a caller can never hit an infinite
+    /// loop even if `lower`/`upper` were passed in an already-invalid order
+    /// (`lower >= upper`) — falls back to `lower` (or `""`) with a single
+    /// disambiguating digit appended in that case.
+    ///
+    /// The bound is relative to `lower`/`upper`'s length — not a fixed
+    /// absolute digit count — so that repeatedly squeezing new siblings
+    /// into the same gap (each new key becoming the next call's `lower`,
+    /// itself already `maxDigitGrowth` digits longer than before from the
+    /// previous squeeze's own exhaustion fallback) keeps getting a full
+    /// `maxDigitGrowth` digits of headroom on every call, rather than
+    /// exhausting on the very first walked digit once `lower` alone is
+    /// already longer than a fixed absolute bound would allow. Without
+    /// this, a second squeeze into an already-exhausted gap would produce
+    /// the exact same fallback key as the first (since the walk would
+    /// never reach the newly-grown digits at all) — a silent duplicate
+    /// `orderKey`, not merely an out-of-order one.
     private static func digitMidpoint(_ lower: String?, _ upper: String?) -> String {
         let lowerDigits = Array(lower ?? "")
         let upperDigits = upper.map(Array.init)
         var result = ""
         var index = 0
         let maxDigitGrowth = 64
+        let growthLimit = max(lowerDigits.count, upperDigits?.count ?? 0) + maxDigitGrowth
 
-        while index < maxDigitGrowth {
+        while index < growthLimit {
             let lowDigit = index < lowerDigits.count ? (lowerDigits[index].wholeNumberValue ?? 0) : 0
             let highDigit: Int
             if let upperDigits {
@@ -181,6 +196,14 @@ enum OrderKey {
             index += 1
         }
 
-        return (lower ?? "") + "5"
+        // Exhausted `growthLimit` digits of growth without finding room.
+        // `result` mirrors `lower`'s own digits (zero-padded consistently)
+        // at every position walked so far, so appending to it — not to the
+        // raw, un-padded `lower` string — is what keeps this key sorting
+        // strictly after `lower`. (Appending to raw `lower` broke that
+        // guarantee whenever `result`'s padding had already diverged from
+        // `lower`'s literal digits, producing a key that could sort past
+        // `upper`.)
+        return result + "5"
     }
 }
