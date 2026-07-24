@@ -20,13 +20,17 @@ import Foundation
 /// formatting is a natural follow-up once `ParagraphTextField` exposes
 /// `UITextView.selectedRange`.
 ///
+/// **NO-005 note**: like `updateBlockText`, this wraps/unwraps the
+/// delimiters directly in `TextContent.plainText` rather than recording a
+/// `TextMark` — see `DetailViewModel.marksByItemId`'s doc comment for why.
+///
 /// Split out of `DetailViewModel.swift` following the
 /// `+MarkdownConversion` extension-file precedent — keeps the
 /// create/edit/split/merge/reorder logic in one file and all
 /// keyboard-shortcut-driven formatting in this one.
 extension DetailViewModel {
-    /// Converts the block identified by `blockId` to a `.heading` block at
-    /// `level` (1-3), keeping its current text (Cmd+Option+1/2/3, §13.2).
+    /// Converts the block identified by `blockId` to a heading at `level`
+    /// (1-3), keeping its current text (Cmd+Option+1/2/3, §13.2).
     ///
     /// Applies to any block type — a paragraph, list item, etc. all become
     /// a heading at `level` holding their current display text. Does
@@ -34,16 +38,13 @@ extension DetailViewModel {
     /// it's persisted immediately (PLANNING §11.2 "블록 생성/삭제/순서 변경:
     /// 즉시 저장"), like AC1's typed `# `/`## `/`### ` conversion.
     func convertBlockToHeading(_ blockId: String, level: Int) {
-        guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
-        let text = blocks[index].displayText
+        guard items.contains(where: { $0.id == blockId }) else { return }
+        let text = textContent(forItemId: blockId).plainText
 
-        blocks[index].type = .heading
-        blocks[index].contentJSON = BlockContent.headingJSON(level: level, text: text)
-        blocks[index].markdownSource = Self.headingMarkdownSource(level: level, text: text)
+        textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.heading, plainText: text, headingLevel: level)
 
-        pendingSaveTasks[blockId]?.cancel()
-        pendingSaveTasks[blockId] = nil
-        persistBlockForKeyboardShortcut(blockId)
+        cancelPendingSave(blockId)
+        persistBlock(blockId)
     }
 
     /// Toggles a `**bold**` wrapper around the focused block's whole text
@@ -70,8 +71,7 @@ extension DetailViewModel {
     /// `toggleBoldOnBlock`/`toggleItalicOnBlock`. Does nothing for empty
     /// text.
     func toggleLinkOnBlock(_ blockId: String) {
-        guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
-        let text = blocks[index].displayText
+        let text = textContent(forItemId: blockId).plainText
         guard !text.isEmpty else { return }
 
         let newText: String
@@ -87,8 +87,7 @@ extension DetailViewModel {
     /// Wraps (or unwraps) `delimiter` around `blockId`'s whole text, shared
     /// by `toggleBoldOnBlock`/`toggleItalicOnBlock`.
     private func toggleDelimiter(_ delimiter: String, onBlock blockId: String) {
-        guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
-        let text = blocks[index].displayText
+        let text = textContent(forItemId: blockId).plainText
         guard !text.isEmpty else { return }
 
         let newText: String
@@ -140,54 +139,21 @@ extension DetailViewModel {
     /// immediately — keyboard-shortcut formatting is a deliberate
     /// structural edit, not a keystroke to debounce.
     private func applyPlainTextEdit(_ text: String, toBlock blockId: String) {
-        guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
+        guard items.contains(where: { $0.id == blockId }) else { return }
+        let currentKind = textContent(forItemId: blockId).textKind
 
-        switch blocks[index].type {
-        case .heading:
-            let level = Self.headingLevel(forContentJSON: blocks[index].contentJSON)
-            blocks[index].markdownSource = Self.headingMarkdownSource(level: level, text: text)
-            blocks[index].contentJSON = BlockContent.headingJSON(level: level, text: text)
-        case .bulletedListItem:
-            blocks[index].markdownSource = Self.bulletedListMarkdownSource(text: text)
-            blocks[index].contentJSON = BlockContent.bulletedListItemJSON(text: text)
-        case .numberedListItem:
-            let number = BlockContent.leadingNumber(forMarkdownSource: blocks[index].markdownSource)
-            blocks[index].markdownSource = Self.numberedListMarkdownSource(number: number, text: text)
-            blocks[index].contentJSON = BlockContent.numberedListItemJSON(text: text)
-        case .checklistItem:
-            let checked = blocks[index].isChecked
-            blocks[index].markdownSource = Self.checklistMarkdownSource(checked: checked, text: text)
-            blocks[index].contentJSON = BlockContent.checklistItemJSON(checked: checked, text: text)
-        case .blockquote:
-            blocks[index].markdownSource = Self.blockquoteMarkdownSource(text: text)
-            blocks[index].contentJSON = BlockContent.blockquoteJSON(text: text)
-        case .codeBlock:
-            let language = blocks[index].codeLanguage
-            blocks[index].markdownSource = Self.codeBlockMarkdownSource(language: language, code: text)
-            blocks[index].contentJSON = BlockContent.codeBlockJSON(language: language, code: text)
-        case .paragraph, .divider:
-            blocks[index].markdownSource = text
-            blocks[index].contentJSON = BlockContent.paragraphJSON(text: text)
+        switch currentKind {
+        case TextItemKind.heading:
+            let level = textContent(forItemId: blockId).headingLevel
+            textContents[blockId] = TextContent(itemId: blockId, textKind: currentKind, plainText: text, headingLevel: level)
+        case TextItemKind.checklist:
+            let checked = textContent(forItemId: blockId).isChecked ?? false
+            textContents[blockId] = TextContent(itemId: blockId, textKind: currentKind, plainText: text, isChecked: checked)
+        default:
+            textContents[blockId] = TextContent(itemId: blockId, textKind: currentKind, plainText: text)
         }
 
-        pendingSaveTasks[blockId]?.cancel()
-        pendingSaveTasks[blockId] = nil
-        persistBlockForKeyboardShortcut(blockId)
-    }
-
-    /// Writes `blockId`'s current in-memory content to the database,
-    /// bypassing the debounce timer — the keyboard-shortcut counterpart of
-    /// `persistBlock`, exposed here since that method is `private` to
-    /// `DetailViewModel.swift`.
-    private func persistBlockForKeyboardShortcut(_ blockId: String) {
-        guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
-
-        do {
-            blocks[index] = try documentBlockRepository.update(blocks[index])
-        } catch {
-            // §15.2 "저장 실패" — the edit stays in memory; the next
-            // successful save (or app relaunch reload) reconciles it.
-            errorMessage = AppErrorMessages.saveFailed
-        }
+        cancelPendingSave(blockId)
+        persistBlock(blockId)
     }
 }

@@ -60,14 +60,14 @@ extension DetailViewModel {
     /// a `/` as the very first character of an empty block opens the sheet,
     /// matching how `headingConversion`/`listConversion`/etc. only convert
     /// on a complete leading prefix.
-    static func isSlashCommandTrigger(forTypedText text: String, currentType: BlockType) -> Bool {
-        currentType == .paragraph && text == "/"
+    static func isSlashCommandTrigger(forTypedText text: String, currentTextKind: String) -> Bool {
+        currentTextKind == TextItemKind.paragraph && text == "/"
     }
 
-    /// Converts the block identified by `blockId` to `option`'s block type,
-    /// clearing its text — the slash that triggered the sheet has already
-    /// been consumed by `updateBlockText`, and the user types the block's
-    /// real content fresh in its new type.
+    /// Converts the block identified by `blockId` to `option`'s
+    /// `TextContent.textKind`, clearing its text — the slash that
+    /// triggered the sheet has already been consumed by `updateBlockText`,
+    /// and the user types the block's real content fresh in its new type.
     ///
     /// Mirrors the structural conversions in
     /// `DetailViewModel+MarkdownConversion.swift`/`updateBlockText`: the
@@ -75,60 +75,32 @@ extension DetailViewModel {
     /// than going through the debounce (PLANNING §11.2 "블록 생성/삭제/순서
     /// 변경: 즉시 저장"). Does nothing if `blockId` doesn't exist.
     func convertBlock(_ blockId: String, toSlashCommandOption option: SlashCommandOption) {
-        guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
+        guard items.contains(where: { $0.id == blockId }) else { return }
 
         switch option {
         case .heading1, .heading2, .heading3:
-            let level = option.headingLevel
-            blocks[index].type = .heading
-            blocks[index].contentJSON = BlockContent.headingJSON(level: level, text: "")
-            blocks[index].markdownSource = Self.headingMarkdownSource(level: level, text: "")
+            textContents[blockId] = TextContent(
+                itemId: blockId, textKind: TextItemKind.heading, plainText: "", headingLevel: option.headingLevel
+            )
         case .bulletedList:
-            blocks[index].type = .bulletedListItem
-            blocks[index].contentJSON = BlockContent.bulletedListItemJSON(text: "")
-            blocks[index].markdownSource = Self.bulletedListMarkdownSource(text: "")
+            textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.bulletedListItem, plainText: "")
         case .numberedList:
-            blocks[index].type = .numberedListItem
-            blocks[index].contentJSON = BlockContent.numberedListItemJSON(text: "")
-            blocks[index].markdownSource = Self.numberedListMarkdownSource(number: 1, text: "")
+            textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.numberedListItem, plainText: "")
         case .checklist:
-            blocks[index].type = .checklistItem
-            blocks[index].contentJSON = BlockContent.checklistItemJSON(checked: false, text: "")
-            blocks[index].markdownSource = Self.checklistMarkdownSource(checked: false, text: "")
+            textContents[blockId] = TextContent(
+                itemId: blockId, textKind: TextItemKind.checklist, plainText: "", isChecked: false
+            )
         case .blockquote:
-            blocks[index].type = .blockquote
-            blocks[index].contentJSON = BlockContent.blockquoteJSON(text: "")
-            blocks[index].markdownSource = Self.blockquoteMarkdownSource(text: "")
+            textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.quote, plainText: "")
         case .codeBlock:
-            blocks[index].type = .codeBlock
-            blocks[index].contentJSON = BlockContent.codeBlockJSON(language: nil, code: "")
-            blocks[index].markdownSource = Self.codeBlockMarkdownSource(language: nil, code: "")
+            textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.codeBlock, plainText: "")
         case .divider:
-            blocks[index].type = .divider
-            blocks[index].contentJSON = BlockContent.dividerJSON()
-            blocks[index].markdownSource = nil
+            textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.divider, plainText: "")
         }
 
-        pendingSaveTasks[blockId]?.cancel()
-        pendingSaveTasks[blockId] = nil
-        persistBlockForSlashCommand(blockId)
+        cancelPendingSave(blockId)
+        persistBlock(blockId)
         dismissSlashCommand()
-    }
-
-    /// Writes `blockId`'s current in-memory content to the database,
-    /// bypassing the debounce timer — the slash-command counterpart of
-    /// `persistBlock`/`persistBlockForKeyboardShortcut`, exposed here since
-    /// `persistBlock` is `private` to `DetailViewModel.swift`.
-    private func persistBlockForSlashCommand(_ blockId: String) {
-        guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
-
-        do {
-            blocks[index] = try documentBlockRepository.update(blocks[index])
-        } catch {
-            // §15.2 "저장 실패" — the edit stays in memory; the next
-            // successful save (or app relaunch reload) reconciles it.
-            errorMessage = AppErrorMessages.saveFailed
-        }
     }
 }
 

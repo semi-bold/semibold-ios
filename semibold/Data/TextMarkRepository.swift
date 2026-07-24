@@ -63,6 +63,22 @@ struct TextMarkRepository {
         try context.save()
     }
 
+    /// Permanently removes every mark on one item — used when that item's
+    /// `plainText` is edited by an editor that doesn't (yet) adjust mark
+    /// offsets to match the new text, so a stale mark can never be applied
+    /// to the wrong substring (`DetailViewModel.updateBlockText`'s doc
+    /// comment). No-op if the item has no marks.
+    func deleteAll(itemId: String) throws {
+        let request = TextMarkEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "itemId == %@", itemId)
+        let entities = try context.fetch(request)
+        guard !entities.isEmpty else { return }
+        for entity in entities {
+            context.delete(entity)
+        }
+        try context.save()
+    }
+
     private func apply(_ mark: TextMark, to entity: TextMarkEntity) {
         entity.id = mark.id
         entity.itemId = mark.itemId
