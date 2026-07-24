@@ -158,7 +158,10 @@ struct RealDeviceMigrationRehearsalTests {
             topLevelBlocksByDocument[key]?.sort { $0.sortOrder < $1.sortOrder }
         }
 
-        let counts = LegacySnapshotCounts(folderCount: folderCount, documentCount: documentIds.count, blockCount: blockCount)
+        // `documentIds` below drops any row with a nil `id` (compactMap) —
+        // use the raw fetch count here so a nil-id row still shows up in
+        // the AC2 comparison instead of silently vanishing from it.
+        let counts = LegacySnapshotCounts(folderCount: folderCount, documentCount: documents.count, blockCount: blockCount)
 
         // Release the connection before handing the file off to
         // `StoreMigrationCoordinator` — it reads (and later replaces) that
