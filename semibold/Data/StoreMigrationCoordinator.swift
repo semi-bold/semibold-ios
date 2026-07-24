@@ -75,6 +75,40 @@ enum StoreMigrationCoordinator {
     /// `.claude/skills/sync-data/SKILL.md` copies for inspection.
     private static let sidecarSuffixes = ["-wal", "-shm"]
 
+    #if DEBUG
+    /// Test-only fault injector for the swap-in step below. When set,
+    /// checked once right before `swapInMigratedStore` runs; if it returns
+    /// an `Error`, `migrateStoreIfNeeded` throws it from that exact point —
+    /// i.e. behaves exactly as if the real swap had failed there — so the
+    /// same rollback (`restoreBackup` from the pre-migration backup this
+    /// method already made) runs for real afterward.
+    ///
+    /// This exists because a genuine swap-time failure (the store's
+    /// directory losing write access, or a sidecar rename racing a
+    /// concurrent process, mid-swap) can't be reproduced deterministically
+    /// from a black-box test: corrupting the source store file only ever
+    /// surfaces earlier, as `sourceModelUnavailable`/`backupFailed` (before
+    /// any rollback is relevant) or `rollbackFailed` (locking `storeURL`
+    /// itself blocks the rollback's own swap identically to the original
+    /// one) — never the "rollback succeeds" branch. `StoreMigrationRollback
+    /// Tests` uses this to exercise that branch directly. Always `nil`
+    /// outside of tests, and compiled out of Release builds entirely so it
+    /// can never affect a shipped build.
+    static var debugSwapFailureInjector: (() -> Error?)?
+
+    /// Serializes every `migrateStoreIfNeeded` call in DEBUG builds, so a
+    /// test that sets `debugSwapFailureInjector` can't have it fire inside
+    /// a *different*, concurrently-running migration test's call — Swift
+    /// Testing parallelizes across suites by default, and
+    /// `debugSwapFailureInjector` is process-wide state with no per-call
+    /// scoping of its own. Each call already only ever touches one
+    /// `storeURL`'s own files, so serializing here costs a real migration
+    /// nothing beyond DEBUG test runs (this app only ever calls it once,
+    /// at launch) — it exists purely to make the fault-injection seam
+    /// above safe to share across the test target's migration suites.
+    private static let debugMigrationLock = NSLock()
+    #endif
+
     /// Ensures the persistent store at `storeURL` is loadable with
     /// `destinationModel` before the caller (`DatabaseManager.init`) hands
     /// it to `NSPersistentContainer.loadPersistentStores`.
@@ -113,6 +147,18 @@ enum StoreMigrationCoordinator {
         storeURL: URL,
         destinationModel: NSManagedObjectModel,
         bundle: Bundle = Bundle(for: DatabaseManager.self)
+    ) throws {
+        #if DEBUG
+        debugMigrationLock.lock()
+        defer { debugMigrationLock.unlock() }
+        #endif
+        try migrateStoreIfNeededLocked(storeURL: storeURL, destinationModel: destinationModel, bundle: bundle)
+    }
+
+    private static func migrateStoreIfNeededLocked(
+        storeURL: URL,
+        destinationModel: NSManagedObjectModel,
+        bundle: Bundle
     ) throws {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: storeURL.path) else {
@@ -173,6 +219,11 @@ enum StoreMigrationCoordinator {
         }
 
         do {
+            #if DEBUG
+            if let injectedError = Self.debugSwapFailureInjector?() {
+                throw injectedError
+            }
+            #endif
             try swapInMigratedStore(from: stagingURL, to: storeURL)
             // Confirm the swapped-in file is actually loadable before
             // declaring success — otherwise a migration that "succeeded"
