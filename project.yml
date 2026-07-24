@@ -35,9 +35,12 @@ targets:
           UIColorName: LaunchBackground
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        UIBackgroundModes:
+          - remote-notification
     scheme:
       testTargets:
-        - semiboldTests
+        - name: semiboldTests
+          parallelizable: false
 
   semiboldTests:
     type: bundle.unit-test

@@ -1,23 +1,31 @@
 import Foundation
 import CoreTransferable
 
-/// A `Transferable` wrapper around one document's blocks, for `ShareLink`'s
-/// "파일 저장 또는 공유" (§10.3) export button in `DetailView`.
+/// A `Transferable` wrapper around one document's content items, for
+/// `ShareLink`'s "파일 저장 또는 공유" (§10.3) export button in `DetailView`.
 ///
-/// Holding just the document's title and its already-loaded blocks (cheap —
-/// `DetailViewModel.blocks` is already in memory) defers the actual
-/// `MarkdownExporter.render` + temporary-file write to `exporting(...)`'s
-/// closure, which `ShareLink` only calls once the user taps the share button
-/// and the system asks for the file. This keeps `DetailView.body` — which
-/// SwiftUI re-evaluates on every `@Observable` edit to `viewModel` — free of
-/// any rendering or disk I/O.
+/// Holding just the document's title and its already-loaded items/content
+/// (cheap — `DetailViewModel.items`/`.textContents`/`.marksByItemId` are
+/// already in memory) defers the actual `MarkdownExporter.render` +
+/// temporary-file write to `exporting(...)`'s closure, which `ShareLink`
+/// only calls once the user taps the share button and the system asks for
+/// the file. This keeps `DetailView.body` — which SwiftUI re-evaluates on
+/// every `@Observable` edit to `viewModel` — free of any rendering or disk
+/// I/O.
 struct MarkdownDocumentExport: Transferable {
     let documentTitle: String
-    let blocks: [DocumentBlock]
+    let items: [DocumentItem]
+    let textContents: [String: TextContent]
+    let marksByItemId: [String: [TextMark]]
 
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(exportedContentType: .text) { export in
-            let markdown = MarkdownExporter.render(documentTitle: export.documentTitle, blocks: export.blocks)
+            let markdown = MarkdownExporter.render(
+                documentTitle: export.documentTitle,
+                items: export.items,
+                textContents: export.textContents,
+                marksByItemId: export.marksByItemId
+            )
             let fileURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent(Self.fileName(forDocumentTitle: export.documentTitle))
             try markdown.write(to: fileURL, atomically: true, encoding: .utf8)
