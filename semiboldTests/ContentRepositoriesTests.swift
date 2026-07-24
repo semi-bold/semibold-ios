@@ -10,6 +10,21 @@ import Testing
 /// the batch-fetch methods actually issuing a single `IN`-clause query
 /// rather than looping the single-item fetch (the whole point of
 /// avoiding N+1 queries per `STORAGE_ARCHITECTURE.md` §5).
+///
+/// `.serialized`: several tests below reuse the same literal fixture ids
+/// (e.g. `"asset-1"`) across different test functions. Each gets its own
+/// isolated in-memory `CoreDataTestStore`, so that alone shouldn't cause
+/// cross-test interference — but `NO-005 06-migration-rehearsal` traced
+/// intermittent full-suite failures here (wrong/missing rows, `nilError`)
+/// to concurrent `NSPersistentContainer` setup racing on
+/// `DatabaseManager.model`'s single shared, process-wide
+/// `NSManagedObjectModel` instance (itself intentional — see
+/// `CoreDataTestStore.init`'s doc comment — to avoid a *different* Core
+/// Data warning about duplicate entity-to-class mappings). Serializing
+/// this suite's own test functions removes this suite's contribution to
+/// that race; full elimination (races with *other* suites' concurrent
+/// `CoreDataTestStore` usage) is a broader follow-up.
+@Suite(.serialized)
 struct ContentRepositoriesTests {
     private func makeStore() throws -> CoreDataTestStore {
         try CoreDataTestStore()
