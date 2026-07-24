@@ -95,19 +95,17 @@ struct DocumentRepository {
         try context.save()
     }
 
-    /// Permanently removes a document row and all its blocks. Intended
-    /// for purging already-soft-deleted documents, not for everyday
-    /// delete actions.
+    /// Permanently removes a document row and all its content items.
+    /// Intended for purging already-soft-deleted documents, not for
+    /// everyday delete actions.
     ///
-    /// ⚠️ This cascades through every block in the document **regardless
-    /// of each block's own `deletedAt` state** — it will just as happily
-    /// purge live (non-soft-deleted) content as soft-deleted content.
-    /// Core Data's `Deny` delete rule on `Document.blocks` blocks the
-    /// save if block rows are still attached (no automatic cascade), so
-    /// this deletes the document's whole block set first to clear that
-    /// constraint. Callers wiring up a "delete document" UI must
-    /// soft-delete (or confirm with the user) before calling this — there
-    /// is no built-in guard against permanently deleting active content.
+    /// ⚠️ This cascades through every content item in the document
+    /// **regardless of each item's own `deletedAt` state** — it will
+    /// just as happily purge live (non-soft-deleted) content as
+    /// soft-deleted content. Callers wiring up a "delete document" UI
+    /// must soft-delete (or confirm with the user) before calling this —
+    /// there is no built-in guard against permanently deleting active
+    /// content.
     func hardDelete(id: String) throws {
         guard let entity = try fetchEntity(id: id) else { return }
         try deleteSubtree(of: entity)
@@ -115,19 +113,26 @@ struct DocumentRepository {
         try context.save()
     }
 
-    /// Detaches and deletes every block belonging to `entity`, so the
-    /// document can be removed without the `Deny` rule on
-    /// `Document.blocks` rejecting the save. `entity.blocks` is the
-    /// document's *flat* set of every block regardless of nesting depth
-    /// (the inverse of `DocumentBlock.document`, not just top-level
-    /// blocks) — deleting it directly is correct and doesn't need to
-    /// walk each block's own `parent`/`children` relationship. Shared
-    /// with `FolderRepository.hardDelete`, which deletes nested documents
-    /// the same way before removing their containing folder.
+    /// Permanently removes every content item belonging to `entity`, so
+    /// the document can be removed without leaving orphaned item rows
+    /// behind. `DocumentItem` has no Core Data relationship back to
+    /// `Document` — like `DocumentItemRepository` itself, this queries
+    /// the document's top-level items by `documentId` and hands each one
+    /// to `DocumentItemRepository.hardDelete`, which already recurses
+    /// through the rest of that item's own subtree plus its associated
+    /// text/media detail rows. Shared with `FolderRepository.hardDelete`,
+    /// which deletes nested documents the same way before removing their
+    /// containing folder.
     func deleteSubtree(of entity: DocumentEntity) throws {
-        let blocks = (entity.blocks as? Set<DocumentBlockEntity>) ?? []
-        for block in blocks {
-            context.delete(block)
+        guard let documentId = entity.id else { return }
+        let request = DocumentItemEntity.fetchRequest()
+        let documentPredicate = NSPredicate(format: "documentId == %@", documentId)
+        let topLevelPredicate = NSPredicate(format: "parentItemId == nil")
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [documentPredicate, topLevelPredicate])
+        let itemRepository = DocumentItemRepository(context: context)
+        for item in try context.fetch(request) {
+            guard let itemId = item.id else { continue }
+            try itemRepository.hardDelete(id: itemId)
         }
     }
 

@@ -38,6 +38,11 @@ final class DatabaseManager {
             _sharedInstance = try DatabaseManager(storeURL: storeURL, syncEnabled: syncEnabled)
             openError = nil
         } catch {
+            // §15.2 "DB 열기 실패" surfaces only a generic message in the UI
+            // (DatabaseUnavailableView) — this is the only place the real
+            // underlying error is visible, so it must be logged for
+            // on-device debugging.
+            print("❌ DatabaseManager failed to load store at \(storeURL.path): \(error)")
             openError = error
             _sharedInstance = nil
         }
@@ -111,9 +116,19 @@ final class DatabaseManager {
     ///     local-only one, via `makeContainer(syncEnabled:storeURL:)`.
     ///     `shared` derives this from the Keychain session's `SessionMode`
     ///     at process start (NO-004 §4.2); tests pass it directly.
-    /// - Throws: if the persistent store can't be loaded (§15.2 "DB 열기
-    ///   실패").
+    /// - Throws: if the existing store still needs migrating to
+    ///   `Self.model` and that migration (or its rollback) fails
+    ///   (`StoreMigrationCoordinator.MigrationError`), or if the persistent
+    ///   store can't be loaded (§15.2 "DB 열기 실패").
     init(storeURL: URL?, syncEnabled: Bool = false) throws {
+        // A store still on a pre-NO-005 schema needs migrating before
+        // `loadPersistentStores` below can open it — `nil` storeURL is the
+        // in-memory case (tests/previews), which never touches disk and so
+        // never needs migrating (`tasks/NO-005.md` §4.1, §5).
+        if let storeURL {
+            try StoreMigrationCoordinator.migrateStoreIfNeeded(storeURL: storeURL, destinationModel: Self.model)
+        }
+
         let container = Self.makeContainer(syncEnabled: syncEnabled, storeURL: storeURL)
 
         // `loadPersistentStores` is callback-based, but for a local SQLite

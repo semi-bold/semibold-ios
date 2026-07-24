@@ -1,8 +1,34 @@
 import Foundation
 
+/// The exact `TextContent.textKind` string values this editor recognizes,
+/// matching `DocumentBlockMigrationPolicy`'s vocabulary
+/// (`semibold/Data/DocumentBlockMigrationPolicy.swift`) so a document
+/// edited here and a document produced by migrating pre-NO-005 data read
+/// back identically. Kept as named constants (rather than string literals
+/// scattered across `DetailViewModel`/its extensions) so a typo doesn't
+/// silently create a new, unrecognized kind.
+enum TextItemKind {
+    static let paragraph = "paragraph"
+    static let heading = "heading"
+    /// A blockquote — named `"quote"`, not `"blockquote"`, matching
+    /// `DocumentBlockMigrationPolicy.textKind(for:)`'s rename of the old
+    /// `BlockType.blockquote` case to `DOCUMENT_MODEL.md` §4.1's
+    /// recommended `quote` vocabulary.
+    static let quote = "quote"
+    static let checklist = "checklist"
+    static let bulletedListItem = "bulleted_list_item"
+    static let numberedListItem = "numbered_list_item"
+    static let codeBlock = "code_block"
+    static let divider = "divider"
+    /// Content this build doesn't recognize, preserved read-only rather
+    /// than guessed at (`DOCUMENT_MODEL.md` §4.5,
+    /// `DocumentBlockMigrationPolicy`'s unrecognized-`BlockType` branch).
+    static let unknown = "unknown"
+}
+
 /// Drives `DetailView` — the document editor screen.
 ///
-/// Loads a document's blocks from the local database so the editor
+/// Loads a document's content items from the local database so the editor
 /// always reflects what's actually been saved, and implements
 /// `Planning_4_BlockCreateFlow`'s block-create step: typing into a
 /// paragraph block and pressing Enter splits the text at the cursor,
@@ -12,6 +38,17 @@ import Foundation
 /// Backspace-at-start merge/delete and block reorder
 /// (PLANNING §6.3/§13.1, §5.4) — see `mergeOrDeleteBlock` and
 /// `moveBlock`.
+///
+/// **NO-005 model note**: a "block" in this file's naming/comments is the
+/// same planner-level concept `tasks/NO-001.md`/PLANNING always meant by
+/// it — one editable paragraph/heading/list item/etc. row. Internally it's
+/// now backed by a `DocumentItem` (position/hierarchy — `items`) plus that
+/// item's `TextContent` (the actual text — `textContents`), per
+/// `STORAGE_ARCHITECTURE.md` §5.5's "구조와 콘텐츠 분리" assembly rather than
+/// the old single `DocumentBlock` row. Only top-level items (`parentItemId
+/// == nil`) are loaded/edited here — nesting is out of this editor's scope,
+/// same as the pre-NO-005 version only ever reading `parentId == nil`
+/// blocks.
 @Observable
 @MainActor
 final class DetailViewModel {
@@ -42,15 +79,53 @@ final class DetailViewModel {
         }
     }
 
-    /// The document's top-level blocks, in display order, excluding
-    /// soft-deleted ones.
+    /// The document's top-level content items, in display order, excluding
+    /// soft-deleted ones — the structural half of each "block"
+    /// (`STORAGE_ARCHITECTURE.md` §5.5 steps 1/5).
     ///
     /// The setter isn't `private` (unlike most other `private(set)`
     /// properties here) because `DetailViewModel+KeyboardShortcuts.swift`
     /// (Cmd+B/I/K/Option+1-3, §13.2) edits the focused block's content the
     /// same way `updateBlockText` does, in its own file — Swift's `private`
     /// is file-scoped. Still `internal` (module-only), not `public`.
-    var blocks: [DocumentBlock] = []
+    var items: [DocumentItem] = []
+
+    /// Each item's text content, keyed by `DocumentItem.id` — the content
+    /// half of each "block" (`STORAGE_ARCHITECTURE.md` §5.5 steps 2/3).
+    /// Populated by a single batch fetch in `load()`, not one query per
+    /// item.
+    var textContents: [String: TextContent] = [:]
+
+    /// Each item's inline formatting marks, keyed by `DocumentItem.id`
+    /// (`STORAGE_ARCHITECTURE.md` §5.5 step 4). Loaded alongside
+    /// `textContents` so a document round-tripped through the pre-NO-005
+    /// migration keeps its bold/italic/link spans available to callers
+    /// that need them (e.g. Markdown export's `TextMarkdownReconstruction`).
+    ///
+    /// **Invalidated, not adjusted, on edit.** This editor's own plain-text
+    /// editing doesn't re-derive marks from typed Markdown (see
+    /// `updateBlockText`'s doc comment), and it has no way to know whether a
+    /// text edit shifted the substrings an existing mark's `startOffset`/
+    /// `endOffset` used to point at. So rather than leaving stale offsets
+    /// around — which `TextMarkdownReconstruction` would happily apply to
+    /// whatever now sits at those offsets, silently wrapping the wrong
+    /// substring in `**`/`*`/etc. — `persistBlock` clears a block's entry
+    /// here (and its underlying `TextMark` rows, via `TextMarkRepository
+    /// .deleteAll(itemId:)`) the moment that block is saved with existing
+    /// marks on it. A migrated block loses its formatting the first time
+    /// it's edited in this editor (reverting to plain delimiter-literal
+    /// text going forward); this is an intentionally simple, honest
+    /// degradation rather than diff-based offset adjustment.
+    private(set) var marksByItemId: [String: [TextMark]] = [:]
+
+    /// Each media item's detail, keyed by `DocumentItem.id`
+    /// (`STORAGE_ARCHITECTURE.md` §5.5 steps 2/3). No UI in this editor
+    /// creates or renders media content yet (`markdown-phase4`'s NO-005
+    /// migration keeps that out of scope, same as new content types like
+    /// tables) — loaded here only so a document that already has media
+    /// items (however they got there) doesn't lose that data on the next
+    /// save-and-reload round trip.
+    private(set) var mediaContents: [String: MediaContent] = [:]
 
     /// Whether the editor should show the "Markdown으로 작성하거나 / 를 눌러
     /// 블록을 추가하세요." empty-state placeholder (§15.1, third case —
@@ -59,13 +134,15 @@ final class DetailViewModel {
     /// `load()` guarantees every document has at least one block, so a
     /// document "with no content" is the single-paragraph,
     /// no-text-typed-yet case: exactly one block, of type `.paragraph`,
-    /// whose `displayText` is empty. The placeholder is an overlay shown
+    /// whose text is empty. The placeholder is an overlay shown
     /// alongside that block's (empty) input — like a text field's
     /// placeholder text — not a replacement for it, so the user can start
     /// typing Markdown or press `/` right where the hint appears.
     var showsEmptyContentPlaceholder: Bool {
-        guard blocks.count == 1, let onlyBlock = blocks.first else { return false }
-        return onlyBlock.type == .paragraph && onlyBlock.displayText.isEmpty
+        guard items.count == 1, let onlyItem = items.first, let content = textContents[onlyItem.id] else {
+            return false
+        }
+        return content.textKind == TextItemKind.paragraph && content.plainText.isEmpty
     }
 
     /// The id of the block the editor should move keyboard focus to next,
@@ -99,10 +176,10 @@ final class DetailViewModel {
     /// to show — `nil` once it's been shown/dismissed.
     var lockNotice: String?
 
-    /// Not `private` for the same cross-file-access reason as `blocks`
-    /// above — `DetailViewModel+KeyboardShortcuts.swift` persists its
-    /// shortcut-driven edits through this same repository.
-    let documentBlockRepository: DocumentBlockRepository
+    private let documentItemRepository: DocumentItemRepository
+    private let textItemRepository: TextItemRepository
+    private let textMarkRepository: TextMarkRepository
+    private let mediaItemRepository: MediaItemRepository
 
     /// Looked up once in `load()` to resolve `backButtonLabel` when the
     /// document is filed inside a folder.
@@ -118,7 +195,7 @@ final class DetailViewModel {
     /// into. A new keystroke cancels and replaces the previous timer for
     /// that block so only the latest edit is written once typing pauses.
     ///
-    /// Not `private` for the same cross-file-access reason as `blocks`
+    /// Not `private` for the same cross-file-access reason as `items`
     /// above — keyboard-shortcut edits cancel any pending debounced save
     /// for the block they apply to, like `updateBlockText`'s structural
     /// conversions do.
@@ -126,44 +203,52 @@ final class DetailViewModel {
 
     init(
         document: Document,
-        documentBlockRepository: DocumentBlockRepository = DocumentBlockRepository(),
+        documentItemRepository: DocumentItemRepository = DocumentItemRepository(),
+        textItemRepository: TextItemRepository = TextItemRepository(),
+        textMarkRepository: TextMarkRepository = TextMarkRepository(),
+        mediaItemRepository: MediaItemRepository = MediaItemRepository(),
         folderRepository: FolderRepository = FolderRepository(),
         autosaveDebounceInterval: Duration = .milliseconds(500)
     ) {
         self.document = document
-        self.documentBlockRepository = documentBlockRepository
+        self.documentItemRepository = documentItemRepository
+        self.textItemRepository = textItemRepository
+        self.textMarkRepository = textMarkRepository
+        self.mediaItemRepository = mediaItemRepository
         self.folderRepository = folderRepository
         self.autosaveDebounceInterval = autosaveDebounceInterval
     }
 
-    /// Reloads this document's top-level blocks and resolves the
+    /// Reloads this document's top-level content items and resolves the
     /// back-button label for the folder it's filed in. If the document has
-    /// no blocks yet (a brand-new document), creates a single empty
-    /// paragraph block so there's always something to type into
+    /// no items yet (a brand-new document), creates a single empty
+    /// paragraph item so there's always something to type into
     /// (PLANNING §6.2 "기본 paragraph block 1개 생성", §5.4 step A).
+    ///
+    /// Assembly follows `STORAGE_ARCHITECTURE.md` §5.5: fetch this
+    /// document's items, classify their ids by `contentType`, batch-fetch
+    /// each type's detail table (and every item's marks) rather than
+    /// querying once per item, then hand the result to the view.
     func load() {
         do {
-            let loaded = try documentBlockRepository.blocks(documentId: document.id, parentId: nil)
-            if loaded.isEmpty {
-                let firstBlock = DocumentBlock(
-                    documentId: document.id,
-                    sortOrder: 0,
-                    type: .paragraph,
-                    contentJSON: Self.contentJSON(forText: "")
-                )
-                let created = try documentBlockRepository.create(firstBlock)
-                blocks = [created]
+            var loadedItems = try documentItemRepository.children(documentId: document.id, parentItemId: nil)
+            if loadedItems.isEmpty {
+                let created = try createFirstItem()
+                loadedItems = [created]
                 focusedBlockId = created.id
-            } else {
-                blocks = loaded
             }
+            items = loadedItems
+            try loadContent(for: loadedItems)
         } catch {
-            // The editor simply shows an empty document if blocks can't be
-            // read or the first block can't be created; the local database
+            // The editor simply shows an empty document if items can't be
+            // read or the first item can't be created; the local database
             // is expected to always be available, so this would indicate a
             // deeper setup problem rather than something the user can act
             // on here.
-            blocks = []
+            items = []
+            textContents = [:]
+            marksByItemId = [:]
+            mediaContents = [:]
         }
 
         // A root-level document (`folderId == nil`) keeps the literal
@@ -177,121 +262,171 @@ final class DetailViewModel {
         backButtonLabel = FolderBackButtonLabel.resolve(parentId: document.folderId, parentName: folderName)
     }
 
-    /// Updates the in-memory text for `block` immediately (so the editor
-    /// stays responsive) and schedules a debounced save of
-    /// `markdownSource`/`contentJSON` to the database (PLANNING §6.3 블록
-    /// 저장 원칙, §11.2 "블록 입력: 300~800ms debounce 후 저장"). A new
-    /// keystroke cancels the previous block's pending save and restarts the
-    /// timer, so rapid typing only writes once the user pauses.
+    /// Creates the single empty paragraph item a brand-new document
+    /// starts with.
+    private func createFirstItem() throws -> DocumentItem {
+        let item = try documentItemRepository.create(
+            DocumentItem(documentId: document.id, contentType: "text", orderKey: OrderKey.between(nil, nil))
+        )
+        _ = try textItemRepository.create(TextContent(itemId: item.id, textKind: TextItemKind.paragraph, plainText: ""))
+        return item
+    }
+
+    /// Batch-fetches `items`' text/media detail and every text item's
+    /// marks (`STORAGE_ARCHITECTURE.md` §5.2-§5.4), replacing
+    /// `textContents`/`mediaContents`/`marksByItemId` wholesale.
+    private func loadContent(for items: [DocumentItem]) throws {
+        let textItemIds = items.filter { $0.contentType == "text" }.map(\.id)
+        let mediaItemIds = items.filter { $0.contentType == "media" }.map(\.id)
+
+        textContents = Dictionary(
+            uniqueKeysWithValues: try textItemRepository.find(itemIds: textItemIds).map { ($0.itemId, $0) }
+        )
+        mediaContents = Dictionary(
+            uniqueKeysWithValues: try mediaItemRepository.find(itemIds: mediaItemIds).map { ($0.itemId, $0) }
+        )
+        marksByItemId = try textMarkRepository.marks(itemIds: textItemIds)
+    }
+
+    /// This item's text content, or a safe empty paragraph fallback if
+    /// none has been loaded (shouldn't normally happen for a `"text"`
+    /// item once `load()` has run — defensive so a lookup miss shows an
+    /// empty row instead of crashing).
+    func textContent(forItemId itemId: String) -> TextContent {
+        textContents[itemId] ?? TextContent(itemId: itemId, textKind: TextItemKind.paragraph, plainText: "")
+    }
+
+    /// The number shown before a `.numberedListItem` block's text (e.g.
+    /// `1` for the first item, `2` for the next, …).
+    ///
+    /// Unlike the pre-NO-005 model (which kept whatever literal number the
+    /// user originally typed, read from `markdownSource`), `TextContent`
+    /// has no field to remember an arbitrary starting number — the new
+    /// schema's `text_items` table only has `plain_text` plus the shared
+    /// fields listed in `DOCUMENT_MODEL.md` §4.1, none of which fit a
+    /// per-item numbering override. This instead numbers items
+    /// sequentially by their position within a run of consecutive
+    /// `numbered_list_item` siblings, which is what most Markdown renderers
+    /// show anyway — flagged as a deliberate, minor behavior change from
+    /// the old "keeps the typed number forever" quirk (`markdown-phase4`
+    /// AC2's original comment already called that quirk a follow-up, not a
+    /// guarantee).
+    func numberedListNumber(forItemId itemId: String) -> Int {
+        guard let index = items.firstIndex(where: { $0.id == itemId }) else { return 1 }
+        var number = 1
+        var cursor = index - 1
+        while cursor >= 0, textContents[items[cursor].id]?.textKind == TextItemKind.numberedListItem {
+            number += 1
+            cursor -= 1
+        }
+        return number
+    }
+
+    /// Updates the in-memory text for `blockId` immediately (so the editor
+    /// stays responsive) and schedules a debounced save to the database
+    /// (PLANNING §6.3 블록 저장 원칙, §11.2 "블록 입력: 300~800ms debounce 후
+    /// 저장"). A new keystroke cancels the previous block's pending save and
+    /// restarts the timer, so rapid typing only writes once the user
+    /// pauses.
     ///
     /// Before applying a plain text edit, checks whether `text` now starts
     /// with a supported Markdown prefix (`# `/`## `/`### `, `- `, `<n>. `,
     /// `- [ ] `/`- [x] `, `> `, ` ``` `/` ```<lang> `) — if so, the block's
-    /// type is converted on the spot
+    /// `textKind` is converted on the spot
     /// (`Planning_4_BlockCreateFlow`'s "Markdown Syntax → Markdown parser가
     /// 타입 감지" branch, §5.4) and saved immediately rather than going
     /// through the debounce, since a type change is a structural edit
     /// (§11.2 "블록 생성/삭제/순서 변경: 즉시 저장").
+    ///
+    /// **Inline marks deviation**: `plainText` is set to `text` exactly as
+    /// typed, delimiters (`**`/`*`/etc.) and all — matching the pre-NO-005
+    /// editor's `displayText`, which also kept delimiters literal
+    /// (`BlockContent+InlineMarks.swift`'s documented deviation) so the
+    /// plain `UITextView`-backed input round-trips what the user typed
+    /// without the delimiters vanishing mid-edit. This means edits made
+    /// here don't parse `text` into `TextMark` rows the way
+    /// `DocumentBlockMigrationPolicy`'s migrated content does — and, per
+    /// `marksByItemId`'s doc comment, `persistBlock` invalidates (drops)
+    /// any `TextMark`s the block already had once this edit is saved,
+    /// rather than leaving them pointing at stale offsets in the new text;
+    /// flagged as a gap for a future WYSIWYG-editing pass to close.
     func updateBlockText(_ blockId: String, text: String) {
-        guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
+        guard items.contains(where: { $0.id == blockId }) else { return }
+        let currentKind = textContent(forItemId: blockId).textKind
 
-        if Self.isSlashCommandTrigger(forTypedText: text, currentType: blocks[index].type) {
+        if Self.isSlashCommandTrigger(forTypedText: text, currentTextKind: currentKind) {
             // The `/` itself is consumed (cleared back to an empty
             // paragraph) — the Slash Command sheet lets the user pick the
             // block's new type, then they type its real content fresh.
-            blocks[index].markdownSource = ""
-            blocks[index].contentJSON = BlockContent.paragraphJSON(text: "")
-
-            pendingSaveTasks[blockId]?.cancel()
-            pendingSaveTasks[blockId] = nil
+            textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.paragraph, plainText: "")
+            cancelPendingSave(blockId)
             persistBlock(blockId)
             slashCommandBlockId = blockId
             return
         }
 
-        if blocks[index].type == .paragraph, let heading = Self.headingConversion(forTypedText: text) {
-            blocks[index].type = .heading
-            blocks[index].contentJSON = BlockContent.headingJSON(level: heading.level, text: heading.text)
-            blocks[index].markdownSource = heading.markdownSource
-
-            pendingSaveTasks[blockId]?.cancel()
-            pendingSaveTasks[blockId] = nil
+        if currentKind == TextItemKind.paragraph, let heading = Self.headingConversion(forTypedText: text) {
+            textContents[blockId] = TextContent(
+                itemId: blockId, textKind: TextItemKind.heading, plainText: heading.text, headingLevel: heading.level
+            )
+            cancelPendingSave(blockId)
             persistBlock(blockId)
             return
         }
 
-        if blocks[index].type == .paragraph, let checklist = Self.checklistConversion(forTypedText: text) {
-            blocks[index].type = .checklistItem
-            blocks[index].contentJSON = BlockContent.checklistItemJSON(checked: checklist.checked, text: checklist.text)
-            blocks[index].markdownSource = checklist.markdownSource
-
-            pendingSaveTasks[blockId]?.cancel()
-            pendingSaveTasks[blockId] = nil
+        if currentKind == TextItemKind.paragraph, let checklist = Self.checklistConversion(forTypedText: text) {
+            textContents[blockId] = TextContent(
+                itemId: blockId, textKind: TextItemKind.checklist, plainText: checklist.text, isChecked: checklist.checked
+            )
+            cancelPendingSave(blockId)
             persistBlock(blockId)
             return
         }
 
-        if blocks[index].type == .paragraph, let list = Self.listConversion(forTypedText: text) {
-            blocks[index].type = list.type
-            blocks[index].contentJSON = list.contentJSON(text: list.text)
-            blocks[index].markdownSource = list.markdownSource
-
-            pendingSaveTasks[blockId]?.cancel()
-            pendingSaveTasks[blockId] = nil
+        if currentKind == TextItemKind.paragraph, let list = Self.listConversion(forTypedText: text) {
+            textContents[blockId] = TextContent(itemId: blockId, textKind: list.textKind, plainText: list.text)
+            cancelPendingSave(blockId)
             persistBlock(blockId)
             return
         }
 
-        if blocks[index].type == .paragraph, let blockquote = Self.blockquoteConversion(forTypedText: text) {
-            blocks[index].type = .blockquote
-            blocks[index].contentJSON = BlockContent.blockquoteJSON(text: blockquote.text)
-            blocks[index].markdownSource = blockquote.markdownSource
-
-            pendingSaveTasks[blockId]?.cancel()
-            pendingSaveTasks[blockId] = nil
+        if currentKind == TextItemKind.paragraph, let blockquote = Self.blockquoteConversion(forTypedText: text) {
+            textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.quote, plainText: blockquote.text)
+            cancelPendingSave(blockId)
             persistBlock(blockId)
             return
         }
 
-        if blocks[index].type == .paragraph, let codeBlock = Self.codeBlockConversion(forTypedText: text) {
-            blocks[index].type = .codeBlock
-            blocks[index].contentJSON = BlockContent.codeBlockJSON(language: codeBlock.language, code: codeBlock.code)
-            blocks[index].markdownSource = Self.codeBlockMarkdownSource(language: codeBlock.language, code: codeBlock.code)
-
-            pendingSaveTasks[blockId]?.cancel()
-            pendingSaveTasks[blockId] = nil
+        if currentKind == TextItemKind.paragraph, let codeBlock = Self.codeBlockConversion(forTypedText: text) {
+            // `codeBlock.language` (the identifier typed after the opening
+            // fence, e.g. `"swift"`) has nowhere to live in `TextContent`
+            // — `DOCUMENT_MODEL.md` §4.1's `text_items` fields don't
+            // include one — so it's detected (to trigger the conversion)
+            // but not persisted. Flagged as a pre-existing schema gap
+            // (`DocumentBlockMigrationPolicy` already drops it the same
+            // way when migrating an old `.codeBlock` block), not something
+            // introduced here.
+            textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.codeBlock, plainText: codeBlock.code)
+            cancelPendingSave(blockId)
             persistBlock(blockId)
             return
         }
 
-        if blocks[index].type == .heading {
-            let level = Self.headingLevel(forContentJSON: blocks[index].contentJSON)
-            blocks[index].markdownSource = Self.headingMarkdownSource(level: level, text: text)
-            blocks[index].contentJSON = BlockContent.headingJSON(level: level, text: text)
-        } else if blocks[index].type == .bulletedListItem {
-            blocks[index].markdownSource = Self.bulletedListMarkdownSource(text: text)
-            blocks[index].contentJSON = BlockContent.bulletedListItemJSON(text: text)
-        } else if blocks[index].type == .numberedListItem {
-            let number = BlockContent.leadingNumber(forMarkdownSource: blocks[index].markdownSource)
-            blocks[index].markdownSource = Self.numberedListMarkdownSource(number: number, text: text)
-            blocks[index].contentJSON = BlockContent.numberedListItemJSON(text: text)
-        } else if blocks[index].type == .checklistItem {
-            let checked = blocks[index].isChecked
-            blocks[index].markdownSource = Self.checklistMarkdownSource(checked: checked, text: text)
-            blocks[index].contentJSON = BlockContent.checklistItemJSON(checked: checked, text: text)
-        } else if blocks[index].type == .blockquote {
-            blocks[index].markdownSource = Self.blockquoteMarkdownSource(text: text)
-            blocks[index].contentJSON = BlockContent.blockquoteJSON(text: text)
-        } else if blocks[index].type == .codeBlock {
-            let language = blocks[index].codeLanguage
-            blocks[index].markdownSource = Self.codeBlockMarkdownSource(language: language, code: text)
-            blocks[index].contentJSON = BlockContent.codeBlockJSON(language: language, code: text)
-        } else {
-            blocks[index].markdownSource = text
-            blocks[index].contentJSON = BlockContent.paragraphJSON(text: text)
+        switch currentKind {
+        case TextItemKind.checklist:
+            let checked = textContent(forItemId: blockId).isChecked ?? false
+            textContents[blockId] = TextContent(itemId: blockId, textKind: currentKind, plainText: text, isChecked: checked)
+        case TextItemKind.heading:
+            let level = textContent(forItemId: blockId).headingLevel
+            textContents[blockId] = TextContent(itemId: blockId, textKind: currentKind, plainText: text, headingLevel: level)
+        default:
+            textContents[blockId]?.plainText = text
+            if textContents[blockId] == nil {
+                textContents[blockId] = TextContent(itemId: blockId, textKind: currentKind, plainText: text)
+            }
         }
 
-        pendingSaveTasks[blockId]?.cancel()
+        cancelPendingSave(blockId)
         pendingSaveTasks[blockId] = Task { @MainActor [weak self, autosaveDebounceInterval] in
             do {
                 try await Task.sleep(for: autosaveDebounceInterval)
@@ -311,13 +446,44 @@ final class DetailViewModel {
         }
     }
 
-    /// Immediately writes `blockId`'s current in-memory text to the
-    /// database, bypassing the debounce timer.
-    private func persistBlock(_ blockId: String) {
-        guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
+    /// Cancels and clears any pending debounced save for `blockId` — the
+    /// common first step every structural (non-debounced) edit takes
+    /// before persisting immediately.
+    func cancelPendingSave(_ blockId: String) {
+        pendingSaveTasks[blockId]?.cancel()
+        pendingSaveTasks[blockId] = nil
+    }
+
+    /// Immediately writes `blockId`'s current in-memory text content to the
+    /// database, bypassing the debounce timer, and bumps its owning item's
+    /// `revision` — the content-edit counterpart to `STORAGE_ARCHITECTURE.md`
+    /// §6's "text_items UPDATE" + "document_items 갱신" pair. Not `private`
+    /// so `+SlashCommand.swift`/`+KeyboardShortcuts.swift` (Swift's
+    /// `private` is file-scoped) can persist their own structural edits the
+    /// same way `updateBlockText`'s conversions do.
+    ///
+    /// Every save routed through here — this is the single choke point all
+    /// of `updateBlockText`'s conversions, `insertBlock`'s split,
+    /// `mergeOrDeleteBlock`'s merge, `toggleChecklistItem`, and
+    /// `+KeyboardShortcuts.swift`'s shortcuts all persist through — also
+    /// invalidates `blockId`'s existing `TextMark`s first if it has any
+    /// (`marksByItemId`'s doc comment explains why: this editor can't tell
+    /// whether/how a save shifted the text those marks' offsets pointed at,
+    /// so it drops them rather than risk exporting formatting onto the
+    /// wrong substring).
+    func persistBlock(_ blockId: String) {
+        guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
+        let content = textContent(forItemId: blockId)
 
         do {
-            blocks[index] = try documentBlockRepository.update(blocks[index])
+            if let existingMarks = marksByItemId[blockId], !existingMarks.isEmpty {
+                try textMarkRepository.deleteAll(itemId: blockId)
+                marksByItemId[blockId] = nil
+            }
+            textContents[blockId] = try textItemRepository.update(content)
+            var item = items[index]
+            item.revision += 1
+            items[index] = try documentItemRepository.update(item)
         } catch {
             // §15.2 "저장 실패" — the edit stays in memory (so the user
             // doesn't lose what they typed) but didn't reach the database;
@@ -328,25 +494,19 @@ final class DetailViewModel {
     }
 
     /// Toggles a `.checklistItem` block's done/not-done state (§7.1's
-    /// checkbox tap). Flips `contentJSON.checked`, rebuilds
-    /// `markdownSource` to match (`"- [ ] task"` ↔ `"- [x] task"`), and
-    /// persists immediately — like the prefix conversions above, this is a
-    /// structural edit rather than a text edit, so it bypasses the
-    /// debounce (PLANNING §11.2 "블록 생성/삭제/순서 변경: 즉시 저장").
+    /// checkbox tap). Flips `isChecked` and persists immediately — like the
+    /// prefix conversions above, this is a structural edit rather than a
+    /// text edit, so it bypasses the debounce (PLANNING §11.2 "블록
+    /// 생성/삭제/순서 변경: 즉시 저장").
     ///
-    /// Does nothing if `blockId` isn't a `.checklistItem` block.
+    /// Does nothing if `blockId` isn't a checklist block.
     func toggleChecklistItem(blockId: String) {
-        guard let index = blocks.firstIndex(where: { $0.id == blockId }), blocks[index].type == .checklistItem else {
-            return
-        }
+        guard textContent(forItemId: blockId).textKind == TextItemKind.checklist else { return }
 
-        let newChecked = !blocks[index].isChecked
-        let text = blocks[index].displayText
-        blocks[index].contentJSON = BlockContent.checklistItemJSON(checked: newChecked, text: text)
-        blocks[index].markdownSource = Self.checklistMarkdownSource(checked: newChecked, text: text)
+        let newChecked = !(textContent(forItemId: blockId).isChecked ?? false)
+        textContents[blockId]?.isChecked = newChecked
 
-        pendingSaveTasks[blockId]?.cancel()
-        pendingSaveTasks[blockId] = nil
+        cancelPendingSave(blockId)
         persistBlock(blockId)
     }
 
@@ -366,8 +526,7 @@ final class DetailViewModel {
     func flushPendingChanges() {
         let blockIds = Array(pendingSaveTasks.keys)
         for blockId in blockIds {
-            pendingSaveTasks[blockId]?.cancel()
-            pendingSaveTasks[blockId] = nil
+            cancelPendingSave(blockId)
             persistBlock(blockId)
         }
     }
@@ -380,9 +539,14 @@ final class DetailViewModel {
     /// Splits `text` at the cursor: everything before stays in `block`,
     /// everything after becomes a new empty-or-continued paragraph block
     /// placed immediately below it, and focus moves to that new block so
-    /// typing continues naturally.
+    /// typing continues naturally. The new item's `orderKey` is generated
+    /// between the current item and whatever (if anything) already
+    /// followed it (`OrderKey.between`, `tasks/NO-005.md` §2.2) — no other
+    /// sibling's `orderKey` is touched, unlike the old integer `sortOrder`
+    /// version of this method, which had to shift every later block down
+    /// by one.
     func insertBlock(after blockId: String, currentText: String, cursorOffset: Int) {
-        guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
+        guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
 
         // `cursorOffset` comes from `UITextView` as a UTF-16 offset, so
         // split using the UTF-16 view and clamp to its bounds before
@@ -401,32 +565,23 @@ final class DetailViewModel {
         // 순서 변경: 즉시 저장"), so update the in-memory text and persist
         // the (possibly trimmed) text that stays in the current block
         // right away rather than going through the debounced path.
-        blocks[index].markdownSource = beforeText
-        blocks[index].contentJSON = Self.contentJSON(forText: beforeText)
-        pendingSaveTasks[blockId]?.cancel()
-        pendingSaveTasks[blockId] = nil
+        textContents[blockId]?.plainText = beforeText
+        cancelPendingSave(blockId)
         persistBlock(blockId)
 
-        let newBlock = DocumentBlock(
-            documentId: document.id,
-            sortOrder: blocks[index].sortOrder + 1,
-            type: .paragraph,
-            contentJSON: Self.contentJSON(forText: afterText),
-            markdownSource: afterText
-        )
+        let nextOrderKey = items.indices.contains(index + 1) ? items[index + 1].orderKey : nil
+        let newOrderKey = OrderKey.between(items[index].orderKey, nextOrderKey)
 
         do {
-            // Make room for the new block by shifting every later block's
-            // sortOrder down by one, then insert it right after the
-            // current one.
-            for laterIndex in blocks.indices where blocks[laterIndex].sortOrder > blocks[index].sortOrder {
-                blocks[laterIndex].sortOrder += 1
-                blocks[laterIndex] = try documentBlockRepository.update(blocks[laterIndex])
-            }
-
-            let created = try documentBlockRepository.create(newBlock)
-            blocks.insert(created, at: index + 1)
-            focusedBlockId = created.id
+            let createdItem = try documentItemRepository.create(
+                DocumentItem(documentId: document.id, contentType: "text", orderKey: newOrderKey)
+            )
+            let createdContent = try textItemRepository.create(
+                TextContent(itemId: createdItem.id, textKind: TextItemKind.paragraph, plainText: afterText)
+            )
+            items.insert(createdItem, at: index + 1)
+            textContents[createdItem.id] = createdContent
+            focusedBlockId = createdItem.id
         } catch {
             // §15.2 "저장 실패" — the new block stays local-only; reloading
             // the document reconciles it once the database is reachable
@@ -469,57 +624,41 @@ final class DetailViewModel {
     ///
     /// Either way this is a block create/delete-equivalent structural
     /// change, so it's persisted immediately rather than debounced
-    /// (PLANNING §11.2 "블록 생성/삭제/순서 변경: 즉시 저장").
+    /// (PLANNING §11.2 "블록 생성/삭제/순서 변경: 즉시 저장"). Removing
+    /// `blockId` is a soft delete (`DocumentItemRepository.softDelete`) —
+    /// its row (and orphaned `TextContent` row) can still be recovered
+    /// later, matching the old `DocumentBlockRepository.softDelete`
+    /// behavior this replaces.
     func mergeOrDeleteBlock(_ blockId: String, currentText: String) {
-        guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
+        guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
         guard index > 0 else {
             // First block in the document — Backspace at its start does
             // nothing, matching AC2's "every document has ≥1 block".
             return
         }
 
-        let previousIndex = index - 1
-        let previousBlock = blocks[previousIndex]
-        let previousText = previousBlock.markdownSource ?? ""
+        let previousItem = items[index - 1]
+        let previousText = textContent(forItemId: previousItem.id).plainText
 
         // Cancel any pending debounced save for the block being removed —
         // its content is either discarded (empty block) or already folded
         // into the previous block's text below.
-        pendingSaveTasks[blockId]?.cancel()
-        pendingSaveTasks[blockId] = nil
+        cancelPendingSave(blockId)
 
-        let mergedText: String
-        let cursorOffset: Int
-        if currentText.isEmpty {
-            // Empty block: just drop it, caret goes to the end of the
-            // previous block's existing text.
-            mergedText = previousText
-            cursorOffset = previousText.utf16.count
-        } else {
-            // Non-empty block: fold its text onto the end of the previous
-            // block, caret lands at the seam between the two texts.
-            mergedText = previousText + currentText
-            cursorOffset = previousText.utf16.count
-        }
+        let mergedText = currentText.isEmpty ? previousText : previousText + currentText
+        let cursorOffset = previousText.utf16.count
 
-        blocks[previousIndex].markdownSource = mergedText
-        blocks[previousIndex].contentJSON = Self.contentJSON(forText: mergedText)
-        pendingSaveTasks[previousBlock.id]?.cancel()
-        pendingSaveTasks[previousBlock.id] = nil
-        persistBlock(previousBlock.id)
+        textContents[previousItem.id]?.plainText = mergedText
+        cancelPendingSave(previousItem.id)
+        persistBlock(previousItem.id)
 
         do {
-            try documentBlockRepository.softDelete(id: blockId)
-            blocks.remove(at: index)
+            try documentItemRepository.softDelete(id: blockId)
+            items.remove(at: index)
+            textContents[blockId] = nil
+            marksByItemId[blockId] = nil
 
-            // Shift every later block's sortOrder down by one to close the
-            // gap left by the removed block.
-            for laterIndex in blocks.indices where blocks[laterIndex].sortOrder > previousBlock.sortOrder + 1 {
-                blocks[laterIndex].sortOrder -= 1
-                blocks[laterIndex] = try documentBlockRepository.update(blocks[laterIndex])
-            }
-
-            focusedBlockId = previousBlock.id
+            focusedBlockId = previousItem.id
             focusedBlockCursorOffset = cursorOffset
         } catch {
             // §15.2 "삭제 실패" — the block stays in the database
@@ -537,39 +676,21 @@ final class DetailViewModel {
 
     /// Moves `blockId` one position up or down in display order
     /// (`Planning_4_BlockCreateFlow` callout ⑤ / PLANNING §6.3 "Drag & Drop
-    /// 또는 키보드 조작으로 블록 순서 변경"), swapping `sortOrder` with its
-    /// neighbor and persisting both immediately (PLANNING §11.2 "블록
-    /// 생성/삭제/순서 변경: 즉시 저장").
+    /// 또는 키보드 조작으로 블록 순서 변경"), persisting the move immediately
+    /// (PLANNING §11.2 "블록 생성/삭제/순서 변경: 즉시 저장").
     ///
     /// Does nothing if `blockId` is already at the top (for `.up`) or
     /// bottom (for `.down`) of the list. The reorder UI itself (drag &
     /// drop or a keyboard control) is `quality-phase5` — this is the
     /// persistence-layer half a future UI calls into.
     func moveBlock(id blockId: String, direction: MoveDirection) {
-        guard let index = blocks.firstIndex(where: { $0.id == blockId }) else { return }
+        guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
 
         let neighborIndex = direction == .up ? index - 1 : index + 1
-        guard blocks.indices.contains(neighborIndex) else { return }
+        guard items.indices.contains(neighborIndex) else { return }
 
-        let movedSortOrder = blocks[index].sortOrder
-        let neighborSortOrder = blocks[neighborIndex].sortOrder
-
-        var moved = blocks[index]
-        var neighbor = blocks[neighborIndex]
-        moved.sortOrder = neighborSortOrder
-        neighbor.sortOrder = movedSortOrder
-
-        do {
-            blocks[index] = try documentBlockRepository.update(moved)
-            blocks[neighborIndex] = try documentBlockRepository.update(neighbor)
-            blocks.swapAt(index, neighborIndex)
-        } catch {
-            // §15.2 "저장 실패" — leave the in-memory order as-is (still
-            // reflecting the original `sortOrder` values) if the save
-            // fails, so the editor's order keeps matching what's
-            // persisted.
-            errorMessage = AppErrorMessages.saveFailed
-        }
+        let destination = direction == .up ? neighborIndex : neighborIndex + 1
+        reorderBlocks(fromOffsets: IndexSet(integer: index), toOffset: destination)
     }
 
     /// Moves the blocks at `fromOffsets` to just before `toOffset` in
@@ -577,24 +698,53 @@ final class DetailViewModel {
     /// block reordering), matching SwiftUI's `List.onMove(perform:)`
     /// signature so it can also back a drag handle if one is ever added.
     ///
-    /// After reordering the in-memory array, every block's `sortOrder` is
-    /// recomputed to match its new index (0, 1, 2, …) and any block whose
-    /// `sortOrder` actually changed is saved immediately — like
+    /// After reordering the in-memory array, each moved item gets a fresh
+    /// `orderKey` computed from its NEW neighbors (`OrderKey.between`,
+    /// `tasks/NO-005.md` §2.2) and is saved immediately — every
+    /// NOT-moved sibling's `orderKey` is left untouched, unlike the old
+    /// integer-`sortOrder` version of this method (which recomputed every
+    /// item's `sortOrder` on every reorder). Like
     /// `moveBlock(id:direction:)` above, reordering is a structural change
     /// that bypasses the debounce (PLANNING §11.2 "블록 생성/삭제/순서 변경:
     /// 즉시 저장").
     func reorderBlocks(fromOffsets source: IndexSet, toOffset destination: Int) {
         guard !source.isEmpty else { return }
 
-        let previousSortOrders = Dictionary(uniqueKeysWithValues: blocks.map { ($0.id, $0.sortOrder) })
-        blocks.move(fromOffsets: source, toOffset: destination)
+        let movedIds = source.map { items[$0].id }
+        items.move(fromOffsets: source, toOffset: destination)
 
-        for index in blocks.indices where blocks[index].sortOrder != index {
-            blocks[index].sortOrder = index
+        // Processed in the order the moved items now appear, so a later
+        // moved item's neighbor lookup sees an earlier moved item's
+        // already-updated `orderKey` rather than its stale pre-move value
+        // — only matters for a multi-item move (no current call site
+        // passes more than one id, but this keeps the method correct if
+        // one ever does).
+        for movedId in movedIds {
+            guard let index = items.firstIndex(where: { $0.id == movedId }) else { continue }
+            let previousOrderKey = index > 0 ? items[index - 1].orderKey : nil
+            let nextOrderKey = index < items.count - 1 ? items[index + 1].orderKey : nil
+            let newOrderKey = OrderKey.between(previousOrderKey, nextOrderKey)
+            guard newOrderKey != items[index].orderKey else { continue }
+
+            items[index].orderKey = newOrderKey
+            persistItemOrder(movedId)
         }
+    }
 
-        for block in blocks where previousSortOrders[block.id] != block.sortOrder {
-            persistBlock(block.id)
+    /// Immediately writes `blockId`'s current in-memory `orderKey` to the
+    /// database (bumping its `revision`), without touching its text
+    /// content — the reorder-only counterpart to `persistBlock`.
+    private func persistItemOrder(_ blockId: String) {
+        guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
+        do {
+            var item = items[index]
+            item.revision += 1
+            items[index] = try documentItemRepository.update(item)
+        } catch {
+            // §15.2 "저장 실패" — leave the in-memory order as-is if the
+            // save fails, so the editor's order keeps matching what's
+            // persisted once the next reload happens.
+            errorMessage = AppErrorMessages.saveFailed
         }
     }
 
@@ -604,8 +754,8 @@ final class DetailViewModel {
     /// reordering). Does nothing if either id can't be found, or if
     /// `draggedBlockId` is already immediately before `targetBlockId`.
     func moveBlock(id draggedBlockId: String, beforeBlockId targetBlockId: String) {
-        guard let fromIndex = blocks.firstIndex(where: { $0.id == draggedBlockId }),
-              let targetIndex = blocks.firstIndex(where: { $0.id == targetBlockId }),
+        guard let fromIndex = items.firstIndex(where: { $0.id == draggedBlockId }),
+              let targetIndex = items.firstIndex(where: { $0.id == targetBlockId }),
               draggedBlockId != targetBlockId else {
             return
         }
@@ -619,13 +769,5 @@ final class DetailViewModel {
         // block directly above the target either way.
         let destination = targetIndex
         reorderBlocks(fromOffsets: IndexSet(integer: fromIndex), toOffset: destination)
-    }
-
-    /// Builds the `contentJSON` for a plain paragraph block holding
-    /// `text` (§8.1's `{ type: "paragraph", text: RichTextSpan[] }` shape).
-    /// Inline formatting marks are `markdown-phase4` follow-up scope (AC6),
-    /// so each block is a single unstyled text span for now.
-    private static func contentJSON(forText text: String) -> String {
-        BlockContent.paragraphJSON(text: text)
     }
 }

@@ -1,33 +1,51 @@
 import Foundation
 
-/// Renders a `Document` and its ordered `[DocumentBlock]`s into a single
-/// Markdown string, for the "파일 저장 또는 공유" (save/share) step of
-/// `tasks/NO-001.md` §10.3's export flow:
+/// Renders a `Document` and its ordered `[DocumentItem]`s (each backed by a
+/// `TextContent` + any `TextMark`s) into a single Markdown string, for the
+/// "파일 저장 또는 공유" (save/share) step of `tasks/NO-001.md` §10.3's export
+/// flow:
 ///
 /// ```
 /// Export 요청 → 문서/블록 조회 → Block Tree 조립 → Markdown Renderer
 ///   → .md 문자열 생성 → 파일 저장 또는 공유
 /// ```
 ///
-/// `DetailViewModel.blocks` is already the "문서/블록 조회" +
-/// "Block Tree 조립" steps (loaded and kept in `sortOrder` order — see
-/// `reorderBlocks`/`moveBlock` in `quality-phase5`'s drag & drop AC), so
-/// this type only covers "Markdown Renderer" → "`.md` 문자열 생성": joining
-/// each block's already-`markdown-phase4`-produced `markdownSource` into one
-/// document-wide string.
+/// `DetailViewModel.items`/`.textContents`/`.marksByItemId` are already the
+/// "문서/블록 조회" + "Block Tree 조립" steps (loaded and kept in `orderKey`
+/// order — see `reorderBlocks`/`moveBlock`), so this type only covers
+/// "Markdown Renderer" → "`.md` 문자열 생성": turning each item's `TextContent`
+/// (plus any inline `TextMark`s) into its literal Markdown line and joining
+/// them into one document-wide string.
+///
+/// **NO-005 note**: this replaces the pre-NO-005 version of this type, which
+/// rendered `[DocumentBlock]`'s already-computed `markdownSource`. The new
+/// `TextContent` schema has no `markdownSource` field to read
+/// (`DOCUMENT_MODEL.md` §4.1's `text_items` shape only has `plainText`), so
+/// this now builds each line's literal Markdown itself from `textKind` +
+/// `plainText`, reconstructing inline formatting from `TextMark`s via
+/// `TextMarkdownReconstruction` — the output shape (heading `#`/`##`/`###`,
+/// bulleted `-`/numbered `<n>.`/checklist `- [ ]`/`- [x]` lists, blockquote
+/// `>`, code fences, `---` dividers, blank-line-separated blocks except
+/// within a run of same-family list items) is unchanged from before.
 enum MarkdownExporter {
-    /// Renders a document's `blocks` (assumed already sorted by
-    /// `sortOrder`, as `DetailViewModel.blocks` always is) into one Markdown
-    /// string suitable for saving as a `.md` file or sharing.
+    /// Renders a document's `items` (assumed already sorted by `orderKey`,
+    /// as `DetailViewModel.items` always is) into one Markdown string
+    /// suitable for saving as a `.md` file or sharing.
     ///
     /// `documentTitle` (PLANNING §6.2's free-text `documents.title`) isn't
     /// currently rendered into the Markdown body itself — the document's
-    /// blocks are the entire content, and the title is used separately as
+    /// items are the entire content, and the title is used separately as
     /// the exported file's name (see `MarkdownDocumentExport`). It's taken
     /// here so a future revision can prepend a title heading without
     /// changing this function's call sites.
     ///
-    /// **Joining rules** — each block contributes its `markdownLine` (see
+    /// Only `contentType == "text"` items are rendered — there's no
+    /// Markdown representation defined yet for media items
+    /// (`DOCUMENT_MODEL.md` §4.3's images/etc., out of this work-code's
+    /// scope per `tasks/NO-005.md` §1.2), so they're skipped rather than
+    /// dropping the whole export or inventing syntax for them.
+    ///
+    /// **Joining rules** — each item contributes its `markdownLine` (see
     /// below) on its own line, separated by blank lines, EXCEPT between two
     /// consecutive list-like items of the *same* family (bulleted,
     /// numbered, or checklist), which are kept on adjacent lines with no
@@ -36,63 +54,107 @@ enum MarkdownExporter {
     /// or code block is always surrounded by blank lines like a paragraph/
     /// heading, since §7.3's syntax treats each as its own block rather than
     /// part of a run.
-    static func render(documentTitle: String, blocks: [DocumentBlock]) -> String {
+    static func render(
+        documentTitle: String,
+        items: [DocumentItem],
+        textContents: [String: TextContent],
+        marksByItemId: [String: [TextMark]] = [:]
+    ) -> String {
         var lines: [String] = []
+        var previousKind: String?
+        var numberedListRunLength = 0
 
-        for (index, block) in blocks.enumerated() {
-            let previous = index > 0 ? blocks[index - 1] : nil
-            if let previous, !shouldOmitBlankLine(between: previous, and: block) {
+        for item in items {
+            // A non-text item (e.g. a future media item) has no Markdown
+            // line of its own yet and also breaks a run of numbered-list
+            // siblings, matching `DetailViewModel.numberedListNumber`'s
+            // "an item with no numbered_list_item TextContent resets the
+            // count" rule.
+            guard item.contentType == "text", let content = textContents[item.id] else {
+                previousKind = nil
+                numberedListRunLength = 0
+                continue
+            }
+
+            numberedListRunLength = content.textKind == TextItemKind.numberedListItem ? numberedListRunLength + 1 : 0
+
+            if let previousKind, !shouldOmitBlankLine(between: previousKind, and: content.textKind) {
                 lines.append("")
             }
-            lines.append(markdownLine(for: block))
+            let marks = marksByItemId[item.id] ?? []
+            lines.append(markdownLine(for: content, marks: marks, numberedListNumber: numberedListRunLength))
+            previousKind = content.textKind
         }
 
         return lines.joined(separator: "\n")
     }
 
-    /// The literal Markdown for one block, on its own line.
+    /// The literal Markdown for one item's `content`, on its own line.
     ///
-    /// - Every other case's `markdownSource` already holds its literal
-    ///   Markdown (`"# Title"`, `"- item"`, `` "```swift\ncode\n```" ``, …)
-    ///   from `markdown-phase4`'s conversions — used as-is.
-    /// - `.divider` has no `markdownSource`/`dividerJSON`-side helper
-    ///   (its `contentJSON` carries no text, per §8.1's
-    ///   `{ type: "divider" }`) — rendered directly as `"---"`, the standard
-    ///   Markdown horizontal rule (§8.1/§8.2).
-    /// - Any other block with a `nil` markdownSource (shouldn't normally
-    ///   happen once a block has been edited, per `markdown-phase4`'s
-    ///   conversions) falls back to `displayText`, or an empty line if even
-    ///   that is empty — so export never drops a block entirely.
-    private static func markdownLine(for block: DocumentBlock) -> String {
-        if block.type == .divider {
+    /// `content.plainText` is reconstructed into delimiter-literal Markdown
+    /// text first (`TextMarkdownReconstruction`) — a no-op passthrough for
+    /// freshly typed content, whose `plainText` already keeps any Markdown
+    /// delimiters the user literally typed (`BlockContent+InlineMarks.swift`
+    /// deviation note), and a real reconstruction for migrated content,
+    /// whose formatting lives in `marks` instead of `plainText` — before the
+    /// per-`textKind` prefix/wrapper below is applied.
+    ///
+    /// `.divider` carries no meaningful text (§8.1's `{ type: "divider" }`)
+    /// — rendered directly as `"---"`, the standard Markdown horizontal
+    /// rule. Any `textKind` this build doesn't recognize
+    /// (`TextItemKind.unknown`, `DOCUMENT_MODEL.md` §4.5's "읽기 전용 보존")
+    /// falls back to the reconstructed text unwrapped, so export never
+    /// drops an item's content entirely even if it can't format it.
+    private static func markdownLine(for content: TextContent, marks: [TextMark], numberedListNumber: Int) -> String {
+        if content.textKind == TextItemKind.divider {
             return "---"
         }
-        if let markdownSource = block.markdownSource {
-            return markdownSource
+
+        let text = TextMarkdownReconstruction.markdownText(plainText: content.plainText, marks: marks)
+
+        switch content.textKind {
+        case TextItemKind.heading:
+            let level = content.headingLevel ?? 1
+            return String(repeating: "#", count: level) + " " + text
+        case TextItemKind.quote:
+            return "> " + text
+        case TextItemKind.checklist:
+            return (content.isChecked ?? false ? "- [x] " : "- [ ] ") + text
+        case TextItemKind.bulletedListItem:
+            return "- " + text
+        case TextItemKind.numberedListItem:
+            return "\(numberedListNumber). " + text
+        case TextItemKind.codeBlock:
+            // The code fence's language identifier has no field to live in
+            // on `TextContent` (`DetailViewModel.updateBlockText`'s doc
+            // comment) — exports as a plain, language-less fence, matching
+            // what the editor itself can express today.
+            return "```\n\(text)\n```"
+        default:
+            return text
         }
-        return block.displayText
     }
 
     /// Whether `current` should follow `previous` directly (no blank line),
-    /// because both are list items of the same kind and read as one
-    /// continuous Markdown list.
-    private static func shouldOmitBlankLine(between previous: DocumentBlock, and current: DocumentBlock) -> Bool {
-        guard let family = listFamily(for: previous.type), listFamily(for: current.type) == family else {
+    /// because both are list-item `textKind`s of the same kind and read as
+    /// one continuous Markdown list.
+    private static func shouldOmitBlankLine(between previous: String, and current: String) -> Bool {
+        guard let family = listFamily(for: previous), listFamily(for: current) == family else {
             return false
         }
         return true
     }
 
-    /// Groups the three list-like block types so consecutive items of the
+    /// Groups the three list-like `textKind`s so consecutive items of the
     /// same group render as one Markdown list (no blank lines between
     /// items). Bulleted/numbered/checklist lists each use their own
     /// delimiter (§7.3 `- item` / `<n>. item` / `- [ ] item`), so mixing two
     /// different families still gets a blank line between them.
-    private static func listFamily(for type: BlockType) -> BlockType? {
-        switch type {
-        case .bulletedListItem, .numberedListItem, .checklistItem:
-            return type
-        case .paragraph, .heading, .blockquote, .codeBlock, .divider:
+    private static func listFamily(for textKind: String) -> String? {
+        switch textKind {
+        case TextItemKind.bulletedListItem, TextItemKind.numberedListItem, TextItemKind.checklist:
+            return textKind
+        default:
             return nil
         }
     }

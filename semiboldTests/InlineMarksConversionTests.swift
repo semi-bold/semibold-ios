@@ -2,132 +2,156 @@ import Testing
 
 @testable import semibold
 
-/// End-to-end tests for `DetailViewModel.updateBlockText`'s inline-mark
-/// parsing (`markdown-phase4` AC6): typing `**bold**`/`*italic*`/
-/// `~~strike~~`/`` `code` ``/`[text](url)` within a block's text produces a
-/// `contentJSON.text` of multiple `RichTextSpan`s with the matching
-/// `marks`/`href`, while `displayText` (what the editor shows/edits) stays
-/// the literally-typed text.
+/// Tests for `DetailViewModel.updateBlockText`'s inline-mark handling
+/// (`markdown-phase4` AC6).
+///
+/// **NO-005 behavioral deviation (not just a renamed model)**: the
+/// pre-NO-005 editor parsed `**bold**`/`*italic*`/`~~strike~~`/`` `code` ``/
+/// `[text](url)` out of typed text into `RichTextSpan`s on every keystroke.
+/// `DetailViewModel.updateBlockText`'s "Inline marks deviation" doc comment
+/// documents that this editor deliberately no longer does that: typed text
+/// is stored verbatim (delimiters and all) in `TextContent.plainText`, and
+/// any `TextMark`s an item already had are invalidated (dropped) the
+/// moment it's next persisted, rather than left pointing at stale offsets
+/// the editor has no way to re-derive after a plain-text edit. Inline-mark
+/// *parsing* itself (`RichTextSpan.parse`) is unchanged and still covered
+/// by `InlineMarksTests`; mark *persistence* is exercised by the NO-005
+/// migration tests (`DocumentBlockMigrationPolicy` fans a migrated block's
+/// spans out into real `TextMark` rows). This file's job is narrower now:
+/// prove `DetailViewModel` actually follows its own documented "keep
+/// delimiters literal, invalidate stale marks on edit" contract, rather
+/// than re-testing parsing/persistence logic that lives elsewhere.
 ///
 /// Split out from `DetailViewModelTests`/`*ConversionTests`, following the
-/// AC3 "per-topic test file" convention — this AC's parsing applies across
-/// every `[RichTextSpan]`-based block type (paragraph, heading, list items,
-/// checklist, blockquote), not just one type conversion.
+/// AC3 "per-topic test file" convention.
 @MainActor
 struct InlineMarksConversionTests {
     private func makeStore() throws -> CoreDataTestStore {
         try CoreDataTestStore()
     }
 
-    @Test("Typing '**bold** text' into a paragraph block produces a bold span and a plain span")
-    func boldTextInParagraphProducesMarkedSpans() throws {
+    private func makeViewModel(
+        document: Document,
+        store: CoreDataTestStore,
+        autosaveDebounceInterval: Duration = .milliseconds(500)
+    ) -> DetailViewModel {
+        DetailViewModel(
+            document: document,
+            documentItemRepository: DocumentItemRepository(context: store.context),
+            textItemRepository: TextItemRepository(context: store.context),
+            textMarkRepository: TextMarkRepository(context: store.context),
+            mediaItemRepository: MediaItemRepository(context: store.context),
+            folderRepository: FolderRepository(context: store.context),
+            autosaveDebounceInterval: autosaveDebounceInterval
+        )
+    }
+
+    @Test("Typing '**bold** text' into a paragraph item keeps the delimiters literal and creates no TextMark")
+    func boldTextInParagraphStaysLiteral() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
-        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
-        let viewModel = DetailViewModel(
-            document: document,
-            documentBlockRepository: blockRepository,
-            autosaveDebounceInterval: .seconds(10)
-        )
+        let viewModel = makeViewModel(document: document, store: store, autosaveDebounceInterval: .seconds(10))
         viewModel.load()
-        let blockId = try #require(viewModel.blocks.first?.id)
+        let blockId = try #require(viewModel.items.first?.id)
 
         viewModel.updateBlockText(blockId, text: "**bold** text")
 
-        let block = try #require(viewModel.blocks.first)
-        #expect(block.type == .paragraph)
-
-        let content = BlockContent.decode(from: block.contentJSON, type: .paragraph)
-        #expect(content.text == [
-            RichTextSpan(text: "**bold**", marks: [.bold]),
-            RichTextSpan(text: " text")
-        ])
-
-        // displayText stays the literally-typed text (with delimiters) so
-        // the editor's UITextView isn't fighting what the user typed.
-        #expect(block.displayText == "**bold** text")
+        let content = viewModel.textContent(forItemId: blockId)
+        #expect(content.textKind == TextItemKind.paragraph)
+        // Delimiters stay literal — the plain `UITextView`-backed input
+        // round-trips exactly what the user typed rather than the editor
+        // fighting it mid-edit.
+        #expect(content.plainText == "**bold** text")
+        #expect(viewModel.marksByItemId[blockId] == nil)
     }
 
-    @Test("Typing inline marks (italic, strike, inline code, link) produces the matching marked spans")
-    func variousInlineMarksProduceMatchingSpans() throws {
+    @Test("Typing various inline-mark syntax (italic, strike, inline code, link) keeps every delimiter literal")
+    func variousInlineMarkSyntaxStaysLiteral() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
-        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
-        let viewModel = DetailViewModel(
-            document: document,
-            documentBlockRepository: blockRepository,
-            autosaveDebounceInterval: .seconds(10)
-        )
+        let viewModel = makeViewModel(document: document, store: store, autosaveDebounceInterval: .seconds(10))
         viewModel.load()
-        let blockId = try #require(viewModel.blocks.first?.id)
+        let blockId = try #require(viewModel.items.first?.id)
 
-        viewModel.updateBlockText(blockId, text: "*italic* and ~~strike~~ and `code` and [link](https://example.com)")
+        let typed = "*italic* and ~~strike~~ and `code` and [link](https://example.com)"
+        viewModel.updateBlockText(blockId, text: typed)
 
-        let block = try #require(viewModel.blocks.first)
-        let content = BlockContent.decode(from: block.contentJSON, type: .paragraph)
-        #expect(content.text == [
-            RichTextSpan(text: "*italic*", marks: [.italic]),
-            RichTextSpan(text: " and "),
-            RichTextSpan(text: "~~strike~~", marks: [.strike]),
-            RichTextSpan(text: " and "),
-            RichTextSpan(text: "`code`", marks: [.inlineCode]),
-            RichTextSpan(text: " and "),
-            RichTextSpan(text: "[link](https://example.com)", marks: [.link], href: "https://example.com")
-        ])
+        let content = viewModel.textContent(forItemId: blockId)
+        #expect(content.plainText == typed)
+        #expect(viewModel.marksByItemId[blockId] == nil)
     }
 
-    @Test("Inline marks compose with heading conversion — typing '# **bold** title' produces a heading with a bold span")
-    func inlineMarksComposeWithHeadingConversion() throws {
+    @Test("Inline mark syntax composes with heading conversion — '# **bold** title' keeps delimiters literal")
+    func inlineMarkSyntaxComposesWithHeadingConversion() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
-        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
-        let viewModel = DetailViewModel(
-            document: document,
-            documentBlockRepository: blockRepository,
-            autosaveDebounceInterval: .seconds(10)
-        )
+        let viewModel = makeViewModel(document: document, store: store, autosaveDebounceInterval: .seconds(10))
         viewModel.load()
-        let blockId = try #require(viewModel.blocks.first?.id)
+        let blockId = try #require(viewModel.items.first?.id)
 
         viewModel.updateBlockText(blockId, text: "# **bold** title")
 
-        let block = try #require(viewModel.blocks.first)
-        #expect(block.type == .heading)
-        #expect(block.headingLevel == 1)
-        #expect(block.displayText == "**bold** title")
-
-        let content = BlockContent.decode(from: block.contentJSON, type: .heading)
-        #expect(content.text == [
-            RichTextSpan(text: "**bold**", marks: [.bold]),
-            RichTextSpan(text: " title")
-        ])
+        let content = viewModel.textContent(forItemId: blockId)
+        #expect(content.textKind == TextItemKind.heading)
+        #expect(content.headingLevel == 1)
+        #expect(content.plainText == "**bold** title")
     }
 
-    @Test("Typing 'plain' (no Markdown syntax) keeps a single unmarked span")
+    @Test("Typing 'plain' (no Markdown syntax) leaves plainText unchanged and creates no TextMark")
     func plainTextStaysUnmarked() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
-        let blockRepository = DocumentBlockRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
-        let viewModel = DetailViewModel(
-            document: document,
-            documentBlockRepository: blockRepository,
-            autosaveDebounceInterval: .seconds(10)
-        )
+        let viewModel = makeViewModel(document: document, store: store, autosaveDebounceInterval: .seconds(10))
         viewModel.load()
-        let blockId = try #require(viewModel.blocks.first?.id)
+        let blockId = try #require(viewModel.items.first?.id)
 
         viewModel.updateBlockText(blockId, text: "plain text")
 
-        let block = try #require(viewModel.blocks.first)
-        let content = BlockContent.decode(from: block.contentJSON, type: .paragraph)
-        #expect(content.text == [RichTextSpan(text: "plain text")])
+        let content = viewModel.textContent(forItemId: blockId)
+        #expect(content.plainText == "plain text")
+        #expect(viewModel.marksByItemId[blockId] == nil)
+    }
+
+    @Test("Editing an item that already has TextMarks (e.g. from a migrated document) clears them once persisted")
+    func editingItemWithExistingMarksInvalidatesThem() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let documentItemRepository = DocumentItemRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+        let textMarkRepository = TextMarkRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let item = try documentItemRepository.create(
+            DocumentItem(documentId: document.id, contentType: "text", orderKey: OrderKey.between(nil, nil))
+        )
+        _ = try textItemRepository.create(
+            TextContent(itemId: item.id, textKind: TextItemKind.paragraph, plainText: "bold text")
+        )
+        // Simulates what a pre-NO-005 migrated document's "**bold** text"
+        // would decompose into: a "bold" TextMark over "bold" (offsets 0-4).
+        try textMarkRepository.create(TextMark(itemId: item.id, startOffset: 0, endOffset: 4, markType: "bold"))
+
+        let viewModel = makeViewModel(document: document, store: store, autosaveDebounceInterval: .seconds(10))
+        viewModel.load()
+        #expect(viewModel.marksByItemId[item.id]?.isEmpty == false)
+
+        viewModel.updateBlockText(item.id, text: "bold text, revised")
+
+        // A plain-text edit is debounced, but the mark invalidation itself
+        // happens inside `persistBlock` regardless of when that runs — call
+        // it directly (like `flushPendingChanges` would) so the assertions
+        // below don't depend on the debounce timer.
+        viewModel.persistBlock(item.id)
+
+        #expect(viewModel.marksByItemId[item.id] == nil)
+        #expect(try textMarkRepository.marks(itemId: item.id).isEmpty)
     }
 }
