@@ -38,6 +38,11 @@ final class DatabaseManager {
             _sharedInstance = try DatabaseManager(storeURL: storeURL, syncEnabled: syncEnabled)
             openError = nil
         } catch {
+            // §15.2 "DB 열기 실패" surfaces only a generic message in the UI
+            // (DatabaseUnavailableView) — this is the only place the real
+            // underlying error is visible, so it must be logged for
+            // on-device debugging.
+            print("❌ DatabaseManager failed to load store at \(storeURL.path): \(error)")
             openError = error
             _sharedInstance = nil
         }

@@ -63,15 +63,17 @@ enum SemiboldMigrationMapping {
         documentAttributes.append(constantAttribute("revision", value: 1))
         documentMapping.attributeMappings = documentAttributes
 
-        // `Document.items` (→ DocumentItem) has no inverse and is left
-        // unmapped here on purpose: DocumentItem's canonical link back to
-        // its Document is the flat `documentId` string
-        // `DocumentBlockMigrationPolicy` sets, matching
-        // `STORAGE_ARCHITECTURE.md` §5's flat-FK batch-query design
-        // rather than an object-graph relationship. `blocks` (→
-        // DocumentBlock) has no destination counterpart at all — every
-        // DocumentBlock becomes a DocumentItem via the custom mapping
-        // below instead.
+        // There is no `Document.items` Core Data relationship to map:
+        // DocumentItem's canonical link back to its Document is the flat
+        // `documentId` string `DocumentBlockMigrationPolicy` sets, matching
+        // `STORAGE_ARCHITECTURE.md` §5's flat-FK batch-query design rather
+        // than an object-graph relationship (an earlier version of this
+        // model had a one-directional `items` relationship with no
+        // inverse, which NSPersistentCloudKitContainer rejects outright —
+        // removed rather than given an inverse, since nothing read it).
+        // `blocks` (→ DocumentBlock) has no destination counterpart at
+        // all — every DocumentBlock becomes a DocumentItem via the custom
+        // mapping below instead.
 
         let documentBlockMapping = try documentBlockToDocumentItemMapping(
             sourceModel: sourceModel,

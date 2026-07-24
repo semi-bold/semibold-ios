@@ -41,6 +41,16 @@ struct StoreMigrationTests {
         static let listParentText = "Packing list"
         static let listChildText = "Passport"
         static let checklistText = "Buy sunscreen"
+
+        // A second, separately-seeded paragraph exercising the two mark
+        // types the formatted-block fixture above doesn't (`bold` +
+        // `inline_code`, adjacent in the same block — this feature's
+        // Decision "서식이 섞인 문서(bold+inline code 동시 적용 등)").
+        static let mixedIntroText = "Run "
+        static let boldCommand = "brew install"
+        static let mixedMiddleText = " or "
+        static let codeCommand = "apt install"
+        static let mixedTailText = "."
     }
 
     /// The ids of everything `seedLegacyStore()` inserted, so the
@@ -53,6 +63,7 @@ struct StoreMigrationTests {
         var documentId: String
         var headingBlockId: String
         var formattedBlockId: String
+        var mixedFormatBlockId: String
         var listParentBlockId: String
         var listChildBlockId: String
         var checklistBlockId: String
@@ -153,13 +164,15 @@ struct StoreMigrationTests {
         return block
     }
 
-    /// Builds a pre-NO-005 store with 1 `Folder`, 1 `Document`, and 5
+    /// Builds a pre-NO-005 store with 1 `Folder`, 1 `Document`, and 6
     /// `DocumentBlock`s covering: a plain heading, a paragraph with three
-    /// different inline marks (bold/italic/link), a nested pair of
-    /// bulleted list items (to exercise `parentItemId`), and a checked
-    /// checklist item (`isChecked`) — everything AC8 asks for, plus the
-    /// hierarchy/formatting edge cases `DocumentBlockMigrationPolicy`
-    /// specifically handles.
+    /// different inline marks (bold/italic/link), a second paragraph
+    /// mixing bold + inline-code in the same block (adjacent, non-
+    /// overlapping spans — this feature's AC3(a) "여러 타입의 블록(서식
+    /// 포함)"), a nested pair of bulleted list items (to exercise
+    /// `parentItemId`), and a checked checklist item (`isChecked`) —
+    /// everything AC8 asks for, plus the hierarchy/formatting edge cases
+    /// `DocumentBlockMigrationPolicy` specifically handles.
     private func seedLegacyStore() throws -> SeededStore {
         let tempDirectory = try makeTempDirectory()
         let storeURL = tempDirectory.appendingPathComponent("legacy.sqlite")
@@ -209,10 +222,30 @@ struct StoreMigrationTests {
             at: now
         )
 
+        let mixedFormatBlockId = UUID().uuidString
+        insertLegacyBlock(
+            id: mixedFormatBlockId,
+            sortOrder: 2,
+            typeRaw: BlockType.paragraph.rawValue,
+            contentJSON: BlockContent.paragraph(
+                ParagraphContent(text: [
+                    RichTextSpan(text: Fixture.mixedIntroText),
+                    RichTextSpan(text: "**\(Fixture.boldCommand)**", marks: [.bold]),
+                    RichTextSpan(text: Fixture.mixedMiddleText),
+                    RichTextSpan(text: "`\(Fixture.codeCommand)`", marks: [.inlineCode]),
+                    RichTextSpan(text: Fixture.mixedTailText)
+                ])
+            ).encodeJSON(),
+            document: document,
+            parent: nil,
+            into: context,
+            at: now
+        )
+
         let listParentBlockId = UUID().uuidString
         let listParentBlock = insertLegacyBlock(
             id: listParentBlockId,
-            sortOrder: 2,
+            sortOrder: 3,
             typeRaw: BlockType.bulletedListItem.rawValue,
             contentJSON: BlockContent.bulletedListItem(
                 ListItemContent(type: "bulleted_list_item", text: [RichTextSpan(text: Fixture.listParentText)])
@@ -240,7 +273,7 @@ struct StoreMigrationTests {
         let checklistBlockId = UUID().uuidString
         insertLegacyBlock(
             id: checklistBlockId,
-            sortOrder: 3,
+            sortOrder: 4,
             typeRaw: BlockType.checklistItem.rawValue,
             contentJSON: BlockContent.checklistItem(
                 ChecklistItemContent(checked: true, text: [RichTextSpan(text: Fixture.checklistText)])
@@ -269,6 +302,7 @@ struct StoreMigrationTests {
             documentId: documentId,
             headingBlockId: headingBlockId,
             formattedBlockId: formattedBlockId,
+            mixedFormatBlockId: mixedFormatBlockId,
             listParentBlockId: listParentBlockId,
             listChildBlockId: listChildBlockId,
             checklistBlockId: checklistBlockId
@@ -312,9 +346,9 @@ struct StoreMigrationTests {
         // preserved from the source block, correctly linked back to the
         // Document and (where applicable) to its parent item.
         let items = try context.fetch(DocumentItemEntity.fetchRequest())
-        #expect(items.count == 5)
+        #expect(items.count == 6)
         let itemsById = Dictionary(uniqueKeysWithValues: items.compactMap { item in item.id.map { ($0, item) } })
-        #expect(itemsById.count == 5) // no id collisions/misattribution
+        #expect(itemsById.count == 6) // no id collisions/misattribution
 
         for item in items {
             #expect(item.documentId == seeded.documentId)
@@ -334,9 +368,9 @@ struct StoreMigrationTests {
         // preserved block id, with the right textKind/headingLevel/
         // isChecked per source block type.
         let textItems = try context.fetch(TextItemEntity.fetchRequest())
-        #expect(textItems.count == 5)
+        #expect(textItems.count == 6)
         let textItemsByItemId = Dictionary(uniqueKeysWithValues: textItems.compactMap { item in item.itemId.map { ($0, item) } })
-        #expect(textItemsByItemId.count == 5)
+        #expect(textItemsByItemId.count == 6)
 
         let headingText = try #require(textItemsByItemId[seeded.headingBlockId])
         #expect(headingText.textKind == "heading")
@@ -391,6 +425,40 @@ struct StoreMigrationTests {
         #expect(link.valueMode == "url")
         #expect(link.valueText == Fixture.linkURL)
 
+        // TextMark: the second, mixed-format paragraph's bold + inline-code
+        // spans (this feature's AC3(a) "bold+inline code 동시 적용") — a
+        // distinct mark-type combination from the formatted paragraph
+        // above, and the only place `inline_code` is exercised through the
+        // real migration path (as opposed to `RichTextSpan.parse` alone).
+        let mixedText = try #require(textItemsByItemId[seeded.mixedFormatBlockId])
+        let expectedMixedPlainText = Fixture.mixedIntroText + Fixture.boldCommand
+            + Fixture.mixedMiddleText + Fixture.codeCommand + Fixture.mixedTailText
+        #expect(mixedText.textKind == "paragraph")
+        #expect(mixedText.plainText == expectedMixedPlainText)
+
+        let mixedMarks = allMarks.filter { $0.itemId == seeded.mixedFormatBlockId }.sorted { $0.startOffset < $1.startOffset }
+        #expect(mixedMarks.count == 2)
+        for mark in mixedMarks {
+            #expect(mark.itemId == seeded.mixedFormatBlockId)
+        }
+
+        let mixedBoldStart = Fixture.mixedIntroText.utf16.count
+        let mixedBoldEnd = mixedBoldStart + Fixture.boldCommand.utf16.count
+        let mixedCodeStart = mixedBoldEnd + Fixture.mixedMiddleText.utf16.count
+        let mixedCodeEnd = mixedCodeStart + Fixture.codeCommand.utf16.count
+
+        let mixedBold = try #require(mixedMarks.first { $0.markType == "bold" })
+        #expect(Int(mixedBold.startOffset) == mixedBoldStart)
+        #expect(Int(mixedBold.endOffset) == mixedBoldEnd)
+        #expect(mixedBold.valueMode == nil)
+        #expect(mixedBold.valueText == nil)
+
+        let mixedCode = try #require(mixedMarks.first { $0.markType == "inline_code" })
+        #expect(Int(mixedCode.startOffset) == mixedCodeStart)
+        #expect(Int(mixedCode.endOffset) == mixedCodeEnd)
+        #expect(mixedCode.valueMode == nil)
+        #expect(mixedCode.valueText == nil)
+
         // Blocks with no inline formatting produced no TextMark rows at all.
         #expect(allMarks.filter { $0.itemId == seeded.headingBlockId }.isEmpty)
         #expect(allMarks.filter { $0.itemId == seeded.checklistBlockId }.isEmpty)
@@ -441,5 +509,240 @@ struct StoreMigrationTests {
 
         #expect(unknownTextItem.textKind == "unknown")
         #expect(unknownTextItem.plainText == rawContentJSON)
+    }
+
+    /// This feature's AC3(b) covers "알 수 없는/손상된 `contentJSON`" —
+    /// `migratesUnknownBlockTypeAsReadOnlyContent` above already exercises
+    /// an unrecognized block *type*; this covers the other half, a
+    /// recognized type (`BlockType(rawValue:)` resolves fine) whose
+    /// `contentJSON` itself is corrupted, in two shapes: not parseable as
+    /// JSON at all, and parseable JSON that's missing a field its shape
+    /// requires. Neither should crash the migration or take a sibling
+    /// block's data down with it.
+    @Test("A recognized block type with malformed or structurally-corrupted contentJSON degrades to empty text instead of crashing the migration")
+    func migratesCorruptedContentJSONWithoutCrashing() throws {
+        let tempDirectory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+        let storeURL = tempDirectory.appendingPathComponent("legacy-corrupted.sqlite")
+
+        let container = try openStore(model: try legacyModel(), storeURL: storeURL)
+        let context = container.viewContext
+        let now = Date()
+
+        let folder = insertLegacyFolder(id: UUID().uuidString, name: "Scratch", into: context, at: now)
+        let document = insertLegacyDocument(id: UUID().uuidString, title: "Corrupted Doc", folder: folder, into: context, at: now)
+
+        // Not valid JSON at all (e.g. truncated mid-write, or hand-edited)
+        // on an otherwise-recognized "paragraph" type.
+        let notJSONBlockId = UUID().uuidString
+        insertLegacyBlock(
+            id: notJSONBlockId,
+            sortOrder: 0,
+            typeRaw: BlockType.paragraph.rawValue,
+            contentJSON: "{this is not valid JSON at all",
+            document: document,
+            parent: nil,
+            into: context,
+            at: now
+        )
+
+        // Syntactically valid JSON, but missing a field its shape
+        // requires (`HeadingContent.level` has no default and isn't
+        // `Optional`, so `JSONDecoder` fails to decode this even though
+        // it's well-formed JSON).
+        let missingFieldBlockId = UUID().uuidString
+        insertLegacyBlock(
+            id: missingFieldBlockId,
+            sortOrder: 1,
+            typeRaw: BlockType.heading.rawValue,
+            contentJSON: #"{"type":"heading","text":[{"text":"Oops, no level"}]}"#,
+            document: document,
+            parent: nil,
+            into: context,
+            at: now
+        )
+
+        // A sibling block with well-formed content, to confirm the two
+        // corrupted rows above don't take the rest of the migration down
+        // with them.
+        let healthyBlockId = UUID().uuidString
+        insertLegacyBlock(
+            id: healthyBlockId,
+            sortOrder: 2,
+            typeRaw: BlockType.paragraph.rawValue,
+            contentJSON: BlockContent.paragraph(ParagraphContent(text: [RichTextSpan(text: "Still fine")])).encodeJSON(),
+            document: document,
+            parent: nil,
+            into: context,
+            at: now
+        )
+
+        try context.save()
+        if let store = container.persistentStoreCoordinator.persistentStores.first {
+            try container.persistentStoreCoordinator.remove(store)
+        }
+
+        // The load itself must not throw — `tasks/NO-005.md` §7's
+        // "마이그레이션 자체가 반복 실패하는 경우" fallback only applies if this
+        // call fails, and a single row's corrupted content shouldn't cause
+        // that.
+        try StoreMigrationCoordinator.migrateStoreIfNeeded(storeURL: storeURL, destinationModel: DatabaseManager.model)
+
+        let migrated = try openStore(model: DatabaseManager.model, storeURL: storeURL)
+        let textItems = try migrated.viewContext.fetch(TextItemEntity.fetchRequest())
+        #expect(textItems.count == 3) // no rows silently dropped
+
+        // Recognized type + corrupted JSON: `BlockContent.decode`'s own
+        // defensive fallback (an empty paragraph/heading) kicks in rather
+        // than throwing, so the row still exists — not silently dropped —
+        // but with empty text. This is a narrower guarantee than the
+        // unknown-*type* case above (which preserves the raw JSON
+        // read-only): §7 only spells out policy for an unrecognized
+        // `contentType`, not corrupted JSON on an otherwise-recognized
+        // one, so this is worth a swift-reviewer follow-up on whether
+        // corrupted-but-known-type content should also be preserved
+        // read-only rather than degrading to empty text.
+        let notJSONText = try #require(textItems.first { $0.itemId == notJSONBlockId })
+        #expect(notJSONText.textKind == "paragraph")
+        #expect(notJSONText.plainText == "")
+
+        let missingFieldText = try #require(textItems.first { $0.itemId == missingFieldBlockId })
+        #expect(missingFieldText.textKind == "heading")
+        #expect(missingFieldText.plainText == "")
+        #expect(missingFieldText.headingLevel?.intValue == 1) // HeadingContent's own fallback default
+
+        let healthyText = try #require(textItems.first { $0.itemId == healthyBlockId })
+        #expect(healthyText.plainText == "Still fine")
+    }
+
+    // MARK: - Migration → export round trip (AC5, tasks/NO-005.md §4.2 "내용 손실 여부 확인")
+
+    /// `tasks/NO-005.md` §4.2 requires diffing a document's markdown export
+    /// from before and after migration to confirm no content was lost.
+    /// Rather than resurrecting the pre-NO-005 `MarkdownExporter` (deleted
+    /// in brief 03), this drives the comparison directly off what "before"
+    /// already *is*: a `RichTextSpan.text` still carries its own literal
+    /// Markdown delimiters pre-migration (`TextDecomposition.decompose`'s
+    /// doc comment) — concatenating a block's spans' `text` IS the
+    /// delimiter-literal Markdown a user would have seen/typed for it. So
+    /// this seeds a legacy paragraph from those same literal pieces, runs
+    /// the real migration, exports the migrated result through the new
+    /// `MarkdownExporter.render`, and checks the two strings match — the
+    /// exact bug class brief 04 found and fixed
+    /// (`MarkdownExporterTests.reconstructsAllMarkTypesFromMigratedContent`),
+    /// exercised end to end through the real migration path this time
+    /// instead of hand-built `TextMark`s.
+    @Test("Migrating a mixed-formatting paragraph and exporting it reproduces the original delimiter-literal Markdown text")
+    func migratesThenExportsRoundTripsOriginalMarkdownFormatting() throws {
+        enum ExportFixture {
+            static let introText = "Remember to "
+            static let boldWord = "confirm"
+            static let midText1 = " and "
+            static let italicWord = "double-check"
+            static let midText2 = ", run "
+            static let codeWord = "npm test"
+            static let midText3 = " before merging — see the "
+            static let linkLabel = "checklist"
+            static let linkURL = "https://example.com/checklist"
+            static let tailText = "."
+        }
+
+        // The "before" side of the diff: what the user's paragraph looked
+        // like as literal Markdown pre-migration.
+        let originalMarkdownText = ExportFixture.introText
+            + "**\(ExportFixture.boldWord)**" + ExportFixture.midText1
+            + "*\(ExportFixture.italicWord)*" + ExportFixture.midText2
+            + "`\(ExportFixture.codeWord)`" + ExportFixture.midText3
+            + "[\(ExportFixture.linkLabel)](\(ExportFixture.linkURL))" + ExportFixture.tailText
+
+        let tempDirectory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+        let storeURL = tempDirectory.appendingPathComponent("legacy-export-roundtrip.sqlite")
+
+        let container = try openStore(model: try legacyModel(), storeURL: storeURL)
+        let context = container.viewContext
+        let now = Date()
+
+        let folder = insertLegacyFolder(id: UUID().uuidString, name: "Export Check", into: context, at: now)
+        let documentTitle = "Round Trip Doc"
+        let document = insertLegacyDocument(id: UUID().uuidString, title: documentTitle, folder: folder, into: context, at: now)
+
+        let blockId = UUID().uuidString
+        insertLegacyBlock(
+            id: blockId,
+            sortOrder: 0,
+            typeRaw: BlockType.paragraph.rawValue,
+            contentJSON: BlockContent.paragraph(
+                ParagraphContent(text: [
+                    RichTextSpan(text: ExportFixture.introText),
+                    RichTextSpan(text: "**\(ExportFixture.boldWord)**", marks: [.bold]),
+                    RichTextSpan(text: ExportFixture.midText1),
+                    RichTextSpan(text: "*\(ExportFixture.italicWord)*", marks: [.italic]),
+                    RichTextSpan(text: ExportFixture.midText2),
+                    RichTextSpan(text: "`\(ExportFixture.codeWord)`", marks: [.inlineCode]),
+                    RichTextSpan(text: ExportFixture.midText3),
+                    RichTextSpan(text: "[\(ExportFixture.linkLabel)](\(ExportFixture.linkURL))", marks: [.link], href: ExportFixture.linkURL),
+                    RichTextSpan(text: ExportFixture.tailText)
+                ])
+            ).encodeJSON(),
+            document: document,
+            parent: nil,
+            into: context,
+            at: now
+        )
+
+        try context.save()
+        if let store = container.persistentStoreCoordinator.persistentStores.first {
+            try container.persistentStoreCoordinator.remove(store)
+        }
+
+        try StoreMigrationCoordinator.migrateStoreIfNeeded(storeURL: storeURL, destinationModel: DatabaseManager.model)
+
+        let migrated = try openStore(model: DatabaseManager.model, storeURL: storeURL)
+        let migratedContext = migrated.viewContext
+
+        let itemEntity = try #require(try migratedContext.fetch(DocumentItemEntity.fetchRequest()).first { $0.id == blockId })
+        let textEntity = try #require(try migratedContext.fetch(TextItemEntity.fetchRequest()).first { $0.itemId == blockId })
+        let markEntities = try migratedContext.fetch(TextMarkEntity.fetchRequest()).filter { $0.itemId == blockId }
+
+        // Rebuild the plain "after" domain values the same way
+        // `DetailViewModel`'s repositories would when assembling a
+        // document for export, rather than reaching for the repositories
+        // themselves (their `DatabaseManager.sharedOrFallbackContext`
+        // default doesn't point at this test's throwaway store).
+        let item = DocumentItem(
+            id: itemEntity.id ?? blockId,
+            documentId: itemEntity.documentId ?? "",
+            parentItemId: itemEntity.parentItemId,
+            contentType: itemEntity.contentType ?? "text",
+            orderKey: itemEntity.orderKey ?? "0"
+        )
+        let textContent = TextContent(
+            itemId: textEntity.itemId ?? blockId,
+            textKind: textEntity.textKind ?? "paragraph",
+            plainText: textEntity.plainText ?? "",
+            headingLevel: textEntity.headingLevel?.intValue,
+            isChecked: textEntity.isChecked?.boolValue
+        )
+        let marks = markEntities.map { mark in
+            TextMark(
+                id: mark.id ?? UUID().uuidString,
+                itemId: mark.itemId ?? blockId,
+                startOffset: Int(mark.startOffset),
+                endOffset: Int(mark.endOffset),
+                markType: mark.markType ?? "",
+                valueMode: mark.valueMode,
+                valueText: mark.valueText
+            )
+        }
+
+        let exportedMarkdown = MarkdownExporter.render(
+            documentTitle: documentTitle,
+            items: [item],
+            textContents: [item.id: textContent],
+            marksByItemId: [item.id: marks]
+        )
+
+        #expect(exportedMarkdown == originalMarkdownText)
     }
 }
