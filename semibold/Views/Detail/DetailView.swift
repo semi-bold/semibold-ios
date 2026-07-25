@@ -388,7 +388,26 @@ private struct BlockRow: View {
     let onToggleChecklist: () -> Void
     let onLockTapped: () -> Void
 
-    @State private var text: String
+    /// Reads straight from `content.plainText` (the view model's source of
+    /// truth) rather than mirroring it into a separate local `@State` —
+    /// keystrokes still flow out via `onTextChange`, so this binding's
+    /// setter is a no-op, and `ParagraphTextField.updateUIView` picks up
+    /// the authoritative value on every render.
+    ///
+    /// A local echo used to exist here, kept in sync via
+    /// `.onChange(of: content.plainText)`, but that only fires when the
+    /// value actually differs between renders — which silently broke the
+    /// Slash Command flow: typing `/` writes `"/"` into the `UITextView`
+    /// directly (see `ParagraphTextField.Coordinator.textViewDidChange`),
+    /// then `updateBlockText` clears the block straight back to the
+    /// empty string it already was (`"" → "/" → ""`, a net no-op from the
+    /// view model's perspective), so the `onChange` never fired and the
+    /// stray `/` stuck around in the text field even after picking a type
+    /// from the sheet. Deriving directly from `content.plainText` removes
+    /// the second copy of the truth instead of patching the sync.
+    private var text: Binding<String> {
+        Binding(get: { content.plainText }, set: { _ in })
+    }
 
     init(
         item: DocumentItem,
@@ -412,7 +431,6 @@ private struct BlockRow: View {
         self.onBackspaceAtStart = onBackspaceAtStart
         self.onToggleChecklist = onToggleChecklist
         self.onLockTapped = onLockTapped
-        _text = State(initialValue: content.plainText)
     }
 
     /// The typography this block's text is shown in — heading levels 1-3
@@ -524,16 +542,16 @@ private struct BlockRow: View {
                     }
 
                     ParagraphTextField(
-                        text: $text,
+                        text: text,
                         textStyle: textStyle,
                         textColor: textColor,
                         isMonospaced: isCodeBlock,
                         onTextChange: onTextChange,
                         onEnter: { cursorOffset in
-                            onEnter(text, cursorOffset)
+                            onEnter(content.plainText, cursorOffset)
                         },
                         onBackspaceAtStart: {
-                            onBackspaceAtStart(text)
+                            onBackspaceAtStart(content.plainText)
                         },
                         cursorOffsetToApply: focusedBlockId.wrappedValue == item.id ? $cursorOffsetToApply : .constant(nil)
                     )
@@ -550,15 +568,6 @@ private struct BlockRow: View {
                 .frame(height: 1)
         }
         .background(AppTheme.Colors.Neutral.n900)
-        .onChange(of: content.plainText) { _, newText in
-            // Keep this row's text in sync when the view model changes
-            // `content`'s text without the user typing here directly —
-            // e.g. a later block's Backspace-at-start merge appends its
-            // text onto the end of this block.
-            if text != newText {
-                text = newText
-            }
-        }
     }
 }
 

@@ -62,23 +62,25 @@ extension DetailViewModel {
 
     /// Detects whether `text` (the block's full text right after this
     /// keystroke) now starts with a complete Markdown list-item prefix —
-    /// `- ` (a hyphen + a space) for a bulleted list, or `<digits>. ` (one
-    /// or more digits + a period + a space) for a numbered list — per
-    /// §7.1/§7.3's `- item` / `1. item` → Bulleted/Numbered List syntax.
+    /// `- ` or `* ` (a hyphen or asterisk + a space) for a bulleted list,
+    /// or `<digits>. ` (one or more digits + a period + a space) for a
+    /// numbered list — per §7.1/§7.3's `- item` / `1. item` → Bulleted/
+    /// Numbered List syntax (`* item` is standard Markdown's other bulleted
+    /// prefix, alongside `- item`).
     ///
     /// Returns `nil` if `text` doesn't start with such a prefix, so the
-    /// caller leaves the block as a paragraph. `"-item"` (no space) and
-    /// `"-- item"` (a second `-` instead of the item text) don't match
-    /// §7.3's literal `- item` syntax and so don't convert. `"- [ ] task"`/
-    /// `"- [x] task"` (checklist syntax, §7.3) also don't match here —
-    /// `checklistConversion(forTypedText:)` runs before this and takes
-    /// precedence for those, so this never sees them in practice, but the
-    /// explicit exclusion keeps this function correct on its own.
-    /// `"> quote"` (blockquote syntax, §7.3) also doesn't match — it
-    /// doesn't start with `-` or a digit, so no explicit exclusion is
-    /// needed here.
+    /// caller leaves the block as a paragraph. `"-item"`/`"*item"` (no
+    /// space) and `"-- item"`/`"** item"` (a second `-`/`*` instead of the
+    /// item text) don't match §7.3's literal `- item` syntax and so don't
+    /// convert. `"- [ ] task"`/`"- [x] task"` (checklist syntax, §7.3) also
+    /// don't match here — `checklistConversion(forTypedText:)` runs before
+    /// this and takes precedence for those, so this never sees them in
+    /// practice, but the explicit exclusion keeps this function correct on
+    /// its own. `"> quote"` (blockquote syntax, §7.3) also doesn't match —
+    /// it doesn't start with `-`/`*` or a digit, so no explicit exclusion
+    /// is needed here.
     static func listConversion(forTypedText text: String) -> ListConversion? {
-        if text.hasPrefix("- "), checklistConversion(forTypedText: text) == nil {
+        if (text.hasPrefix("- ") || text.hasPrefix("* ")), checklistConversion(forTypedText: text) == nil {
             let remainder = String(text.dropFirst(2))
             return ListConversion(textKind: TextItemKind.bulletedListItem, text: remainder)
         }
