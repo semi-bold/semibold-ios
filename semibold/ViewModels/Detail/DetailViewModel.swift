@@ -35,9 +35,8 @@ enum TextItemKind {
 /// keeping everything before it in the current block and saving
 /// everything after it into a new paragraph block placed right below,
 /// with editing focus moving to that new block. It also implements
-/// Backspace-at-start merge/delete and block reorder
-/// (PLANNING §6.3/§13.1, §5.4) — see `mergeOrDeleteBlock` and
-/// `moveBlock`.
+/// Backspace-at-start merge/delete (PLANNING §6.3/§13.1, §5.4) — see
+/// `mergeOrDeleteBlock`.
 ///
 /// **NO-005 model note**: a "block" in this file's naming/comments is the
 /// same planner-level concept `tasks/NO-001.md`/PLANNING always meant by
@@ -668,106 +667,4 @@ final class DetailViewModel {
         }
     }
 
-    /// The direction a block moves in `moveBlock(id:direction:)`.
-    enum MoveDirection {
-        case up
-        case down
-    }
-
-    /// Moves `blockId` one position up or down in display order
-    /// (`Planning_4_BlockCreateFlow` callout ⑤ / PLANNING §6.3 "Drag & Drop
-    /// 또는 키보드 조작으로 블록 순서 변경"), persisting the move immediately
-    /// (PLANNING §11.2 "블록 생성/삭제/순서 변경: 즉시 저장").
-    ///
-    /// Does nothing if `blockId` is already at the top (for `.up`) or
-    /// bottom (for `.down`) of the list. The reorder UI itself (drag &
-    /// drop or a keyboard control) is `quality-phase5` — this is the
-    /// persistence-layer half a future UI calls into.
-    func moveBlock(id blockId: String, direction: MoveDirection) {
-        guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
-
-        let neighborIndex = direction == .up ? index - 1 : index + 1
-        guard items.indices.contains(neighborIndex) else { return }
-
-        let destination = direction == .up ? neighborIndex : neighborIndex + 1
-        reorderBlocks(fromOffsets: IndexSet(integer: index), toOffset: destination)
-    }
-
-    /// Moves the blocks at `fromOffsets` to just before `toOffset` in
-    /// display order (`Planning_5_MacOSMainFlow` / §12.3's drag & drop
-    /// block reordering), matching SwiftUI's `List.onMove(perform:)`
-    /// signature so it can also back a drag handle if one is ever added.
-    ///
-    /// After reordering the in-memory array, each moved item gets a fresh
-    /// `orderKey` computed from its NEW neighbors (`OrderKey.between`,
-    /// `tasks/NO-005.md` §2.2) and is saved immediately — every
-    /// NOT-moved sibling's `orderKey` is left untouched, unlike the old
-    /// integer-`sortOrder` version of this method (which recomputed every
-    /// item's `sortOrder` on every reorder). Like
-    /// `moveBlock(id:direction:)` above, reordering is a structural change
-    /// that bypasses the debounce (PLANNING §11.2 "블록 생성/삭제/순서 변경:
-    /// 즉시 저장").
-    func reorderBlocks(fromOffsets source: IndexSet, toOffset destination: Int) {
-        guard !source.isEmpty else { return }
-
-        let movedIds = source.map { items[$0].id }
-        items.move(fromOffsets: source, toOffset: destination)
-
-        // Processed in the order the moved items now appear, so a later
-        // moved item's neighbor lookup sees an earlier moved item's
-        // already-updated `orderKey` rather than its stale pre-move value
-        // — only matters for a multi-item move (no current call site
-        // passes more than one id, but this keeps the method correct if
-        // one ever does).
-        for movedId in movedIds {
-            guard let index = items.firstIndex(where: { $0.id == movedId }) else { continue }
-            let previousOrderKey = index > 0 ? items[index - 1].orderKey : nil
-            let nextOrderKey = index < items.count - 1 ? items[index + 1].orderKey : nil
-            let newOrderKey = OrderKey.between(previousOrderKey, nextOrderKey)
-            guard newOrderKey != items[index].orderKey else { continue }
-
-            items[index].orderKey = newOrderKey
-            persistItemOrder(movedId)
-        }
-    }
-
-    /// Immediately writes `blockId`'s current in-memory `orderKey` to the
-    /// database (bumping its `revision`), without touching its text
-    /// content — the reorder-only counterpart to `persistBlock`.
-    private func persistItemOrder(_ blockId: String) {
-        guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
-        do {
-            var item = items[index]
-            item.revision += 1
-            items[index] = try documentItemRepository.update(item)
-        } catch {
-            // §15.2 "저장 실패" — leave the in-memory order as-is if the
-            // save fails, so the editor's order keeps matching what's
-            // persisted once the next reload happens.
-            errorMessage = AppErrorMessages.saveFailed
-        }
-    }
-
-    /// Moves `draggedBlockId` so it sits immediately before `targetBlockId`
-    /// in display order — the persistence-layer counterpart to a
-    /// `.dropDestination` drop in `DetailView` (§12.3 drag & drop block
-    /// reordering). Does nothing if either id can't be found, or if
-    /// `draggedBlockId` is already immediately before `targetBlockId`.
-    func moveBlock(id draggedBlockId: String, beforeBlockId targetBlockId: String) {
-        guard let fromIndex = items.firstIndex(where: { $0.id == draggedBlockId }),
-              let targetIndex = items.firstIndex(where: { $0.id == targetBlockId }),
-              draggedBlockId != targetBlockId else {
-            return
-        }
-
-        // `move(fromOffsets:toOffset:)` interprets `toOffset` as an index
-        // into the array *before* the moved element is removed, and then
-        // inserts the moved element just before whatever ends up at that
-        // index post-removal. When the dragged block starts above the
-        // target, removing it shifts the target (and everything between
-        // them) up by one — so `toOffset == targetIndex` lands the dragged
-        // block directly above the target either way.
-        let destination = targetIndex
-        reorderBlocks(fromOffsets: IndexSet(integer: fromIndex), toOffset: destination)
-    }
 }

@@ -11,8 +11,9 @@ import Foundation
 /// ```
 ///
 /// `DetailViewModel.items`/`.textContents`/`.marksByItemId` are already the
-/// "문서/블록 조회" + "Block Tree 조립" steps (loaded and kept in `orderKey`
-/// order — see `reorderBlocks`/`moveBlock`), so this type only covers
+/// "문서/블록 조회" + "Block Tree 조립" steps (loaded in `orderKey` order via
+/// `DocumentItemRepository.children(documentId:parentItemId:)`), so this
+/// type only covers
 /// "Markdown Renderer" → "`.md` 문자열 생성": turning each item's `TextContent`
 /// (plus any inline `TextMark`s) into its literal Markdown line and joining
 /// them into one document-wide string.

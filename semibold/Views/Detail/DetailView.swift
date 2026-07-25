@@ -320,18 +320,6 @@ struct DetailView: View {
                             viewModel.lockBlockTapped(item.id)
                         }
                     )
-                    // Drag & drop block reordering (§12.3): dropping
-                    // another block onto this row moves it to this row's
-                    // position (PLANNING §11.2 "블록 생성/삭제/순서 변경: 즉시
-                    // 저장" — `moveBlock(id:beforeBlockId:)` persists the new
-                    // `orderKey` right away, no debounce). The drag itself
-                    // starts from `BlockRow`'s trailing grip handle, so it
-                    // doesn't conflict with tapping into the row to edit.
-                    .dropDestination(for: String.self) { droppedIds, _ in
-                        guard let draggedBlockId = droppedIds.first else { return false }
-                        viewModel.moveBlock(id: draggedBlockId, beforeBlockId: item.id)
-                        return true
-                    }
                 }
             }
         }
@@ -479,22 +467,8 @@ private struct BlockRow: View {
         if isDivider {
             dividerBody
         } else {
-            // The drag handle is a sibling of the swipe-wrapped editable
-            // content, not nested inside it — `SwipeToRevealLockAction`
-            // attaches its own left-swipe `DragGesture` to whatever it
-            // wraps, so the reorder handle's long-press-then-pan
-            // `.draggable` gesture needs to live outside that subtree
-            // entirely to avoid both gestures recognizing the same touch.
-            HStack(alignment: .top, spacing: 0) {
-                SwipeToRevealLockAction(onLockTapped: onLockTapped) {
-                    editableBody
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                dragHandle
-                    .padding(.top, AppTheme.Spacing.md + (textStyle.lineHeight - AppTheme.Spacing.lg) / 2)
-                    .padding(.trailing, AppTheme.Spacing.md)
-                    .background(AppTheme.Colors.Neutral.n900)
+            SwipeToRevealLockAction(onLockTapped: onLockTapped) {
+                editableBody
             }
         }
     }
@@ -505,32 +479,17 @@ private struct BlockRow: View {
     /// (§8.1 `{ type: "divider" }`).
     private var dividerBody: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: AppTheme.Spacing.sm) {
-                Rectangle()
-                    .fill(AppTheme.Colors.Stroke.border)
-                    .frame(height: 1)
-
-                dragHandle
-            }
-            .padding(.horizontal, AppTheme.Spacing.md)
-            .padding(.vertical, AppTheme.Spacing.lg)
+            Rectangle()
+                .fill(AppTheme.Colors.Stroke.border)
+                .frame(height: 1)
+                .padding(.horizontal, AppTheme.Spacing.md)
+                .padding(.vertical, AppTheme.Spacing.lg)
 
             Rectangle()
                 .fill(AppTheme.Colors.Stroke.divider)
                 .frame(height: 1)
         }
         .background(AppTheme.Colors.Neutral.n900)
-    }
-
-    /// A small grip icon at the trailing edge of a block row — the drag
-    /// source for §12.3's drag & drop reordering. Long-pressing it and
-    /// dragging onto another row moves this block to that row's position
-    /// (`DetailView.blockList`'s `.dropDestination` handles the drop).
-    private var dragHandle: some View {
-        Image(systemName: "line.3.horizontal")
-            .foregroundStyle(AppTheme.Colors.Content.secondary)
-            .frame(width: AppTheme.Spacing.lg, height: AppTheme.Spacing.lg)
-            .draggable(item.id)
     }
 
     private var editableBody: some View {
@@ -647,10 +606,10 @@ private struct SwipeToRevealLockAction<Content: View>: View {
                 .background(AppTheme.Colors.Neutral.n900)
                 .offset(x: currentOffset)
                 // `.simultaneousGesture` (rather than `.gesture`) so this
-                // doesn't steal the tap-to-focus/cursor-placement gestures
-                // `ParagraphTextField`'s underlying `UITextView` and the
-                // drag handle's `.draggable` need — it only recognizes a
-                // genuine horizontal drag, which those don't.
+                // doesn't steal the tap-to-focus/cursor-placement gesture
+                // `ParagraphTextField`'s underlying `UITextView` needs — it
+                // only recognizes a genuine horizontal drag, which that
+                // doesn't.
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 16)
                         .onChanged { value in
