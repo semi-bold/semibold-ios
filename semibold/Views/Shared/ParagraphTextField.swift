@@ -77,6 +77,17 @@ struct ParagraphTextField: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UITextView, context: Context) {
+        // `Coordinator.parent` is only set once, in `makeCoordinator()` —
+        // refresh it on every update so `onEnter`/`onBackspaceAtStart`
+        // (which close over this call's `text`/`content`, not a value
+        // handed to them at call time the way `onTextChange`'s `String`
+        // argument is) run against this render's callbacks and captured
+        // state instead of whatever was current the first time this row
+        // appeared. Without this, a stale capture of e.g. `content
+        // .plainText` from that first (often-empty) render would silently
+        // stand in for the text actually on screen.
+        context.coordinator.parent = self
+
         if uiView.text != text {
             uiView.text = text
         }
@@ -108,7 +119,7 @@ struct ParagraphTextField: UIViewRepresentable {
     /// plain Return keypress into "create a new block here" instead of
     /// letting it insert a newline.
     final class Coordinator: NSObject, UITextViewDelegate {
-        private let parent: ParagraphTextField
+        var parent: ParagraphTextField
 
         init(_ parent: ParagraphTextField) {
             self.parent = parent
