@@ -168,13 +168,6 @@ final class DetailViewModel {
     /// the next successful save/delete.
     var errorMessage: String?
 
-    /// Set when the user taps a block's "잠금" swipe action
-    /// (`Planning_9_SwipeActionFlow` callout ⑤). Secret Lock's actual
-    /// encryption is out of scope for now (PLANNING §1.2, §19), so this
-    /// only carries a short "not yet supported" message for `DetailView`
-    /// to show — `nil` once it's been shown/dismissed.
-    var lockNotice: String?
-
     private let documentItemRepository: DocumentItemRepository
     private let textItemRepository: TextItemRepository
     private let textMarkRepository: TextMarkRepository
@@ -524,15 +517,6 @@ final class DetailViewModel {
 
         cancelPendingSave(blockId)
         persistBlock(blockId)
-    }
-
-    /// Handles tapping a block's "잠금" swipe action
-    /// (`Planning_9_SwipeActionFlow` callout ⑤, `iOS_SwipeAction`'s
-    /// `SwipeAction_Lock`). Secret Lock's actual encryption is out of scope
-    /// for now (NO-001 §1.2, PLANNING §19) — this just surfaces a short
-    /// notice so the tap isn't silently ignored.
-    func lockBlockTapped(_ blockId: String) {
-        lockNotice = AppErrorMessages.secretLockNotYetSupported
     }
 
     /// Writes every block with a pending debounced save right away
