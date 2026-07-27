@@ -537,8 +537,8 @@ struct DetailViewModelTests {
 
     // MARK: - Back button label (`Planning_6_FolderNavigationFlow` callout ①)
 
-    @Test("A root-level document keeps the existing '< Back' label")
-    func loadKeepsExistingBackLabelForRootDocument() throws {
+    @Test("A root-level document shows the house icon back button")
+    func loadShowsHouseIconForRootDocument() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
 
@@ -548,10 +548,10 @@ struct DetailViewModelTests {
         viewModel.load()
 
         #expect(viewModel.backButtonLabel == .root)
-        #expect(viewModel.backButtonText == "< Back")
+        #expect(viewModel.backButtonLabel.iconName == "house.fill")
     }
 
-    @Test("A document filed inside a folder shows that folder's name in the back label")
+    @Test("A document filed inside a folder shows the chevron icon, naming that folder only for accessibility")
     func loadResolvesParentFolderNameForDocumentInFolder() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
@@ -564,7 +564,8 @@ struct DetailViewModelTests {
         viewModel.load()
 
         #expect(viewModel.backButtonLabel == .parentFolder(name: "일상"))
-        #expect(viewModel.backButtonText == "< 일상")
+        #expect(viewModel.backButtonLabel.iconName == "chevron.left")
+        #expect(viewModel.backButtonLabel.accessibilityLabel == "뒤로가기, 일상")
     }
 
     @Test("A document whose folder lookup fails falls back to the root back label")
@@ -579,7 +580,7 @@ struct DetailViewModelTests {
         viewModel.load()
 
         #expect(viewModel.backButtonLabel == .root)
-        #expect(viewModel.backButtonText == "< Back")
+        #expect(viewModel.backButtonLabel.iconName == "house.fill")
     }
 
 }

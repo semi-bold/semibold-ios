@@ -1,29 +1,46 @@
 import Foundation
 
-/// Decides what `FolderContentsView`'s nav bar back button should read.
+/// Decides what `FolderContentsView`'s and `DetailView`'s nav bar back
+/// buttons show — both screens follow the same icon-only rule.
 ///
 /// Pulled out of `FolderContentsViewModel` so this branching logic has a
 /// plain value type that's testable without standing up a Core Data
 /// context, the same reasoning behind `RootLaunchState`.
 enum FolderBackButtonLabel: Equatable {
-    /// The folder being shown is at the root of the user's document tree
-    /// (`parentId == nil`) — going back returns to `HomeView`, so the
-    /// label stays the literal "< Semi:bold"
-    /// (`Planning_6_FolderNavigationFlow` callout ①).
+    /// The folder/document being shown is at the root of the user's
+    /// document tree (`parentId`/`folderId == nil`) — going back returns
+    /// to `HomeView`.
     case root
-    /// The folder being shown is nested inside another folder — going
-    /// back returns to that parent folder's own `FolderContentsView`, so
-    /// the label names it directly (e.g. "< 일상") instead of repeating
-    /// the app name.
+    /// The folder/document being shown is filed inside a folder — going
+    /// back returns to that folder's own `FolderContentsView`. `name`
+    /// isn't shown as visible text (see `iconName`) — kept only for
+    /// `accessibilityLabel`, since VoiceOver still needs to say where the
+    /// button goes even though the icon alone doesn't.
     case parentFolder(name: String)
 
-    /// The literal text the back button displays.
-    var text: String {
+    /// The SF Symbol `FolderContentsView`'s back button shows — icon-only,
+    /// no folder-name text, per `Planning_6_FolderNavigationFlow` callout
+    /// ①'s revised spec: a house for the root case (returning to Private
+    /// Space) and a plain chevron for a nested folder (returning to its
+    /// parent), rather than repeating "Semi:bold" or a folder name that
+    /// could run arbitrarily long and break the NavBar's layout.
+    var iconName: String {
         switch self {
         case .root:
-            return "< Semi:bold"
+            return "house.fill"
+        case .parentFolder:
+            return "chevron.left"
+        }
+    }
+
+    /// VoiceOver label naming the destination this button returns to,
+    /// since `iconName` alone doesn't say it visually.
+    var accessibilityLabel: String {
+        switch self {
+        case .root:
+            return "뒤로가기, 홈"
         case .parentFolder(let name):
-            return "< \(name)"
+            return "뒤로가기, \(name)"
         }
     }
 

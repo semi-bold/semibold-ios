@@ -127,6 +127,6 @@ struct FolderDocumentPersistenceTests {
         viewModel.load()
 
         #expect(viewModel.backButtonLabel == .parentFolder(name: "일상"))
-        #expect(viewModel.backButtonLabel.text == "< 일상")
+        #expect(viewModel.backButtonLabel.iconName == "chevron.left")
     }
 }

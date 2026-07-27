@@ -213,21 +213,26 @@ struct FolderContentsView: View {
     /// Returns to the previous screen in the navigation stack
     /// (`Planning_6_FolderNavigationFlow` callout ①). `NavigationStack`
     /// already supplies the system back gesture/button; this label just
-    /// matches the wireframe's literal text since the system back button
-    /// is hidden along with the rest of the nav bar (`.toolbar(.hidden)`).
+    /// matches the wireframe since the system back button is hidden along
+    /// with the rest of the nav bar (`.toolbar(.hidden)`).
     ///
-    /// Reads "< Semi:bold" for a root-level folder (going back to
-    /// `HomeView`), or "< <상위 폴더명>" for a nested folder (going back
-    /// to the parent folder's own `FolderContentsView`) — "하위 폴더
-    /// 진입 시 레이블은 상위 폴더명으로 바뀐다".
+    /// Icon-only, no folder-name text: a house for a root-level folder
+    /// (going back to `HomeView`), or a plain chevron for a nested folder
+    /// (going back to the parent folder's own `FolderContentsView`) —
+    /// showing the destination's name here used to read "< Semi:bold" /
+    /// "< <상위 폴더명>", but an arbitrarily long folder name could break
+    /// the NavBar's layout, so the name is only exposed via
+    /// `accessibilityLabel` now instead of as visible text.
     private var backButton: some View {
         Button {
             dismiss()
         } label: {
-            Text(viewModel.backButtonLabel.text)
-                .appTextStyle(AppTheme.Typography.body)
+            Image(systemName: viewModel.backButtonLabel.iconName)
+                .appTextStyle(AppTheme.Typography.title)
                 .foregroundStyle(AppTheme.Colors.accent)
+                .frame(width: 24, height: 24)
         }
+        .accessibilityLabel(viewModel.backButtonLabel.accessibilityLabel)
     }
 
     /// Entry point for the "new folder / new document" menu, scoped to

@@ -54,29 +54,15 @@ final class DetailViewModel {
     /// The document being viewed/edited.
     private(set) var document: Document
 
-    /// The back-button label `DetailView`'s nav bar shows
-    /// (`Planning_6_FolderNavigationFlow` callout ①, extended to the
-    /// editor screen). Starts out `.root` and is replaced with the
-    /// document's folder name once `load()` looks it up, for documents
+    /// The back-button label `DetailView`'s nav bar shows — icon-only, the
+    /// same house-for-root/chevron-for-nested-folder rule as
+    /// `FolderContentsView`'s back button (`Planning_6_FolderNavigationFlow`
+    /// callout ①, extended to the editor screen so both screens handle an
+    /// arbitrarily long folder name the same way instead of one of them
+    /// risking a broken NavBar layout). Starts out `.root` and is replaced
+    /// with the document's folder once `load()` looks it up, for documents
     /// filed inside a folder.
     private(set) var backButtonLabel = FolderBackButtonLabel.root
-
-    /// The literal text `DetailView`'s back button shows.
-    ///
-    /// Unlike `FolderContentsView` (which always returns to another
-    /// `FolderContentsView`/`HomeView` screen named "Semi:bold"),
-    /// `DetailView`'s root-level back button has always read "< Back" —
-    /// that existing label is kept as-is for a root document rather than
-    /// switched to `FolderBackButtonLabel.root`'s "< Semi:bold" text, so
-    /// this only overrides it for documents filed inside a named folder.
-    var backButtonText: String {
-        switch backButtonLabel {
-        case .root:
-            return "< Back"
-        case .parentFolder:
-            return backButtonLabel.text
-        }
-    }
 
     /// The document's top-level content items, in display order, excluding
     /// soft-deleted ones — the structural half of each "block"
