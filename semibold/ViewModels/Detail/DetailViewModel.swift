@@ -548,19 +548,27 @@ final class DetailViewModel {
     }
 
     /// Handles pressing Enter/Return while editing `block` with the
-    /// cursor at `cursorOffset` within its text (PLANNING §5.4 "Enter →
-    /// 새 paragraph block 생성", §13.1 "Enter: 현재 블록 뒤에 새 paragraph
-    /// block 생성").
+    /// cursor at `cursorOffset` within its text (PLANNING §5.4/§13.1
+    /// "Enter → 새 paragraph block 생성").
     ///
     /// Splits `text` at the cursor: everything before stays in `block`,
-    /// everything after becomes a new empty-or-continued paragraph block
-    /// placed immediately below it, and focus moves to that new block so
-    /// typing continues naturally. The new item's `orderKey` is generated
-    /// between the current item and whatever (if anything) already
-    /// followed it (`OrderKey.between`, `tasks/NO-005.md` §2.2) — no other
-    /// sibling's `orderKey` is touched, unlike the old integer `sortOrder`
-    /// version of this method, which had to shift every later block down
-    /// by one.
+    /// everything after becomes a new block placed immediately below it,
+    /// and focus moves to that new block so typing continues naturally.
+    /// The new item's `orderKey` is generated between the current item and
+    /// whatever (if anything) already followed it (`OrderKey.between`,
+    /// `tasks/NO-005.md` §2.2) — no other sibling's `orderKey` is touched,
+    /// unlike the old integer `sortOrder` version of this method, which
+    /// had to shift every later block down by one.
+    ///
+    /// **List continuation**: if `block` is a bulleted list, numbered
+    /// list, or checklist item, the new block keeps that same
+    /// `textKind` instead of resetting to `.paragraph` — pressing Enter
+    /// mid-list continues the list, matching every other block-based
+    /// editor (Notion, etc.), rather than dropping back to a plain
+    /// paragraph after every line. A new checklist item always starts
+    /// unchecked regardless of `block`'s own checked state. Every other
+    /// block type (heading, quote, code block, paragraph) still creates a
+    /// plain paragraph below it, unchanged.
     func insertBlock(after blockId: String, currentText: String, cursorOffset: Int) {
         guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
 
@@ -588,12 +596,30 @@ final class DetailViewModel {
         let nextOrderKey = items.indices.contains(index + 1) ? items[index + 1].orderKey : nil
         let newOrderKey = OrderKey.between(items[index].orderKey, nextOrderKey)
 
+        // Continuing a list on Enter keeps the current item's textKind (a
+        // new checklist item always starts unchecked); every other type
+        // resets to a plain paragraph, as before.
+        let currentKind = textContent(forItemId: blockId).textKind
+        let newTextKind: String
+        let newIsChecked: Bool?
+        switch currentKind {
+        case TextItemKind.bulletedListItem, TextItemKind.numberedListItem:
+            newTextKind = currentKind
+            newIsChecked = nil
+        case TextItemKind.checklist:
+            newTextKind = currentKind
+            newIsChecked = false
+        default:
+            newTextKind = TextItemKind.paragraph
+            newIsChecked = nil
+        }
+
         do {
             let createdItem = try documentItemRepository.create(
                 DocumentItem(documentId: document.id, contentType: "text", orderKey: newOrderKey)
             )
             let createdContent = try textItemRepository.create(
-                TextContent(itemId: createdItem.id, textKind: TextItemKind.paragraph, plainText: afterText)
+                TextContent(itemId: createdItem.id, textKind: newTextKind, plainText: afterText, isChecked: newIsChecked)
             )
             items.insert(createdItem, at: index + 1)
             textContents[createdItem.id] = createdContent

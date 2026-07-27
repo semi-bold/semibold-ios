@@ -203,6 +203,75 @@ struct DetailViewModelTests {
         #expect(viewModel.focusedBlockId == viewModel.items[1].id)
     }
 
+    @Test(
+        "Pressing Enter inside a bulleted/numbered list item continues the list instead of dropping to a paragraph",
+        arguments: [TextItemKind.bulletedListItem, TextItemKind.numberedListItem]
+    )
+    func insertBlockAfterListItemContinuesSameListType(_ textKind: String) throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.items.first?.id)
+        viewModel.updateBlockText(firstBlockId, text: textKind == TextItemKind.bulletedListItem ? "- First" : "1. First")
+
+        viewModel.insertBlock(after: firstBlockId, currentText: "First", cursorOffset: "First".count)
+
+        #expect(viewModel.items.count == 2)
+        let newBlockId = try #require(viewModel.items.last?.id)
+        #expect(viewModel.textContent(forItemId: newBlockId).textKind == textKind)
+        #expect(viewModel.textContent(forItemId: newBlockId).plainText == "")
+        #expect(viewModel.focusedBlockId == newBlockId)
+    }
+
+    @Test("Pressing Enter inside a checklist item continues the checklist, always starting the new item unchecked")
+    func insertBlockAfterChecklistItemContinuesChecklistUnchecked() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.items.first?.id)
+        viewModel.updateBlockText(firstBlockId, text: "- [x] Done already")
+
+        viewModel.insertBlock(after: firstBlockId, currentText: "Done already", cursorOffset: "Done already".count)
+
+        #expect(viewModel.items.count == 2)
+        let newBlockId = try #require(viewModel.items.last?.id)
+        #expect(viewModel.textContent(forItemId: newBlockId).textKind == TextItemKind.checklist)
+        #expect(viewModel.textContent(forItemId: newBlockId).plainText == "")
+        // A new checklist item always starts unchecked, even though the
+        // item Enter was pressed inside was already checked.
+        #expect(viewModel.textContent(forItemId: newBlockId).isChecked == false)
+    }
+
+    @Test(
+        "Pressing Enter inside a non-list block (heading/quote/code) still creates a plain paragraph below it",
+        arguments: [TextItemKind.heading, TextItemKind.quote, TextItemKind.codeBlock]
+    )
+    func insertBlockAfterNonListBlockStillCreatesParagraph(_ textKind: String) throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.items.first?.id)
+        switch textKind {
+        case TextItemKind.heading: viewModel.updateBlockText(firstBlockId, text: "# Title")
+        case TextItemKind.quote: viewModel.updateBlockText(firstBlockId, text: "> Quote")
+        default: viewModel.updateBlockText(firstBlockId, text: "```swift")
+        }
+
+        viewModel.insertBlock(after: firstBlockId, currentText: "Title", cursorOffset: "Title".count)
+
+        let newBlockId = try #require(viewModel.items.last?.id)
+        #expect(viewModel.textContent(forItemId: newBlockId).textKind == TextItemKind.paragraph)
+    }
+
     @Test("Pressing Enter on a block that isn't the last inserts the new block between them without touching the later block's orderKey")
     func insertBlockDoesNotDisturbLaterSiblingsOrderKey() throws {
         let store = try makeStore()
