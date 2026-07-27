@@ -519,7 +519,12 @@ private struct BlockRow: View {
                 // unlike the pre-NO-005 editor, no language caption shows
                 // above the code here.
 
-                HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                // No spacing beyond the marker column's own `minWidth`
+                // below (unchanged) — the previous `AppTheme.Spacing.sm`
+                // (8pt) gap on top of that column left too much empty
+                // space between a marker (bullet/number/checkbox/quote
+                // bar) and its text.
+                HStack(alignment: .top, spacing: 0) {
                     if let listMarker {
                         Text(listMarker)
                             .appTextStyle(textStyle)
