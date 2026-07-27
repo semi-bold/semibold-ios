@@ -79,6 +79,12 @@ extension DetailViewModel {
     /// its own. `"> quote"` (blockquote syntax, §7.3) also doesn't match —
     /// it doesn't start with `-`/`*` or a digit, so no explicit exclusion
     /// is needed here.
+    ///
+    /// `"- "` alone converts to a bulleted list immediately, same as
+    /// before — typing `[ ] `/`[x] ` right after that is handled by
+    /// `checklistUpgradeFromBulletedListItem(forTypedText:)`, which
+    /// upgrades an already-converted bulleted list item to a checklist
+    /// item, rather than by delaying this conversion.
     static func listConversion(forTypedText text: String) -> ListConversion? {
         if (text.hasPrefix("- ") || text.hasPrefix("* ")), checklistConversion(forTypedText: text) == nil {
             let remainder = String(text.dropFirst(2))
@@ -137,6 +143,34 @@ extension DetailViewModel {
         }
         if text.hasPrefix("- [x] ") {
             let remainder = String(text.dropFirst("- [x] ".count))
+            return ChecklistConversion(checked: true, text: remainder)
+        }
+        return nil
+    }
+
+    /// Detects whether `text` (a bulleted list item's full text right
+    /// after this keystroke) now starts with `[ ] `/`[x] ` — i.e. the
+    /// `- ` bulleted-list prefix already converted the block (per
+    /// `listConversion`), and the user kept typing the rest of the
+    /// checklist syntax right after it, one keystroke at a time (`"- "` →
+    /// `"["` → `"[ "` → `"[ ]"` → `"[ ] "`). `updateBlockText` checks this
+    /// when `currentKind == .bulletedListItem` (mirroring
+    /// `checklistConversion(forTypedText:)`'s paragraph-level check for
+    /// `"- [ ] "`/`"- [x] "` typed as one contiguous run), upgrading the
+    /// block from bulleted list to checklist rather than leaving `[ ] `/
+    /// `[x] ` as literal bullet text.
+    ///
+    /// Returns `nil` if `text` doesn't start with either bracket prefix,
+    /// so the bullet item's text is just edited normally. Same lowercase-
+    /// `x`-only, no-inner-space precedent as `checklistConversion`'s
+    /// `"- [X] "`/`"- [] "` exclusions.
+    static func checklistUpgradeFromBulletedListItem(forTypedText text: String) -> ChecklistConversion? {
+        if text.hasPrefix("[ ] ") {
+            let remainder = String(text.dropFirst("[ ] ".count))
+            return ChecklistConversion(checked: false, text: remainder)
+        }
+        if text.hasPrefix("[x] ") {
+            let remainder = String(text.dropFirst("[x] ".count))
             return ChecklistConversion(checked: true, text: remainder)
         }
         return nil

@@ -389,6 +389,23 @@ final class DetailViewModel {
             return
         }
 
+        // `"- "` already converted this block to a bulleted list item
+        // above (in an earlier keystroke) — if the user kept typing
+        // `"[ ] "`/`"[x] "` right after that, upgrade it to a checklist
+        // item instead of leaving the brackets as literal bullet text, so
+        // `"- [ ] task"` still ends up a checklist even though `"- "`
+        // alone converts immediately rather than waiting to see whether
+        // checklist syntax follows.
+        if currentKind == TextItemKind.bulletedListItem,
+           let checklist = Self.checklistUpgradeFromBulletedListItem(forTypedText: text) {
+            textContents[blockId] = TextContent(
+                itemId: blockId, textKind: TextItemKind.checklist, plainText: checklist.text, isChecked: checklist.checked
+            )
+            cancelPendingSave(blockId)
+            persistBlock(blockId)
+            return
+        }
+
         if currentKind == TextItemKind.paragraph, let blockquote = Self.blockquoteConversion(forTypedText: text) {
             textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.quote, plainText: blockquote.text)
             cancelPendingSave(blockId)
