@@ -227,10 +227,7 @@ struct FolderContentsView: View {
         Button {
             dismiss()
         } label: {
-            Image(systemName: viewModel.backButtonLabel.iconName)
-                .appTextStyle(AppTheme.Typography.title)
-                .foregroundStyle(AppTheme.Colors.accent)
-                .frame(width: 24, height: 24)
+            BackButtonIcon(label: viewModel.backButtonLabel)
         }
         .accessibilityLabel(viewModel.backButtonLabel.accessibilityLabel)
     }
