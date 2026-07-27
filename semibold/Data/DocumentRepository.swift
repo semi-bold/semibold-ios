@@ -29,7 +29,11 @@ struct DocumentRepository {
 
     /// Fetches the documents that live directly inside `folderId` (or at
     /// the top level when `folderId` is `nil`), excluding soft-deleted
-    /// documents, ordered for display.
+    /// documents, newest-created first — personal document management
+    /// reads best most-recent-first, with keyword search covering lookup
+    /// of older items, rather than a manually-managed position
+    /// (`sortOrder` exists on the entity but is never set to anything but
+    /// its default and isn't used for ordering).
     func documents(in folderId: String?) throws -> [Document] {
         let request = DocumentEntity.fetchRequest()
         let deletedPredicate = NSPredicate(format: "deletedAt == nil")
@@ -40,10 +44,7 @@ struct DocumentRepository {
             folderPredicate = NSPredicate(format: "folder == nil")
         }
         request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [deletedPredicate, folderPredicate])
-        request.sortDescriptors = [
-            NSSortDescriptor(key: "sortOrder", ascending: true),
-            NSSortDescriptor(key: "createdAt", ascending: true)
-        ]
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
         return try context.fetch(request).map(Document.init(entity:))
     }
 

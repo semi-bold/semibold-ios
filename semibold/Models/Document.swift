@@ -18,10 +18,10 @@ struct Document: Identifiable, Hashable, Codable {
     /// locally — comparing it across devices for conflict detection is
     /// out of scope until sync lands (`tasks/NO-005.md` §2.4, §6).
     var revision: Int
-    /// This document's position among its siblings in the document
-    /// list, lower first. Kept alongside the rewritten field set so
-    /// existing per-user ordering keeps working unchanged
-    /// (`tasks/NO-005.md` §1.2 "화면 동작 동일 유지").
+    /// Kept on the entity for schema compatibility, but not read or
+    /// written anywhere — nothing sets it to anything but its default, and
+    /// `DocumentRepository.documents(in:)` lists documents newest-created
+    /// first instead of by any manually-managed position.
     var sortOrder: Int
     var createdAt: Date
     var updatedAt: Date

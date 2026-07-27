@@ -29,7 +29,11 @@ struct FolderRepository {
 
     /// Fetches the direct children of `parentId` (or the top-level
     /// folders when `parentId` is `nil`), excluding soft-deleted
-    /// folders, ordered for display.
+    /// folders, newest-created first — personal document management reads
+    /// best most-recent-first, with keyword search covering lookup of
+    /// older items, rather than a manually-managed position (`sortOrder`
+    /// exists on the entity but is never set to anything but its default
+    /// and isn't used for ordering).
     func children(of parentId: String?) throws -> [Folder] {
         let request = FolderEntity.fetchRequest()
         let deletedPredicate = NSPredicate(format: "deletedAt == nil")
@@ -40,10 +44,7 @@ struct FolderRepository {
             parentPredicate = NSPredicate(format: "parent == nil")
         }
         request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [deletedPredicate, parentPredicate])
-        request.sortDescriptors = [
-            NSSortDescriptor(key: "sortOrder", ascending: true),
-            NSSortDescriptor(key: "createdAt", ascending: true)
-        ]
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
         return try context.fetch(request).map(Folder.init(entity:))
     }
 

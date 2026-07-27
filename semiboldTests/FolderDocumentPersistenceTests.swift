@@ -50,6 +50,32 @@ struct FolderDocumentPersistenceTests {
         #expect(rootDocuments.first?.title == "Project Plan")
     }
 
+    @Test("Root-level folders are listed newest-created first")
+    func rootFoldersAreListedNewestFirst() throws {
+        let store = try makeStore()
+        let folderRepository = FolderRepository(context: store.context)
+
+        let oldest = try folderRepository.create(Folder(name: "Oldest", createdAt: Date(timeIntervalSince1970: 0)))
+        let middle = try folderRepository.create(Folder(name: "Middle", createdAt: Date(timeIntervalSince1970: 100)))
+        let newest = try folderRepository.create(Folder(name: "Newest", createdAt: Date(timeIntervalSince1970: 200)))
+
+        let rootFolders = try folderRepository.children(of: nil)
+        #expect(rootFolders.map(\.id) == [newest.id, middle.id, oldest.id])
+    }
+
+    @Test("Root-level documents are listed newest-created first")
+    func rootDocumentsAreListedNewestFirst() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let oldest = try documentRepository.create(Document(title: "Oldest", createdAt: Date(timeIntervalSince1970: 0)))
+        let middle = try documentRepository.create(Document(title: "Middle", createdAt: Date(timeIntervalSince1970: 100)))
+        let newest = try documentRepository.create(Document(title: "Newest", createdAt: Date(timeIntervalSince1970: 200)))
+
+        let rootDocuments = try documentRepository.documents(in: nil)
+        #expect(rootDocuments.map(\.id) == [newest.id, middle.id, oldest.id])
+    }
+
     @Test("A document created inside a folder is not listed at the root")
     func documentInFolderIsScopedToThatFolder() throws {
         let store = try makeStore()
