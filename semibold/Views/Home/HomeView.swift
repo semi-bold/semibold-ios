@@ -265,17 +265,8 @@ struct HomeView: View {
     /// callout ① — "현재 보고 있는 위치를 기준으로 무언가를 새로 만들기
     /// 시작하는 단일 진입점").
     private var addButton: some View {
-        Button {
+        AddButton {
             isAddMenuPresented = true
-        } label: {
-            Image(systemName: "plus")
-                .appTextStyle(AppTheme.Typography.title)
-                .foregroundStyle(AppTheme.Colors.accent)
-                .frame(width: 40, height: 40)
-                .background(
-                    AppTheme.Colors.accent.opacity(0.18),
-                    in: RoundedRectangle(cornerRadius: AppTheme.Radius.full)
-                )
         }
     }
 

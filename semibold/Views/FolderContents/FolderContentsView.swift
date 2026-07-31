@@ -235,13 +235,8 @@ struct FolderContentsView: View {
     /// Entry point for the "new folder / new document" menu, scoped to
     /// this folder (`Planning_6_FolderNavigationFlow` callout ③).
     private var addButton: some View {
-        Button {
+        AddButton {
             isAddMenuPresented = true
-        } label: {
-            Image(systemName: "plus")
-                .appTextStyle(AppTheme.Typography.title)
-                .foregroundStyle(AppTheme.Colors.Content.primary)
-                .frame(width: 24, height: 24)
         }
     }
 
