@@ -272,6 +272,33 @@ struct DetailViewModelTests {
         #expect(viewModel.textContent(forItemId: newBlockId).textKind == TextItemKind.paragraph)
     }
 
+    @Test(
+        "Pressing Enter on an empty list item exits the list — converts it to a paragraph instead of continuing",
+        arguments: [TextItemKind.bulletedListItem, TextItemKind.numberedListItem, TextItemKind.checklist]
+    )
+    func insertBlockOnEmptyListItemExitsToParagraph(_ textKind: String) throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.items.first?.id)
+        switch textKind {
+        case TextItemKind.bulletedListItem: viewModel.updateBlockText(firstBlockId, text: "- ")
+        case TextItemKind.numberedListItem: viewModel.updateBlockText(firstBlockId, text: "1. ")
+        default: viewModel.updateBlockText(firstBlockId, text: "- [ ] ")
+        }
+        #expect(viewModel.textContent(forItemId: firstBlockId).textKind == textKind)
+
+        viewModel.insertBlock(after: firstBlockId, currentText: "", cursorOffset: 0)
+
+        // No new block was created — the same block converted in place.
+        #expect(viewModel.items.map(\.id) == [firstBlockId])
+        #expect(viewModel.textContent(forItemId: firstBlockId).textKind == TextItemKind.paragraph)
+        #expect(viewModel.textContent(forItemId: firstBlockId).plainText == "")
+    }
+
     @Test("Pressing Enter on a block that isn't the last inserts the new block between them without touching the later block's orderKey")
     func insertBlockDoesNotDisturbLaterSiblingsOrderKey() throws {
         let store = try makeStore()
@@ -410,6 +437,77 @@ struct DetailViewModelTests {
         #expect(viewModel.items.count == 1)
         #expect(viewModel.items[0].id == firstBlockId)
         #expect(viewModel.focusedBlockId == nil)
+    }
+
+    @Test(
+        "Backspace on an empty list item exits the list — converts it to a paragraph instead of deleting/merging",
+        arguments: [TextItemKind.bulletedListItem, TextItemKind.numberedListItem, TextItemKind.checklist]
+    )
+    func mergeOrDeleteBlockOnEmptyListItemExitsToParagraph(_ textKind: String) throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let documentItemRepository = DocumentItemRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.items.first?.id)
+
+        // Add a second, empty list item right below the first — this
+        // exercises the non-first-block path too (the first-block path is
+        // covered by `backspaceAtStartOfFirstBlockDoesNothing`'s sibling
+        // below).
+        let secondOrderKey = OrderKey.between(viewModel.items[0].orderKey, nil)
+        let secondItem = try documentItemRepository.create(
+            DocumentItem(documentId: document.id, contentType: "text", orderKey: secondOrderKey)
+        )
+        let isChecked = textKind == TextItemKind.checklist ? false : nil
+        _ = try textItemRepository.create(
+            TextContent(itemId: secondItem.id, textKind: textKind, plainText: "", isChecked: isChecked)
+        )
+        // Reload to pick up the second block *before* editing the first
+        // one — editing goes through the debounced save path, so doing it
+        // before this reload would have the reload's fresh-from-DB read
+        // stomp the in-memory-only edit right back to empty.
+        viewModel.load()
+        viewModel.updateBlockText(firstBlockId, text: "First")
+
+        viewModel.mergeOrDeleteBlock(secondItem.id, currentText: "")
+
+        // No block was deleted or merged — the second block converted in
+        // place, and the first block's text is untouched.
+        #expect(viewModel.items.map(\.id) == [firstBlockId, secondItem.id])
+        #expect(viewModel.textContent(forItemId: firstBlockId).plainText == "First")
+        #expect(viewModel.textContent(forItemId: secondItem.id).textKind == TextItemKind.paragraph)
+        #expect(viewModel.textContent(forItemId: secondItem.id).plainText == "")
+
+        let stored = try documentItemRepository.find(id: secondItem.id)
+        #expect(stored?.deletedAt == nil)
+    }
+
+    @Test(
+        "Backspace on an empty list item that's also the document's first block still exits to a paragraph",
+        arguments: [TextItemKind.bulletedListItem, TextItemKind.numberedListItem, TextItemKind.checklist]
+    )
+    func mergeOrDeleteBlockOnEmptyFirstListItemExitsToParagraph(_ textKind: String) throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.items.first?.id)
+        switch textKind {
+        case TextItemKind.bulletedListItem: viewModel.updateBlockText(firstBlockId, text: "- ")
+        case TextItemKind.numberedListItem: viewModel.updateBlockText(firstBlockId, text: "1. ")
+        default: viewModel.updateBlockText(firstBlockId, text: "- [ ] ")
+        }
+
+        viewModel.mergeOrDeleteBlock(firstBlockId, currentText: "")
+
+        #expect(viewModel.items.map(\.id) == [firstBlockId])
+        #expect(viewModel.textContent(forItemId: firstBlockId).textKind == TextItemKind.paragraph)
     }
 
     @Test("A brand-new document with no content shows the empty-state placeholder")

@@ -528,8 +528,17 @@ final class DetailViewModel {
     /// unchecked regardless of `block`'s own checked state. Every other
     /// block type (heading, quote, code block, paragraph) still creates a
     /// plain paragraph below it, unchanged.
+    ///
+    /// **List exit**: pressing Enter on an *empty* list item doesn't
+    /// continue the list — `exitEmptyListItem` converts that item to a
+    /// plain paragraph in place instead, with no new block created and
+    /// focus staying put (the standard "empty list item + Enter exits the
+    /// list" behavior). Otherwise every Enter press inside a list would
+    /// leave a trail of empty items with no way to stop it via Enter
+    /// alone.
     func insertBlock(after blockId: String, currentText: String, cursorOffset: Int) {
         guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
+        guard !exitEmptyListItem(blockId, currentText: currentText) else { return }
 
         // `cursorOffset` comes from `UITextView` as a UTF-16 offset, so
         // split using the UTF-16 view and clamp to its bounds before
@@ -608,11 +617,39 @@ final class DetailViewModel {
         slashCommandBlockId = nil
     }
 
+    /// Converts `blockId`'s empty bulleted/numbered/checklist item back to
+    /// a plain paragraph in place, if that's what it is — the shared
+    /// "empty list item" exit behavior for both Enter (`insertBlock`) and
+    /// Backspace-at-start (`mergeOrDeleteBlock`), matching every other
+    /// block-based editor (Notion, etc.): the first Enter/Backspace on an
+    /// empty list item exits the list rather than continuing it or
+    /// deleting/merging the block outright.
+    ///
+    /// Returns whether it did so, so callers know whether to continue
+    /// their own normal handling (`false`) or stop here (`true`).
+    private func exitEmptyListItem(_ blockId: String, currentText: String) -> Bool {
+        let currentKind = textContent(forItemId: blockId).textKind
+        let isListKind = [TextItemKind.bulletedListItem, TextItemKind.numberedListItem, TextItemKind.checklist]
+            .contains(currentKind)
+        guard isListKind, currentText.isEmpty else { return false }
+
+        textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.paragraph, plainText: "")
+        cancelPendingSave(blockId)
+        persistBlock(blockId)
+        return true
+    }
+
     /// Handles pressing Backspace with the caret at the very start of
     /// `blockId`'s text (PLANNING §13.1 "Backspace at empty block: 이전
     /// 블록과 병합 또는 현재 블록 삭제", §6.3 "Backspace로 빈 블록 병합 또는
     /// 삭제").
     ///
+    /// - If `blockId` is an *empty* list item, `exitEmptyListItem` converts
+    ///   it to a plain paragraph in place instead of merging/deleting —
+    ///   the standard "empty list item + Backspace exits the list first"
+    ///   behavior, symmetric with `insertBlock`'s Enter handling. This
+    ///   takes precedence even for the document's first block, unlike the
+    ///   merge/delete path below.
     /// - If `blockId` is the document's first block, there's nothing to
     ///   merge/delete into — every document keeps at least one block
     ///   (`load()`'s bootstrap invariant), so this does nothing.
@@ -632,6 +669,7 @@ final class DetailViewModel {
     /// behavior this replaces.
     func mergeOrDeleteBlock(_ blockId: String, currentText: String) {
         guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
+        guard !exitEmptyListItem(blockId, currentText: currentText) else { return }
         guard index > 0 else {
             // First block in the document — Backspace at its start does
             // nothing, matching AC2's "every document has ≥1 block".
