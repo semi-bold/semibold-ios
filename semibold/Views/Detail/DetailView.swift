@@ -525,27 +525,34 @@ private struct BlockRow: View {
                 }
 
                 ZStack(alignment: .leading) {
-                    // Always hit-testable, even while the divider rule is
-                    // drawn on top of it (`showsDividerRule`) — so a tap
-                    // anywhere on the row reaches this real `UITextView`
-                    // directly and focuses it through the ordinary native
-                    // UIKit path (touch → `becomeFirstResponder()` →
-                    // `.focused()` observes the change), the exact same
-                    // reliable mechanism every other block type already
-                    // uses. An earlier version instead drove focus the
-                    // other way — a `.onTapGesture` on the rule overlay
-                    // imperatively pushed `focusedBlockId` and relied on
-                    // SwiftUI's `.focused()` bridge to call
-                    // `becomeFirstResponder()` on this view in response —
-                    // which is the fragile direction: the request could be
-                    // dropped when it landed in the same transaction as
-                    // this view's own opacity/hit-testing change, so the
-                    // first tap only flipped state and a second, genuinely
-                    // native tap was needed to actually focus it.
+                    // Always at full opacity (alpha 1), even while the
+                    // divider rule is drawn on top of it
+                    // (`showsDividerRule`) — a `UIViewRepresentable`-wrapped
+                    // `UITextView` whose SwiftUI `.opacity()` is 0 gets its
+                    // real `UIView.alpha` set to 0 too, and UIKit's own
+                    // `hitTest(_:with:)` refuses to hit-test any view with
+                    // `alpha < 0.01` *regardless* of SwiftUI's
+                    // `allowsHitTesting` — a rule `.allowsHitTesting()`
+                    // can't override, since it only affects SwiftUI's own
+                    // hit-testing pass, not UIKit's. Hiding this via
+                    // opacity (an earlier version of this fix) therefore
+                    // made it — and everything behind it — completely
+                    // untappable while a divider's rule was showing.
+                    //
+                    // Staying opaque keeps a tap anywhere on the row
+                    // reaching this real `UITextView` directly, focusing it
+                    // through the ordinary native UIKit path (touch →
+                    // `becomeFirstResponder()` → `.focused()` observes the
+                    // change) — the same reliable mechanism every other
+                    // block type already uses. The `"---"` text itself is
+                    // hidden by matching its color to the row's background
+                    // instead (`showsDividerRule ? background : textColor`
+                    // below), which only affects what's drawn, not the
+                    // view's alpha/hit-testability.
                     ParagraphTextField(
                         text: text,
                         textStyle: textStyle,
-                        textColor: textColor,
+                        textColor: showsDividerRule ? AppTheme.Colors.Neutral.n900 : textColor,
                         isMonospaced: isCodeBlock,
                         onTextChange: onTextChange,
                         onEnter: { cursorOffset in
@@ -558,15 +565,15 @@ private struct BlockRow: View {
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .focused(focusedBlockId, equals: item.id)
-                    .opacity(showsDividerRule ? 0 : 1)
 
-                    // A divider block's `"---"` text field sits underneath
-                    // this rule whenever it isn't focused. Purely a visual
-                    // overlay — `allowsHitTesting(false)` lets every tap
-                    // pass straight through to the text field above, which
+                    // A divider block's `"---"` text sits underneath this
+                    // rule (color-matched to the background, invisible)
+                    // whenever it isn't focused. Purely a visual overlay —
+                    // `allowsHitTesting(false)` lets every tap pass
+                    // straight through to the text field above, which
                     // reveals the literal `"---"` for editing/deleting once
-                    // it's focused (see that field's comment for why taps
-                    // aren't handled here instead).
+                    // it's focused (see that field's comment above for why
+                    // taps aren't handled here instead).
                     Rectangle()
                         .fill(AppTheme.Colors.Stroke.border)
                         .frame(height: 1)
