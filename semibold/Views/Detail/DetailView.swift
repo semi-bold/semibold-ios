@@ -276,6 +276,10 @@ struct DetailView: View {
     /// so this list is never empty by the time it's shown.
     private var blockList: some View {
         ScrollView {
+            // The top padding is breathing room below the title area's
+            // divider line, above the first block only — each block row's
+            // own vertical padding (`AppTheme.Spacing.sm`) already governs
+            // the gap *between* blocks, so this doesn't affect that.
             LazyVStack(spacing: 0) {
                 ForEach(viewModel.items) { item in
                     BlockRow(
@@ -299,6 +303,7 @@ struct DetailView: View {
                     )
                 }
             }
+            .padding(.top, AppTheme.Spacing.md)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(AppTheme.Colors.Neutral.n900)
@@ -320,12 +325,18 @@ struct DetailView: View {
     /// input underneath, and it disappears as soon as the user types
     /// anything (Markdown) or presses `/` (which opens the Slash Command
     /// sheet from the previous AC).
+    ///
+    /// Top padding is `blockList`'s `LazyVStack` top padding plus the
+    /// block row's own vertical padding, matching where that (only) empty
+    /// block's text actually sits — this overlay is positioned relative to
+    /// `blockList`/`ScrollView`, not the `LazyVStack` itself.
     private var emptyContentPlaceholder: some View {
         Text("Markdown으로 작성하거나 / 를 눌러 블록을 추가하세요.")
             .appTextStyle(AppTheme.Typography.body)
             .foregroundStyle(AppTheme.Colors.Content.secondary)
             .padding(.horizontal, AppTheme.Spacing.md)
-            .padding(.vertical, AppTheme.Spacing.sm)
+            .padding(.top, AppTheme.Spacing.md + AppTheme.Spacing.sm)
+            .padding(.bottom, AppTheme.Spacing.sm)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
