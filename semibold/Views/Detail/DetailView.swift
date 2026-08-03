@@ -525,6 +525,23 @@ private struct BlockRow: View {
                 }
 
                 ZStack(alignment: .leading) {
+                    // Always hit-testable, even while the divider rule is
+                    // drawn on top of it (`showsDividerRule`) — so a tap
+                    // anywhere on the row reaches this real `UITextView`
+                    // directly and focuses it through the ordinary native
+                    // UIKit path (touch → `becomeFirstResponder()` →
+                    // `.focused()` observes the change), the exact same
+                    // reliable mechanism every other block type already
+                    // uses. An earlier version instead drove focus the
+                    // other way — a `.onTapGesture` on the rule overlay
+                    // imperatively pushed `focusedBlockId` and relied on
+                    // SwiftUI's `.focused()` bridge to call
+                    // `becomeFirstResponder()` on this view in response —
+                    // which is the fragile direction: the request could be
+                    // dropped when it landed in the same transaction as
+                    // this view's own opacity/hit-testing change, so the
+                    // first tap only flipped state and a second, genuinely
+                    // native tap was needed to actually focus it.
                     ParagraphTextField(
                         text: text,
                         textStyle: textStyle,
@@ -542,37 +559,20 @@ private struct BlockRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .focused(focusedBlockId, equals: item.id)
                     .opacity(showsDividerRule ? 0 : 1)
-                    .allowsHitTesting(!showsDividerRule)
 
                     // A divider block's `"---"` text field sits underneath
-                    // this rule whenever it isn't focused. Tapping it moves
-                    // focus onto the text field beneath, which reveals the
-                    // literal `"---"` for editing/deleting.
-                    //
-                    // Always present in the tree, like the text field above
-                    // — toggling only `opacity`/`allowsHitTesting` rather
-                    // than conditionally inserting/removing this view.
-                    // Removing it via `if showsDividerRule { ... }` used to
-                    // mean the very tap that flips `showsDividerRule` to
-                    // `false` also structurally removed the tapped view
-                    // *and* requested focus in the same transaction, which
-                    // silently dropped the focus request — the field's
-                    // `opacity`/`allowsHitTesting` above hadn't visibly
-                    // caught up yet from the focus system's perspective, so
-                    // the first tap only revealed the text and a second,
-                    // ordinary tap directly on the now-visible field was
-                    // needed to actually focus it. No structural diff means
-                    // no such race.
+                    // this rule whenever it isn't focused. Purely a visual
+                    // overlay — `allowsHitTesting(false)` lets every tap
+                    // pass straight through to the text field above, which
+                    // reveals the literal `"---"` for editing/deleting once
+                    // it's focused (see that field's comment for why taps
+                    // aren't handled here instead).
                     Rectangle()
                         .fill(AppTheme.Colors.Stroke.border)
                         .frame(height: 1)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
                         .opacity(showsDividerRule ? 1 : 0)
-                        .allowsHitTesting(showsDividerRule)
-                        .onTapGesture {
-                            focusedBlockId.wrappedValue = item.id
-                        }
+                        .allowsHitTesting(false)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
