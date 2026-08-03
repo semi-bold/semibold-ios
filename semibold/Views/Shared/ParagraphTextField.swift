@@ -115,6 +115,24 @@ struct ParagraphTextField: UIViewRepresentable {
         Coordinator(self)
     }
 
+    /// Without this override, SwiftUI falls back to `UITextView`'s own
+    /// sizing, which — since `isScrollEnabled = false` gives it no fixed
+    /// width to wrap against — hugs the width of its *text content*
+    /// instead of filling `proposal.width` (the row's full width, per the
+    /// call sites' `.frame(maxWidth: .infinity)`). The row's background
+    /// still visually spans the full width regardless (that's painted by
+    /// an ancestor view), but the `UITextView`'s actual bounds — and so
+    /// its tappable area — end up only as wide as the text, leaving
+    /// everything past it in the row untappable. Explicitly returning the
+    /// proposed width (falling back to the view's current width if none
+    /// is proposed) fixes that, while height still comes from the text
+    /// content, preserving the auto-growing multi-line behavior.
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        let width = proposal.width ?? uiView.bounds.width
+        let height = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+        return CGSize(width: width, height: height)
+    }
+
     /// Forwards `UITextView` editing events back to SwiftUI, and turns a
     /// plain Return keypress into "create a new block here" instead of
     /// letting it insert a newline.
