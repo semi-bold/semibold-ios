@@ -459,83 +459,70 @@ private struct BlockRow: View {
     /// `ParagraphTextField` for a divider since it has no text content
     /// (§8.1 `{ type: "divider" }`).
     private var dividerBody: some View {
-        VStack(spacing: 0) {
-            Rectangle()
-                .fill(AppTheme.Colors.Stroke.border)
-                .frame(height: 1)
-                .padding(.horizontal, AppTheme.Spacing.md)
-                .padding(.vertical, AppTheme.Spacing.lg)
-
-            Rectangle()
-                .fill(AppTheme.Colors.Stroke.divider)
-                .frame(height: 1)
-        }
-        .background(AppTheme.Colors.Neutral.n900)
+        Rectangle()
+            .fill(AppTheme.Colors.Stroke.border)
+            .frame(height: 1)
+            .padding(.horizontal, AppTheme.Spacing.md)
+            .padding(.vertical, AppTheme.Spacing.lg)
+            .background(AppTheme.Colors.Neutral.n900)
     }
 
     private var editableBody: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                // A code block's fence language identifier (e.g. `swift`
-                // for ` ```swift `) isn't modeled on `TextContent` — see
-                // `DetailViewModel.updateBlockText`'s doc comment — so
-                // unlike the pre-NO-005 editor, no language caption shows
-                // above the code here.
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+            // A code block's fence language identifier (e.g. `swift`
+            // for ` ```swift `) isn't modeled on `TextContent` — see
+            // `DetailViewModel.updateBlockText`'s doc comment — so
+            // unlike the pre-NO-005 editor, no language caption shows
+            // above the code here.
 
-                // No spacing beyond the marker column's own `minWidth`
-                // below (unchanged) — the previous `AppTheme.Spacing.sm`
-                // (8pt) gap on top of that column left too much empty
-                // space between a marker (bullet/number/checkbox/quote
-                // bar) and its text.
-                HStack(alignment: .top, spacing: 0) {
-                    if let listMarker {
-                        Text(listMarker)
-                            .appTextStyle(textStyle)
-                            .foregroundStyle(AppTheme.Colors.Content.primary)
-                            .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
-                    } else if content.textKind == TextItemKind.checklist {
-                        let isChecked = content.isChecked ?? false
-                        Button(action: onToggleChecklist) {
-                            Image(systemName: isChecked ? "checkmark.square" : "square")
-                                .foregroundStyle(isChecked ? AppTheme.Colors.accent : AppTheme.Colors.Content.secondary)
-                        }
-                        .buttonStyle(.plain)
+            // No spacing beyond the marker column's own `minWidth`
+            // below (unchanged) — the previous `AppTheme.Spacing.sm`
+            // (8pt) gap on top of that column left too much empty
+            // space between a marker (bullet/number/checkbox/quote
+            // bar) and its text.
+            HStack(alignment: .top, spacing: 0) {
+                if let listMarker {
+                    Text(listMarker)
+                        .appTextStyle(textStyle)
+                        .foregroundStyle(AppTheme.Colors.Content.primary)
                         .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
-                        .frame(height: textStyle.lineHeight, alignment: .center)
-                    } else if content.textKind == TextItemKind.quote {
-                        Rectangle()
-                            .fill(AppTheme.Colors.Stroke.border)
-                            .frame(width: AppTheme.Spacing.xs)
-                            .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+                } else if content.textKind == TextItemKind.checklist {
+                    let isChecked = content.isChecked ?? false
+                    Button(action: onToggleChecklist) {
+                        Image(systemName: isChecked ? "checkmark.square" : "square")
+                            .foregroundStyle(isChecked ? AppTheme.Colors.accent : AppTheme.Colors.Content.secondary)
                     }
-
-                    ParagraphTextField(
-                        text: text,
-                        textStyle: textStyle,
-                        textColor: textColor,
-                        isMonospaced: isCodeBlock,
-                        onTextChange: onTextChange,
-                        onEnter: { cursorOffset in
-                            onEnter(content.plainText, cursorOffset)
-                        },
-                        onBackspaceAtStart: {
-                            onBackspaceAtStart(content.plainText)
-                        },
-                        cursorOffsetToApply: focusedBlockId.wrappedValue == item.id ? $cursorOffsetToApply : .constant(nil)
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .focused(focusedBlockId, equals: item.id)
+                    .buttonStyle(.plain)
+                    .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+                    .frame(height: textStyle.lineHeight, alignment: .center)
+                } else if content.textKind == TextItemKind.quote {
+                    Rectangle()
+                        .fill(AppTheme.Colors.Stroke.border)
+                        .frame(width: AppTheme.Spacing.xs)
+                        .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
                 }
-            }
-            .padding(.horizontal, AppTheme.Spacing.md)
-            .padding(.vertical, AppTheme.Spacing.md)
-            .background(isCodeBlock ? AppTheme.Colors.Neutral.n700 : AppTheme.Colors.Neutral.n900)
 
-            Rectangle()
-                .fill(AppTheme.Colors.Stroke.divider)
-                .frame(height: 1)
+                ParagraphTextField(
+                    text: text,
+                    textStyle: textStyle,
+                    textColor: textColor,
+                    isMonospaced: isCodeBlock,
+                    onTextChange: onTextChange,
+                    onEnter: { cursorOffset in
+                        onEnter(content.plainText, cursorOffset)
+                    },
+                    onBackspaceAtStart: {
+                        onBackspaceAtStart(content.plainText)
+                    },
+                    cursorOffsetToApply: focusedBlockId.wrappedValue == item.id ? $cursorOffsetToApply : .constant(nil)
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .focused(focusedBlockId, equals: item.id)
+            }
         }
-        .background(AppTheme.Colors.Neutral.n900)
+        .padding(.horizontal, AppTheme.Spacing.md)
+        .padding(.vertical, AppTheme.Spacing.md)
+        .background(isCodeBlock ? AppTheme.Colors.Neutral.n700 : AppTheme.Colors.Neutral.n900)
     }
 }
 
