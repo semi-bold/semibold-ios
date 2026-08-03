@@ -318,7 +318,7 @@ struct DetailView: View {
             .appTextStyle(AppTheme.Typography.body)
             .foregroundStyle(AppTheme.Colors.Content.secondary)
             .padding(.horizontal, AppTheme.Spacing.md)
-            .padding(.vertical, AppTheme.Spacing.md)
+            .padding(.vertical, AppTheme.Spacing.sm)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
@@ -521,7 +521,7 @@ private struct BlockRow: View {
             }
         }
         .padding(.horizontal, AppTheme.Spacing.md)
-        .padding(.vertical, AppTheme.Spacing.md)
+        .padding(.vertical, AppTheme.Spacing.sm)
         .background(isCodeBlock ? AppTheme.Colors.Neutral.n700 : AppTheme.Colors.Neutral.n900)
     }
 }
