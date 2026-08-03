@@ -453,35 +453,29 @@ private struct BlockRow: View {
         content.textKind == TextItemKind.divider
     }
 
-    /// A divider block shows as a horizontal rule only while it *isn't*
-    /// focused — tapping it (`dividerBody`'s tap gesture) focuses it,
-    /// which switches to `editableBody`'s literal `"---"` text so it can
-    /// be edited/deleted like any other block, matching Obsidian: tapping
-    /// a rendered `---` rule reveals its raw Markdown source for editing.
-    var body: some View {
-        if isDivider, focusedBlockId.wrappedValue != item.id {
-            dividerBody
-        } else {
-            editableBody
-        }
+    /// Whether this row is currently showing the rendered `---` rule
+    /// rather than its editable text — a divider that isn't focused.
+    private var showsDividerRule: Bool {
+        isDivider && focusedBlockId.wrappedValue != item.id
     }
 
-    /// A divider block's unfocused row: a horizontal rule, matching the
-    /// visual language of a Markdown `---` divider. Tapping it moves focus
-    /// onto this block, which swaps to `editableBody`'s literal `"---"`
-    /// text field instead (see `body`).
-    private var dividerBody: some View {
-        Rectangle()
-            .fill(AppTheme.Colors.Stroke.border)
-            .frame(height: 1)
-            .padding(.horizontal, AppTheme.Spacing.md)
-            .padding(.vertical, AppTheme.Spacing.lg)
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            .background(AppTheme.Colors.Neutral.n900)
-            .onTapGesture {
-                focusedBlockId.wrappedValue = item.id
-            }
+    /// Always renders `editableBody` — critically, this means the
+    /// `ParagraphTextField` underneath a divider's rule is never
+    /// destroyed/recreated when focus moves in and out of it. An earlier
+    /// version swapped between two entirely different view trees (a bare
+    /// `Rectangle` vs. the text field) based on focus, which meant tapping
+    /// the rule had to simultaneously *insert* a brand-new
+    /// `ParagraphTextField` *and* focus it in the same update — a known
+    /// fragile SwiftUI/UIKit interop timing case (this custom
+    /// `UIViewRepresentable` has no explicit `becomeFirstResponder()` of
+    /// its own; it relies entirely on `.focused()` finding an
+    /// already-attached view) — which silently failed to ever bring up
+    /// the keyboard, making the rule untappable in practice. Keeping the
+    /// text field permanently in the tree and overlaying the rule visual
+    /// on top (`editableBody`) reuses the exact same always-present
+    /// mechanism every other block type already focuses reliably.
+    var body: some View {
+        editableBody
     }
 
     private var editableBody: some View {
@@ -519,26 +513,48 @@ private struct BlockRow: View {
                         .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
                 }
 
-                ParagraphTextField(
-                    text: text,
-                    textStyle: textStyle,
-                    textColor: textColor,
-                    isMonospaced: isCodeBlock,
-                    onTextChange: onTextChange,
-                    onEnter: { cursorOffset in
-                        onEnter(content.plainText, cursorOffset)
-                    },
-                    onBackspaceAtStart: {
-                        onBackspaceAtStart(content.plainText)
-                    },
-                    cursorOffsetToApply: focusedBlockId.wrappedValue == item.id ? $cursorOffsetToApply : .constant(nil)
-                )
+                ZStack(alignment: .leading) {
+                    ParagraphTextField(
+                        text: text,
+                        textStyle: textStyle,
+                        textColor: textColor,
+                        isMonospaced: isCodeBlock,
+                        onTextChange: onTextChange,
+                        onEnter: { cursorOffset in
+                            onEnter(content.plainText, cursorOffset)
+                        },
+                        onBackspaceAtStart: {
+                            onBackspaceAtStart(content.plainText)
+                        },
+                        cursorOffsetToApply: focusedBlockId.wrappedValue == item.id ? $cursorOffsetToApply : .constant(nil)
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .focused(focusedBlockId, equals: item.id)
+                    .opacity(showsDividerRule ? 0 : 1)
+                    .allowsHitTesting(!showsDividerRule)
+
+                    // A divider block's `"---"` text field sits underneath
+                    // this rule whenever it isn't focused — see `body`'s
+                    // doc comment for why this is an overlay rather than a
+                    // separate view swapped in for `dividerBody`. Tapping
+                    // it moves focus onto the text field beneath, which
+                    // reveals the literal `"---"` for editing/deleting.
+                    if showsDividerRule {
+                        Rectangle()
+                            .fill(AppTheme.Colors.Stroke.border)
+                            .frame(height: 1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                focusedBlockId.wrappedValue = item.id
+                            }
+                    }
+                }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .focused(focusedBlockId, equals: item.id)
             }
         }
         .padding(.horizontal, AppTheme.Spacing.md)
-        .padding(.vertical, AppTheme.Spacing.sm)
+        .padding(.vertical, showsDividerRule ? AppTheme.Spacing.lg : AppTheme.Spacing.sm)
         .background(isCodeBlock ? AppTheme.Colors.Neutral.n700 : AppTheme.Colors.Neutral.n900)
     }
 }
