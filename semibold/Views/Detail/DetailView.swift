@@ -545,21 +545,34 @@ private struct BlockRow: View {
                     .allowsHitTesting(!showsDividerRule)
 
                     // A divider block's `"---"` text field sits underneath
-                    // this rule whenever it isn't focused — see `body`'s
-                    // doc comment for why this is an overlay rather than a
-                    // separate view swapped in for `dividerBody`. Tapping
-                    // it moves focus onto the text field beneath, which
-                    // reveals the literal `"---"` for editing/deleting.
-                    if showsDividerRule {
-                        Rectangle()
-                            .fill(AppTheme.Colors.Stroke.border)
-                            .frame(height: 1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                focusedBlockId.wrappedValue = item.id
-                            }
-                    }
+                    // this rule whenever it isn't focused. Tapping it moves
+                    // focus onto the text field beneath, which reveals the
+                    // literal `"---"` for editing/deleting.
+                    //
+                    // Always present in the tree, like the text field above
+                    // — toggling only `opacity`/`allowsHitTesting` rather
+                    // than conditionally inserting/removing this view.
+                    // Removing it via `if showsDividerRule { ... }` used to
+                    // mean the very tap that flips `showsDividerRule` to
+                    // `false` also structurally removed the tapped view
+                    // *and* requested focus in the same transaction, which
+                    // silently dropped the focus request — the field's
+                    // `opacity`/`allowsHitTesting` above hadn't visibly
+                    // caught up yet from the focus system's perspective, so
+                    // the first tap only revealed the text and a second,
+                    // ordinary tap directly on the now-visible field was
+                    // needed to actually focus it. No structural diff means
+                    // no such race.
+                    Rectangle()
+                        .fill(AppTheme.Colors.Stroke.border)
+                        .frame(height: 1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .opacity(showsDividerRule ? 1 : 0)
+                        .allowsHitTesting(showsDividerRule)
+                        .onTapGesture {
+                            focusedBlockId.wrappedValue = item.id
+                        }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
