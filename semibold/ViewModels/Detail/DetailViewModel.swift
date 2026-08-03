@@ -396,6 +396,20 @@ final class DetailViewModel {
             return
         }
 
+        // Editing a divider's literal "---" text away from that exact
+        // string means it's no longer a valid rule — matching Obsidian's
+        // "edit a `---` rule's raw text into something else and it just
+        // becomes a normal line" behavior, this converts the block to a
+        // plain paragraph holding whatever was typed, rather than leaving
+        // it stuck as a "divider" with arbitrary text `dividerBody` would
+        // never actually render.
+        if currentKind == TextItemKind.divider, text != "---" {
+            textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.paragraph, plainText: text)
+            cancelPendingSave(blockId)
+            persistBlock(blockId)
+            return
+        }
+
         switch currentKind {
         case TextItemKind.checklist:
             let checked = textContent(forItemId: blockId).isChecked ?? false

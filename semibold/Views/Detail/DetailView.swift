@@ -446,25 +446,35 @@ private struct BlockRow: View {
         content.textKind == TextItemKind.divider
     }
 
+    /// A divider block shows as a horizontal rule only while it *isn't*
+    /// focused — tapping it (`dividerBody`'s tap gesture) focuses it,
+    /// which switches to `editableBody`'s literal `"---"` text so it can
+    /// be edited/deleted like any other block, matching Obsidian: tapping
+    /// a rendered `---` rule reveals its raw Markdown source for editing.
     var body: some View {
-        if isDivider {
+        if isDivider, focusedBlockId.wrappedValue != item.id {
             dividerBody
         } else {
             editableBody
         }
     }
 
-    /// A divider block's row: a horizontal rule, matching the visual
-    /// language of a Markdown `---` divider. Not editable — there's no
-    /// `ParagraphTextField` for a divider since it has no text content
-    /// (§8.1 `{ type: "divider" }`).
+    /// A divider block's unfocused row: a horizontal rule, matching the
+    /// visual language of a Markdown `---` divider. Tapping it moves focus
+    /// onto this block, which swaps to `editableBody`'s literal `"---"`
+    /// text field instead (see `body`).
     private var dividerBody: some View {
         Rectangle()
             .fill(AppTheme.Colors.Stroke.border)
             .frame(height: 1)
             .padding(.horizontal, AppTheme.Spacing.md)
             .padding(.vertical, AppTheme.Spacing.lg)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
             .background(AppTheme.Colors.Neutral.n900)
+            .onTapGesture {
+                focusedBlockId.wrappedValue = item.id
+            }
     }
 
     private var editableBody: some View {

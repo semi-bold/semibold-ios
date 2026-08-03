@@ -175,7 +175,7 @@ struct SlashCommandConversionTests {
         #expect(stored.textKind == content.textKind)
     }
 
-    @Test("Picking Divider converts the item to a divider with no text content")
+    @Test("Picking Divider converts the item to a divider holding the literal '---' text")
     func pickingDividerConvertsBlock() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
@@ -192,7 +192,10 @@ struct SlashCommandConversionTests {
         #expect(viewModel.slashCommandBlockId == nil)
         let content = viewModel.textContent(forItemId: blockId)
         #expect(content.textKind == TextItemKind.divider)
-        #expect(content.plainText == "")
+        // Literal "---", not empty — tapping the rendered rule to edit it
+        // needs real Markdown source text to show (`BlockRow.dividerBody`'s
+        // tap gesture, `DetailView.swift`).
+        #expect(content.plainText == "---")
 
         let stored = try #require(try textItemRepository.find(itemId: blockId))
         #expect(stored.textKind == TextItemKind.divider)

@@ -299,6 +299,47 @@ struct DetailViewModelTests {
         #expect(viewModel.textContent(forItemId: firstBlockId).plainText == "")
     }
 
+    @Test("Editing a divider's literal '---' text keeps it a divider")
+    func editingDividerTextUnchangedStaysDivider() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let blockId = try #require(viewModel.items.first?.id)
+        viewModel.convertBlock(blockId, toSlashCommandOption: .divider)
+
+        viewModel.updateBlockText(blockId, text: "---")
+
+        #expect(viewModel.textContent(forItemId: blockId).textKind == TextItemKind.divider)
+        #expect(viewModel.textContent(forItemId: blockId).plainText == "---")
+    }
+
+    @Test("Editing a divider's text away from '---' converts it to a plain paragraph")
+    func editingDividerTextAwayFromRuleConvertsToParagraph() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store, autosaveDebounceInterval: .seconds(10))
+        viewModel.load()
+        let blockId = try #require(viewModel.items.first?.id)
+        viewModel.convertBlock(blockId, toSlashCommandOption: .divider)
+
+        viewModel.updateBlockText(blockId, text: "-- Notes")
+
+        let content = viewModel.textContent(forItemId: blockId)
+        #expect(content.textKind == TextItemKind.paragraph)
+        #expect(content.plainText == "-- Notes")
+
+        // A type change is a structural edit — persisted immediately.
+        let stored = try #require(try textItemRepository.find(itemId: blockId))
+        #expect(stored.textKind == TextItemKind.paragraph)
+        #expect(stored.plainText == "-- Notes")
+    }
+
     @Test("Pressing Enter on a block that isn't the last inserts the new block between them without touching the later block's orderKey")
     func insertBlockDoesNotDisturbLaterSiblingsOrderKey() throws {
         let store = try makeStore()
