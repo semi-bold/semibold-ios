@@ -1,19 +1,15 @@
 import Foundation
 
-/// The exact `TextContent.textKind` string values this editor recognizes,
-/// matching `DocumentBlockMigrationPolicy`'s vocabulary
-/// (`semibold/Data/DocumentBlockMigrationPolicy.swift`) so a document
-/// edited here and a document produced by migrating pre-NO-005 data read
-/// back identically. Kept as named constants (rather than string literals
-/// scattered across `DetailViewModel`/its extensions) so a typo doesn't
-/// silently create a new, unrecognized kind.
+/// The exact `TextContent.textKind` string values this editor recognizes
+/// (`DOCUMENT_MODEL.md` §4.1's recommended vocabulary). Kept as named
+/// constants (rather than string literals scattered across
+/// `DetailViewModel`/its extensions) so a typo doesn't silently create a
+/// new, unrecognized kind.
 enum TextItemKind {
     static let paragraph = "paragraph"
     static let heading = "heading"
     /// A blockquote — named `"quote"`, not `"blockquote"`, matching
-    /// `DocumentBlockMigrationPolicy.textKind(for:)`'s rename of the old
-    /// `BlockType.blockquote` case to `DOCUMENT_MODEL.md` §4.1's
-    /// recommended `quote` vocabulary.
+    /// `DOCUMENT_MODEL.md` §4.1's recommended `quote` vocabulary.
     static let quote = "quote"
     static let checklist = "checklist"
     static let bulletedListItem = "bulleted_list_item"
@@ -21,8 +17,9 @@ enum TextItemKind {
     static let codeBlock = "code_block"
     static let divider = "divider"
     /// Content this build doesn't recognize, preserved read-only rather
-    /// than guessed at (`DOCUMENT_MODEL.md` §4.5,
-    /// `DocumentBlockMigrationPolicy`'s unrecognized-`BlockType` branch).
+    /// than guessed at (`DOCUMENT_MODEL.md` §4.5) — a forward-compat
+    /// safety net for content a newer app version wrote that this build
+    /// doesn't know how to render.
     static let unknown = "unknown"
 }
 
@@ -38,16 +35,14 @@ enum TextItemKind {
 /// Backspace-at-start merge/delete (PLANNING §6.3/§13.1, §5.4) — see
 /// `mergeOrDeleteBlock`.
 ///
-/// **NO-005 model note**: a "block" in this file's naming/comments is the
-/// same planner-level concept `tasks/NO-001.md`/PLANNING always meant by
-/// it — one editable paragraph/heading/list item/etc. row. Internally it's
-/// now backed by a `DocumentItem` (position/hierarchy — `items`) plus that
-/// item's `TextContent` (the actual text — `textContents`), per
-/// `STORAGE_ARCHITECTURE.md` §5.5's "구조와 콘텐츠 분리" assembly rather than
-/// the old single `DocumentBlock` row. Only top-level items (`parentItemId
-/// == nil`) are loaded/edited here — nesting is out of this editor's scope,
-/// same as the pre-NO-005 version only ever reading `parentId == nil`
-/// blocks.
+/// A "block" in this file's naming/comments is the same planner-level
+/// concept `tasks/NO-001.md`/PLANNING always meant by it — one editable
+/// paragraph/heading/list item/etc. row. Internally it's backed by a
+/// `DocumentItem` (position/hierarchy — `items`) plus that item's
+/// `TextContent` (the actual text — `textContents`), per
+/// `STORAGE_ARCHITECTURE.md` §5.5's "구조와 콘텐츠 분리" assembly. Only
+/// top-level items (`parentItemId == nil`) are loaded/edited here —
+/// nesting is out of this editor's scope.
 @Observable
 @MainActor
 final class DetailViewModel {
@@ -317,17 +312,14 @@ final class DetailViewModel {
     /// (§11.2 "블록 생성/삭제/순서 변경: 즉시 저장").
     ///
     /// **Inline marks deviation**: `plainText` is set to `text` exactly as
-    /// typed, delimiters (`**`/`*`/etc.) and all — matching the pre-NO-005
-    /// editor's `displayText`, which also kept delimiters literal
-    /// (`BlockContent+InlineMarks.swift`'s documented deviation) so the
-    /// plain `UITextView`-backed input round-trips what the user typed
-    /// without the delimiters vanishing mid-edit. This means edits made
-    /// here don't parse `text` into `TextMark` rows the way
-    /// `DocumentBlockMigrationPolicy`'s migrated content does — and, per
-    /// `marksByItemId`'s doc comment, `persistBlock` invalidates (drops)
-    /// any `TextMark`s the block already had once this edit is saved,
-    /// rather than leaving them pointing at stale offsets in the new text;
-    /// flagged as a gap for a future WYSIWYG-editing pass to close.
+    /// typed, delimiters (`**`/`*`/etc.) and all, so the plain
+    /// `UITextView`-backed input round-trips what the user typed without
+    /// the delimiters vanishing mid-edit. This means edits made here don't
+    /// parse `text` into `TextMark` rows — and, per `marksByItemId`'s doc
+    /// comment, `persistBlock` invalidates (drops) any `TextMark`s the
+    /// block already had once this edit is saved, rather than leaving them
+    /// pointing at stale offsets in the new text; flagged as a gap for a
+    /// future WYSIWYG-editing pass to close.
     func updateBlockText(_ blockId: String, text: String) {
         guard items.contains(where: { $0.id == blockId }) else { return }
         let currentKind = textContent(forItemId: blockId).textKind
@@ -397,10 +389,7 @@ final class DetailViewModel {
             // fence, e.g. `"swift"`) has nowhere to live in `TextContent`
             // — `DOCUMENT_MODEL.md` §4.1's `text_items` fields don't
             // include one — so it's detected (to trigger the conversion)
-            // but not persisted. Flagged as a pre-existing schema gap
-            // (`DocumentBlockMigrationPolicy` already drops it the same
-            // way when migrating an old `.codeBlock` block), not something
-            // introduced here.
+            // but not persisted. Flagged as a known schema gap.
             textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.codeBlock, plainText: codeBlock.code)
             cancelPendingSave(blockId)
             persistBlock(blockId)

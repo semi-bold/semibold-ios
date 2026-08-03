@@ -14,11 +14,9 @@ struct TextContent: Identifiable, Hashable, Codable {
     /// `"quote"`, `"checklist"`, `"bulleted_list_item"`,
     /// `"numbered_list_item"`, `"code_block"`, `"divider"`, `"unknown"`
     /// for content this build doesn't recognize). Kept as a plain string
-    /// rather than a closed enum: the migration from the pre-NO-005 block
-    /// model alone already produces more distinct kinds than
-    /// `DOCUMENT_MODEL.md` §4.1's "recommended" list, and a closed enum
-    /// would break the "preserve unrecognized content" guarantee in
-    /// §4.5 (`semibold/Data/DocumentBlockMigrationPolicy.swift`).
+    /// rather than a closed enum, since `DOCUMENT_MODEL.md` §4.1's
+    /// "recommended" list isn't exhaustive, and a closed enum would break
+    /// the "preserve unrecognized content" guarantee in §4.5.
     var textKind: String
     var plainText: String
     /// The heading level (e.g. 1-3), set only when `textKind == "heading"`.

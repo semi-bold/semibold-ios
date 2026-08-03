@@ -338,11 +338,9 @@ struct DetailView: View {
 /// (§7.1/§7.3's ` ```lang ` syntax).
 ///
 /// Backed by a `DocumentItem` (`item` — position/hierarchy) plus that
-/// item's `TextContent` (`content` — the actual text), per
-/// `DetailViewModel`'s NO-005 model, rather than the old single
-/// `DocumentBlock`. `content.textKind` is compared against `TextItemKind`'s
-/// constants rather than a closed `BlockType` enum — see
-/// `DetailViewModel.swift`'s `TextItemKind` doc comment.
+/// item's `TextContent` (`content` — the actual text). `content.textKind`
+/// is compared against `TextItemKind`'s constants rather than a closed
+/// enum — see `DetailViewModel.swift`'s `TextItemKind` doc comment.
 private struct BlockRow: View {
     let item: DocumentItem
     let content: TextContent
