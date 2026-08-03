@@ -136,6 +136,21 @@ final class DetailViewModel {
     /// wherever the text view puts it by default."
     private(set) var focusedBlockCursorOffset: Int?
 
+    /// The id of a block whose keyboard focus should be explicitly
+    /// dropped — the opposite of `focusedBlockId`. Set right after a
+    /// block becomes a divider (Slash Command's Divider option, or typing
+    /// the literal `"---"` markdown prefix), since a divider has no text
+    /// to keep typing: it should immediately show as the rendered rule
+    /// with the keyboard dismissed, matching Obsidian's "tap a `---` rule
+    /// to reveal its editable source, tap away to render it again"
+    /// behavior (`BlockRow.body`/`dividerBody` in `DetailView.swift`).
+    /// The view observes this and clears its local focus state to match,
+    /// then calls `defocusHandled()`. Not `private(set)` like
+    /// `focusedBlockId` — Swift's `private` is file-scoped, and
+    /// `DetailViewModel+SlashCommand.swift`'s `convertBlock` (a different
+    /// file) also needs to set this.
+    var blockIdToDefocus: String?
+
     /// The id of the block whose Slash Command bottom sheet should be
     /// shown (§12.2 "Slash Command는 bottom sheet 가능", §13.1 "/: Slash
     /// Command 열기"), or `nil` if no sheet should be shown. Set by
@@ -396,6 +411,20 @@ final class DetailViewModel {
             return
         }
 
+        if currentKind == TextItemKind.paragraph, Self.isDividerTrigger(forTypedText: text) {
+            // Unlike the conversions above, a divider has no "remainder"
+            // text to keep typing — §7.3's `---` is a complete, exact
+            // trigger on its own, not a prefix. Converting immediately
+            // drops keyboard focus (`blockIdToDefocus`) so the block shows
+            // as the rendered rule right away instead of staying in
+            // text-edit mode with nothing left to type.
+            textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.divider, plainText: text)
+            cancelPendingSave(blockId)
+            persistBlock(blockId)
+            blockIdToDefocus = blockId
+            return
+        }
+
         // Editing a divider's literal "---" text away from that exact
         // string means it's no longer a valid rule — matching Obsidian's
         // "edit a `---` rule's raw text into something else and it just
@@ -620,6 +649,12 @@ final class DetailViewModel {
     func focusHandled() {
         focusedBlockId = nil
         focusedBlockCursorOffset = nil
+    }
+
+    /// Clears `blockIdToDefocus` once the view has dropped local keyboard
+    /// focus from it, so it doesn't keep re-triggering.
+    func defocusHandled() {
+        blockIdToDefocus = nil
     }
 
     /// Closes the Slash Command bottom sheet without converting the block —

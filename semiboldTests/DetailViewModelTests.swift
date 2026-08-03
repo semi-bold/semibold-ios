@@ -299,6 +299,64 @@ struct DetailViewModelTests {
         #expect(viewModel.textContent(forItemId: firstBlockId).plainText == "")
     }
 
+    @Test("Typing '---' converts a paragraph to a divider and drops keyboard focus")
+    func typingTripleDashConvertsToDividerAndDefocuses() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store, autosaveDebounceInterval: .seconds(10))
+        viewModel.load()
+        let blockId = try #require(viewModel.items.first?.id)
+
+        viewModel.updateBlockText(blockId, text: "---")
+
+        let content = viewModel.textContent(forItemId: blockId)
+        #expect(content.textKind == TextItemKind.divider)
+        #expect(content.plainText == "---")
+        // A divider has nothing left to type — focus drops immediately
+        // instead of staying in text-edit mode.
+        #expect(viewModel.blockIdToDefocus == blockId)
+
+        let stored = try #require(try textItemRepository.find(itemId: blockId))
+        #expect(stored.textKind == TextItemKind.divider)
+    }
+
+    @Test("'--' (two dashes) doesn't trigger divider conversion")
+    func doubleDashDoesNotConvertToDivider() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let blockId = try #require(viewModel.items.first?.id)
+
+        viewModel.updateBlockText(blockId, text: "--")
+
+        let content = viewModel.textContent(forItemId: blockId)
+        #expect(content.textKind == TextItemKind.paragraph)
+        #expect(content.plainText == "--")
+        #expect(viewModel.blockIdToDefocus == nil)
+    }
+
+    @Test("Picking Divider from the Slash Command sheet drops keyboard focus")
+    func convertBlockToDividerDropsKeyboardFocus() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let blockId = try #require(viewModel.items.first?.id)
+
+        viewModel.convertBlock(blockId, toSlashCommandOption: .divider)
+
+        #expect(viewModel.textContent(forItemId: blockId).textKind == TextItemKind.divider)
+        #expect(viewModel.blockIdToDefocus == blockId)
+    }
+
     @Test("Editing a divider's literal '---' text keeps it a divider")
     func editingDividerTextUnchangedStaysDivider() throws {
         let store = try makeStore()

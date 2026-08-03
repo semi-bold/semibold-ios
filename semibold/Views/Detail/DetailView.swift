@@ -50,6 +50,13 @@ struct DetailView: View {
             cursorOffsetToApply = viewModel.focusedBlockCursorOffset
             viewModel.focusHandled()
         }
+        .onChange(of: viewModel.blockIdToDefocus) { _, newValue in
+            guard let newValue else { return }
+            if focusedBlockId == newValue {
+                focusedBlockId = nil
+            }
+            viewModel.defocusHandled()
+        }
         .onChange(of: scenePhase) { _, newPhase in
             // Flush any debounced block edits before the app moves to the
             // background, so nothing typed right before backgrounding is

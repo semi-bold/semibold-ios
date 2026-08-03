@@ -251,4 +251,19 @@ extension DetailViewModel {
 
         return CodeBlockConversion(language: language.isEmpty ? nil : language, code: String(remainder))
     }
+
+    /// Detects whether `text` (the block's full text right after this
+    /// keystroke) is exactly `"---"` — §7.3's Divider syntax. Unlike every
+    /// other conversion above, this is a complete, exact match rather than
+    /// a prefix: a divider has no remainder text to carry over (§8.1's
+    /// `{ type: "divider" }` has no `text` field at all), so there's
+    /// nothing to detect beyond the three characters themselves.
+    ///
+    /// Returns `false` for anything shorter (still being typed) or longer
+    /// (`"----"`, `"--- "`, etc. — once `text` no longer matches exactly,
+    /// this stops triggering, the same as how a partially-typed `"# "`
+    /// doesn't trigger `headingConversion` early).
+    static func isDividerTrigger(forTypedText text: String) -> Bool {
+        text == "---"
+    }
 }
