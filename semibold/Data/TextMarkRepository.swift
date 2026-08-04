@@ -67,8 +67,11 @@ struct TextMarkRepository {
     /// `plainText` is edited by an editor that doesn't (yet) adjust mark
     /// offsets to match the new text, so a stale mark can never be applied
     /// to the wrong substring (`DetailViewModel.updateBlockText`'s doc
-    /// comment). No-op if the item has no marks.
-    func deleteAll(itemId: String) throws {
+    /// comment). No-op if the item has no marks. Pass `save: false` to
+    /// fold this into a caller's `context.withTransaction { ... }`
+    /// alongside other repository mutations instead of committing on its
+    /// own.
+    func deleteAll(itemId: String, save: Bool = true) throws {
         let request = TextMarkEntity.fetchRequest()
         request.predicate = NSPredicate(format: "itemId == %@", itemId)
         let entities = try context.fetch(request)
@@ -76,7 +79,7 @@ struct TextMarkRepository {
         for entity in entities {
             context.delete(entity)
         }
-        try context.save()
+        if save { try context.save() }
     }
 
     private func apply(_ mark: TextMark, to entity: TextMarkEntity) {

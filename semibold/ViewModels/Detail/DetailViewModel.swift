@@ -251,13 +251,20 @@ final class DetailViewModel {
     }
 
     /// Creates the single empty paragraph item a brand-new document
-    /// starts with.
+    /// starts with. Both inserts commit as one transaction
+    /// (`STORAGE_ARCHITECTURE.md` §6) so a crash between them can't leave
+    /// a `DocumentItem` row with no matching `TextItem` detail row.
     private func createFirstItem() throws -> DocumentItem {
-        let item = try documentItemRepository.create(
-            DocumentItem(documentId: document.id, contentType: "text", orderKey: OrderKey.between(nil, nil))
-        )
-        _ = try textItemRepository.create(TextContent(itemId: item.id, textKind: TextItemKind.paragraph, plainText: ""))
-        return item
+        try documentItemRepository.context.withTransaction {
+            let item = try documentItemRepository.create(
+                DocumentItem(documentId: document.id, contentType: "text", orderKey: OrderKey.between(nil, nil)),
+                save: false
+            )
+            _ = try textItemRepository.create(
+                TextContent(itemId: item.id, textKind: TextItemKind.paragraph, plainText: ""), save: false
+            )
+            return item
+        }
     }
 
     /// Batch-fetches `items`' text/media detail and every text item's
@@ -503,14 +510,20 @@ final class DetailViewModel {
         let content = textContent(forItemId: blockId)
 
         do {
-            if let existingMarks = marksByItemId[blockId], !existingMarks.isEmpty {
-                try textMarkRepository.deleteAll(itemId: blockId)
-                marksByItemId[blockId] = nil
+            // One transaction (`STORAGE_ARCHITECTURE.md` §6) instead of up
+            // to three separate `context.save()` calls — a crash between
+            // them could otherwise leave e.g. this text saved but its
+            // owning item's `revision` bump lost.
+            try documentItemRepository.context.withTransaction {
+                if let existingMarks = marksByItemId[blockId], !existingMarks.isEmpty {
+                    try textMarkRepository.deleteAll(itemId: blockId, save: false)
+                    marksByItemId[blockId] = nil
+                }
+                textContents[blockId] = try textItemRepository.update(content, save: false)
+                var item = items[index]
+                item.revision += 1
+                items[index] = try documentItemRepository.update(item, save: false)
             }
-            textContents[blockId] = try textItemRepository.update(content)
-            var item = items[index]
-            item.revision += 1
-            items[index] = try documentItemRepository.update(item)
         } catch {
             // §15.2 "저장 실패" — the edit stays in memory (so the user
             // doesn't lose what they typed) but didn't reach the database;
@@ -626,15 +639,22 @@ final class DetailViewModel {
         }
 
         do {
-            let createdItem = try documentItemRepository.create(
-                DocumentItem(documentId: document.id, contentType: "text", orderKey: newOrderKey)
-            )
-            let createdContent = try textItemRepository.create(
-                TextContent(itemId: createdItem.id, textKind: newTextKind, plainText: afterText, isChecked: newIsChecked)
-            )
-            items.insert(createdItem, at: index + 1)
-            textContents[createdItem.id] = createdContent
-            focusedBlockId = createdItem.id
+            // One transaction (`STORAGE_ARCHITECTURE.md` §6) — see
+            // `createFirstItem`'s doc comment for why splitting a new
+            // item's structural row and its text detail row across two
+            // separate commits is unsafe.
+            try documentItemRepository.context.withTransaction {
+                let createdItem = try documentItemRepository.create(
+                    DocumentItem(documentId: document.id, contentType: "text", orderKey: newOrderKey), save: false
+                )
+                let createdContent = try textItemRepository.create(
+                    TextContent(itemId: createdItem.id, textKind: newTextKind, plainText: afterText, isChecked: newIsChecked),
+                    save: false
+                )
+                items.insert(createdItem, at: index + 1)
+                textContents[createdItem.id] = createdContent
+                focusedBlockId = createdItem.id
+            }
         } catch {
             // §15.2 "저장 실패" — the new block stays local-only; reloading
             // the document reconciles it once the database is reachable

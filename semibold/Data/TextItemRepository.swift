@@ -19,12 +19,14 @@ struct TextItemRepository {
         self.context = context
     }
 
-    /// Inserts a new text detail row.
+    /// Inserts a new text detail row. Pass `save: false` to fold this
+    /// into a caller's `context.withTransaction { ... }` alongside other
+    /// repository mutations instead of committing on its own.
     @discardableResult
-    func create(_ item: TextContent) throws -> TextContent {
+    func create(_ item: TextContent, save: Bool = true) throws -> TextContent {
         let entity = TextItemEntity(context: context)
         apply(item, to: entity)
-        try context.save()
+        if save { try context.save() }
         return item
     }
 
@@ -44,14 +46,17 @@ struct TextItemRepository {
         return try context.fetch(request).map(TextContent.init(entity:))
     }
 
-    /// Saves changes to an existing text detail row.
+    /// Saves changes to an existing text detail row. Pass `save: false`
+    /// to fold this into a caller's `context.withTransaction { ... }`
+    /// alongside other repository mutations instead of committing on its
+    /// own.
     @discardableResult
-    func update(_ item: TextContent) throws -> TextContent {
+    func update(_ item: TextContent, save: Bool = true) throws -> TextContent {
         guard let entity = try fetchEntity(itemId: item.itemId) else {
             throw RepositoryError.recordNotFound
         }
         apply(item, to: entity)
-        try context.save()
+        if save { try context.save() }
         return item
     }
 
