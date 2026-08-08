@@ -72,6 +72,23 @@ struct FolderRepository {
         return try context.count(for: request)
     }
 
+    /// Searches every non-deleted folder across the entire tree (not just
+    /// one parent's direct children) for a name match.
+    ///
+    /// A blank keyword returns no results rather than the whole tree —
+    /// the search drawer shows nothing until the person starts typing.
+    func search(keyword: String) throws -> [Folder] {
+        let trimmedKeyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKeyword.isEmpty else { return [] }
+
+        let request = FolderEntity.fetchRequest()
+        let deletedPredicate = NSPredicate(format: "deletedAt == nil")
+        let namePredicate = NSPredicate(format: "name CONTAINS[cd] %@", trimmedKeyword)
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [deletedPredicate, namePredicate])
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
+        return try context.fetch(request).map(Folder.init(entity:))
+    }
+
     /// Saves changes to an existing folder, refreshing `updatedAt`.
     @discardableResult
     func update(_ folder: Folder) throws -> Folder {

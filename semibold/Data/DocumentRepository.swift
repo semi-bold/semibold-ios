@@ -71,6 +71,29 @@ struct DocumentRepository {
         return try context.count(for: request)
     }
 
+    /// Searches every non-deleted document across the entire folder tree
+    /// (not just one folder's direct children) for a title match, pairing
+    /// each result with its immediate parent folder's name so a search
+    /// results list can show "Notes — inside Work" without a second
+    /// lookup per row. `nil` parent name means the document lives at the
+    /// top level.
+    ///
+    /// A blank keyword returns no results rather than the whole space —
+    /// the search drawer shows nothing until the person starts typing.
+    func search(keyword: String) throws -> [(document: Document, parentFolderName: String?)] {
+        let trimmedKeyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKeyword.isEmpty else { return [] }
+
+        let request = DocumentEntity.fetchRequest()
+        let deletedPredicate = NSPredicate(format: "deletedAt == nil")
+        let titlePredicate = NSPredicate(format: "title CONTAINS[cd] %@", trimmedKeyword)
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [deletedPredicate, titlePredicate])
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
+        return try context.fetch(request).map { entity in
+            (document: Document(entity: entity), parentFolderName: entity.folder?.name)
+        }
+    }
+
     /// Saves changes to an existing document, refreshing `updatedAt`.
     @discardableResult
     func update(_ document: Document) throws -> Document {
