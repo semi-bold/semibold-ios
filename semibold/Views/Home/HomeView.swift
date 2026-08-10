@@ -25,6 +25,12 @@ struct HomeView: View {
     /// `Planning_2_FolderCreateFlow` / `Planning_3_DocumentCreateFlow`).
     @State private var isAddMenuPresented = false
 
+    /// Whether the navigation drawer (`icon_menu` in
+    /// `Planning_Nav_1_TopBarFlow`) is showing. The drawer's content is
+    /// built in `03-sidebar-drawer` — this only wires the toggle for now.
+    // TODO(03-sidebar-drawer): present the drawer when this is true.
+    @State private var isDrawerPresented = false
+
     /// Whether the new-folder name-entry sheet is showing
     /// (`Planning_2_FolderCreateFlow`, PLANNING §5.2).
     @State private var isNewFolderSheetPresented = false
@@ -69,6 +75,11 @@ struct HomeView: View {
                 .scrollContentBackground(.hidden)
             }
             .background(AppTheme.Colors.Neutral.n900)
+            .overlay(alignment: .bottomTrailing) {
+                floatingAddButton
+                    .padding(.trailing, AppTheme.Spacing.md)
+                    .padding(.bottom, AppTheme.Spacing.md)
+            }
             .toolbar(.hidden)
             .navigationDestination(for: Folder.self) { folder in
                 // Registered once at the stack root so every push in the
@@ -204,9 +215,10 @@ struct HomeView: View {
 
     // MARK: - Navigation bar
 
-    /// Top bar: app name, account button, and the add (+) button
-    /// that starts the new folder/document flows (Planning_2 /
-    /// Planning_3).
+    /// Top bar: app name and the drawer's menu (hamburger) button. The
+    /// account button and the "+" that used to sit here both moved out —
+    /// see `switchAccountButton`'s and `floatingAddButton`'s doc comments
+    /// for where they went (`Planning_Nav_1_TopBarFlow`, FLOW-NAV-001).
     private var navBar: some View {
         VStack(spacing: 0) {
             HStack(spacing: AppTheme.Spacing.sm) {
@@ -217,9 +229,7 @@ struct HomeView: View {
 
                 Spacer()
 
-                switchAccountButton
-
-                addButton
+                menuButton
             }
             .padding(.horizontal, AppTheme.Spacing.md)
             .frame(height: 52)
@@ -231,7 +241,18 @@ struct HomeView: View {
         .background(AppTheme.Colors.Neutral.n800)
     }
 
-    /// Account button — always visible in the nav bar regardless of mode.
+    /// Opens the navigation drawer (`icon_menu` — `Planning_Nav_1_TopBarFlow`).
+    private var menuButton: some View {
+        MenuButton {
+            isDrawerPresented = true
+        }
+    }
+
+    /// Account switching entry point. No longer shown in the NavBar as of
+    /// `Planning_Nav_1_TopBarFlow` — account handling moves into the
+    /// navigation drawer being built in `03-sidebar-drawer`. The
+    /// underlying button/dialog stays here unreferenced for now; full
+    /// removal is `04-account-tooltip-and-alerts`'s job, not this one's.
     /// Lets the user sign out (iCloud mode) or switch to Apple Sign-In
     /// (local mode) by returning to OnboardingView.
     private var switchAccountButton: some View {
@@ -263,9 +284,11 @@ struct HomeView: View {
     /// Entry point for the "new folder / new document" menu
     /// (`Planning_2_FolderCreateFlow` / `Planning_3_DocumentCreateFlow`,
     /// callout ① — "현재 보고 있는 위치를 기준으로 무언가를 새로 만들기
-    /// 시작하는 단일 진입점").
-    private var addButton: some View {
-        AddButton {
+    /// 시작하는 단일 진입점"). Floating at the screen's bottom-trailing
+    /// corner (`FAB_AddMenu`) as of `Planning_Nav_1_TopBarFlow`, rather
+    /// than inline in the NavBar.
+    private var floatingAddButton: some View {
+        AddButton(placement: .floating) {
             isAddMenuPresented = true
         }
     }
