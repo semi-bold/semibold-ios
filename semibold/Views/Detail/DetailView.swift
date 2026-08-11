@@ -23,6 +23,12 @@ struct DetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
+    /// Whether the navigation drawer (`icon_menu` in
+    /// `Planning_Nav_1_TopBarFlow`) is showing. The drawer's content is
+    /// built in `03-sidebar-drawer` — this only wires the toggle for now.
+    // TODO(03-sidebar-drawer): present the drawer when this is true.
+    @State private var isDrawerPresented = false
+
     init(document: Document) {
         _viewModel = State(initialValue: DetailViewModel(document: document))
     }
@@ -192,9 +198,15 @@ struct DetailView: View {
     /// "잠금" button is shown there, and that's the out-of-scope Secret Lock
     /// button above), so this reuses the back button's row/typography and a
     /// standard SF Symbol share icon rather than inventing new layout.
+    ///
+    /// A menu (hamburger) button joins it in the trailing group as of
+    /// `Planning_Nav_1_TopBarFlow` (FLOW-NAV-001) — this NavBar previously
+    /// had no trailing element besides `exportShareLink`; same trailing
+    /// inset/spacing as `HomeView`/`FolderContentsView` use for their own
+    /// menu buttons.
     private var navBar: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: AppTheme.Spacing.sm) {
                 Button {
                     dismiss()
                 } label: {
@@ -205,6 +217,8 @@ struct DetailView: View {
                 Spacer()
 
                 exportShareLink
+
+                menuButton
             }
             .padding(.horizontal, AppTheme.Spacing.md)
             .frame(height: 52)
@@ -214,6 +228,13 @@ struct DetailView: View {
                 .frame(height: 1)
         }
         .background(AppTheme.Colors.Neutral.n800)
+    }
+
+    /// Opens the navigation drawer (`icon_menu` — `Planning_Nav_1_TopBarFlow`).
+    private var menuButton: some View {
+        MenuButton {
+            isDrawerPresented = true
+        }
     }
 
     /// "파일 저장 또는 공유" (§10.3's final step): shares the document's
