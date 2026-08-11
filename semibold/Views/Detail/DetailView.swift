@@ -214,36 +214,20 @@ struct DetailView: View {
     /// inset/spacing as `HomeView`/`FolderContentsView` use for their own
     /// menu buttons.
     private var navBar: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: AppTheme.Spacing.sm) {
+        NavBar(
+            leading: {
                 Button {
                     dismiss()
                 } label: {
                     BackButtonIcon(label: viewModel.backButtonLabel)
                 }
                 .accessibilityLabel(viewModel.backButtonLabel.accessibilityLabel)
-
-                Spacer()
-
-                exportShareLink
-
-                menuButton
+            },
+            trailingExtra: { exportShareLink },
+            onMenuTapped: {
+                isDrawerPresented = true
             }
-            .padding(.horizontal, AppTheme.Spacing.md)
-            .frame(height: 52)
-
-            Rectangle()
-                .fill(AppTheme.Colors.Stroke.divider)
-                .frame(height: 1)
-        }
-        .background(AppTheme.Colors.Neutral.n800)
-    }
-
-    /// Opens the navigation drawer (`icon_menu` — `Planning_Nav_1_TopBarFlow`).
-    private var menuButton: some View {
-        MenuButton {
-            isDrawerPresented = true
-        }
+        )
     }
 
     /// "파일 저장 또는 공유" (§10.3's final step): shares the document's

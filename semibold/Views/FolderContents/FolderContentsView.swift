@@ -209,33 +209,17 @@ struct FolderContentsView: View {
     /// `floatingAddButton`'s doc comment (`Planning_Nav_1_TopBarFlow`,
     /// FLOW-NAV-001).
     private var navBar: some View {
-        VStack(spacing: 0) {
-            ZStack {
+        NavBar(
+            leading: { backButton },
+            center: {
                 Text(viewModel.folder.name)
                     .appTextStyle(AppTheme.Typography.title)
                     .foregroundStyle(AppTheme.Colors.Content.primary)
-
-                HStack {
-                    backButton
-                    Spacer()
-                    menuButton
-                }
+            },
+            onMenuTapped: {
+                isDrawerPresented = true
             }
-            .padding(.horizontal, AppTheme.Spacing.md)
-            .frame(height: 52)
-
-            Rectangle()
-                .fill(AppTheme.Colors.Stroke.divider)
-                .frame(height: 1)
-        }
-        .background(AppTheme.Colors.Neutral.n800)
-    }
-
-    /// Opens the navigation drawer (`icon_menu` — `Planning_Nav_1_TopBarFlow`).
-    private var menuButton: some View {
-        MenuButton {
-            isDrawerPresented = true
-        }
+        )
     }
 
     /// Returns to the previous screen in the navigation stack

@@ -232,33 +232,21 @@ struct HomeView: View {
     /// the account row now lives in `SidebarDrawerView`
     /// (`03-sidebar-drawer`/`04-account-tooltip-and-alerts`), and "+" moved
     /// to `floatingAddButton` (`Planning_Nav_1_TopBarFlow`, FLOW-NAV-001).
+    /// Shared chrome (height/divider/background) lives in `NavBar`
+    /// (`Views/NavBar/NavBar.swift`) — this screen only supplies its
+    /// leading content.
     private var navBar: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: AppTheme.Spacing.sm) {
+        NavBar(
+            leading: {
                 Image("AppWordmark")
                     .resizable()
                     .scaledToFit()
                     .frame(height: 22)
-
-                Spacer()
-
-                menuButton
+            },
+            onMenuTapped: {
+                isDrawerPresented = true
             }
-            .padding(.horizontal, AppTheme.Spacing.md)
-            .frame(height: 52)
-
-            Rectangle()
-                .fill(AppTheme.Colors.Stroke.divider)
-                .frame(height: 1)
-        }
-        .background(AppTheme.Colors.Neutral.n800)
-    }
-
-    /// Opens the navigation drawer (`icon_menu` — `Planning_Nav_1_TopBarFlow`).
-    private var menuButton: some View {
-        MenuButton {
-            isDrawerPresented = true
-        }
+        )
     }
 
     /// Entry point for the "new folder / new document" menu
