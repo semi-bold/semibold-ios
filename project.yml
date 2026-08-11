@@ -26,7 +26,7 @@ targets:
         DEVELOPMENT_TEAM: "H3FBP924CK"
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: semibold/semibold.entitlements
-        MARKETING_VERSION: "0.1.0"
+        MARKETING_VERSION: "26.8.11"
     info:
       path: semibold/Info.plist
       properties:

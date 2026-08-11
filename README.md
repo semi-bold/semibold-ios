@@ -1,6 +1,6 @@
 # semibold-ios
 
-![version](https://img.shields.io/badge/version-v0.1.0-blue)
+![version](https://img.shields.io/badge/version-v26.8.11-blue)
 
 ## Requirements
 
