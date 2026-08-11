@@ -23,6 +23,12 @@ struct DetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
+    /// Whether the navigation drawer (`icon_menu` in
+    /// `Planning_Nav_1_TopBarFlow`) is showing — presented via
+    /// `SidebarDrawerView`, `03-sidebar-drawer`'s search-first drawer
+    /// (`Planning_Nav_2_DrawerFlow`).
+    @State private var isDrawerPresented = false
+
     init(document: Document) {
         _viewModel = State(initialValue: DetailViewModel(document: document))
     }
@@ -40,6 +46,15 @@ struct DetailView: View {
         }
         .background(AppTheme.Colors.Neutral.n900)
         .background(keyboardShortcuts)
+        .overlay {
+            // This screen is itself a pushed `Document.self` destination
+            // registered once at `HomeView`'s `NavigationStack` root — the
+            // drawer's search-result rows push through that same
+            // registration, the same way `HomeView`/`FolderContentsView`'s
+            // own `FolderRow`/`DocumentRow` rows do (`SidebarDrawerView`'s
+            // doc comment).
+            SidebarDrawerView(isPresented: $isDrawerPresented)
+        }
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             viewModel.load()
@@ -192,9 +207,15 @@ struct DetailView: View {
     /// "잠금" button is shown there, and that's the out-of-scope Secret Lock
     /// button above), so this reuses the back button's row/typography and a
     /// standard SF Symbol share icon rather than inventing new layout.
+    ///
+    /// A menu (hamburger) button joins it in the trailing group as of
+    /// `Planning_Nav_1_TopBarFlow` (FLOW-NAV-001) — this NavBar previously
+    /// had no trailing element besides `exportShareLink`; same trailing
+    /// inset/spacing as `HomeView`/`FolderContentsView` use for their own
+    /// menu buttons.
     private var navBar: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: AppTheme.Spacing.sm) {
                 Button {
                     dismiss()
                 } label: {
@@ -205,6 +226,8 @@ struct DetailView: View {
                 Spacer()
 
                 exportShareLink
+
+                menuButton
             }
             .padding(.horizontal, AppTheme.Spacing.md)
             .frame(height: 52)
@@ -214,6 +237,13 @@ struct DetailView: View {
                 .frame(height: 1)
         }
         .background(AppTheme.Colors.Neutral.n800)
+    }
+
+    /// Opens the navigation drawer (`icon_menu` — `Planning_Nav_1_TopBarFlow`).
+    private var menuButton: some View {
+        MenuButton {
+            isDrawerPresented = true
+        }
     }
 
     /// "파일 저장 또는 공유" (§10.3's final step): shares the document's
@@ -594,4 +624,5 @@ private struct BlockRow: View {
     NavigationStack {
         DetailView(document: Document(title: "오늘의 일기"))
     }
+    .environment(AccountActionCenter())
 }

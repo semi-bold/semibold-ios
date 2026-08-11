@@ -11,10 +11,14 @@ import SwiftUI
 struct HomeView: View {
     /// Called when the user wants to return to OnboardingView — clears
     /// the Keychain session and transitions back to `.showOnboarding`.
+    /// No longer called directly from this screen (the account row that
+    /// used to trigger it moved into the navigation drawer,
+    /// `03-sidebar-drawer`/`04-account-tooltip-and-alerts`) — `SemiboldApp`
+    /// still passes it in so it can build `AccountActionCenter.resetToOnboarding`
+    /// from the same closure, keeping one source of truth for this path.
     var onResetToOnboarding: (() -> Void)?
 
     @State private var viewModel = HomeViewModel()
-    @State private var isResetConfirmationPresented = false
 
     /// Shared trigger point for the macOS "New Document"/"New Folder" menu
     /// commands (Cmd+N / Cmd+Shift+N, §13.2) — see `AppCommandCenter`.
@@ -24,6 +28,12 @@ struct HomeView: View {
     /// Folder" / "New Document" / "Cancel" (callouts ④/⑤ of
     /// `Planning_2_FolderCreateFlow` / `Planning_3_DocumentCreateFlow`).
     @State private var isAddMenuPresented = false
+
+    /// Whether the navigation drawer (`icon_menu` in
+    /// `Planning_Nav_1_TopBarFlow`) is showing — presented via
+    /// `SidebarDrawerView`, `03-sidebar-drawer`'s search-first drawer
+    /// (`Planning_Nav_2_DrawerFlow`).
+    @State private var isDrawerPresented = false
 
     /// Whether the new-folder name-entry sheet is showing
     /// (`Planning_2_FolderCreateFlow`, PLANNING §5.2).
@@ -69,6 +79,11 @@ struct HomeView: View {
                 .scrollContentBackground(.hidden)
             }
             .background(AppTheme.Colors.Neutral.n900)
+            .overlay(alignment: .bottomTrailing) {
+                floatingAddButton
+                    .padding(.trailing, AppTheme.Spacing.md)
+                    .padding(.bottom, AppTheme.Spacing.md)
+            }
             .toolbar(.hidden)
             .navigationDestination(for: Folder.self) { folder in
                 // Registered once at the stack root so every push in the
@@ -87,6 +102,14 @@ struct HomeView: View {
                 // since-merged debugging commit had stripped from `HomeView`
                 // — not new functionality.
                 DetailView(document: document)
+            }
+            .overlay {
+                // Registered after both `navigationDestination`s above so
+                // the drawer's own search-result rows push through those
+                // same destinations, the same way this screen's own
+                // `FolderRow`/`DocumentRow` rows do
+                // (`SidebarDrawerView`'s doc comment).
+                SidebarDrawerView(isPresented: $isDrawerPresented)
             }
         }
         .onAppear {
@@ -204,9 +227,11 @@ struct HomeView: View {
 
     // MARK: - Navigation bar
 
-    /// Top bar: app name, account button, and the add (+) button
-    /// that starts the new folder/document flows (Planning_2 /
-    /// Planning_3).
+    /// Top bar: app name and the drawer's menu (hamburger) button. The
+    /// account button and the "+" that used to sit here both moved out —
+    /// the account row now lives in `SidebarDrawerView`
+    /// (`03-sidebar-drawer`/`04-account-tooltip-and-alerts`), and "+" moved
+    /// to `floatingAddButton` (`Planning_Nav_1_TopBarFlow`, FLOW-NAV-001).
     private var navBar: some View {
         VStack(spacing: 0) {
             HStack(spacing: AppTheme.Spacing.sm) {
@@ -217,9 +242,7 @@ struct HomeView: View {
 
                 Spacer()
 
-                switchAccountButton
-
-                addButton
+                menuButton
             }
             .padding(.horizontal, AppTheme.Spacing.md)
             .frame(height: 52)
@@ -231,41 +254,21 @@ struct HomeView: View {
         .background(AppTheme.Colors.Neutral.n800)
     }
 
-    /// Account button — always visible in the nav bar regardless of mode.
-    /// Lets the user sign out (iCloud mode) or switch to Apple Sign-In
-    /// (local mode) by returning to OnboardingView.
-    private var switchAccountButton: some View {
-        let isICloud = KeychainSessionStore().load()?.mode == .icloud
-        return Button {
-            isResetConfirmationPresented = true
-        } label: {
-            Image(systemName: isICloud ? "person.circle.fill" : "person.circle")
-                .appTextStyle(AppTheme.Typography.title)
-                .foregroundStyle(AppTheme.Colors.Content.secondary)
-                .frame(width: 40, height: 40)
-        }
-        .confirmationDialog(
-            isICloud ? "로그아웃" : "Apple 로그인으로 전환",
-            isPresented: $isResetConfirmationPresented
-        ) {
-            Button(isICloud ? "로그아웃" : "Apple로 로그인", role: isICloud ? .destructive : .none) {
-                onResetToOnboarding?()
-            }
-            Button("취소", role: .cancel) {}
-        } message: {
-            Text(isICloud
-                 ? "로그아웃하면 이 기기에서 iCloud 동기화가 중단됩니다. 데이터는 iCloud에 유지됩니다."
-                 : "로컬 데이터는 유지되며, Apple 로그인 이후에도 로컬로 이용을 선택하면 다시 돌아올 수 있습니다."
-            )
+    /// Opens the navigation drawer (`icon_menu` — `Planning_Nav_1_TopBarFlow`).
+    private var menuButton: some View {
+        MenuButton {
+            isDrawerPresented = true
         }
     }
 
     /// Entry point for the "new folder / new document" menu
     /// (`Planning_2_FolderCreateFlow` / `Planning_3_DocumentCreateFlow`,
     /// callout ① — "현재 보고 있는 위치를 기준으로 무언가를 새로 만들기
-    /// 시작하는 단일 진입점").
-    private var addButton: some View {
-        AddButton {
+    /// 시작하는 단일 진입점"). Floating at the screen's bottom-trailing
+    /// corner (`FAB_AddMenu`) as of `Planning_Nav_1_TopBarFlow`, rather
+    /// than inline in the NavBar.
+    private var floatingAddButton: some View {
+        AddButton(placement: .floating) {
             isAddMenuPresented = true
         }
     }
@@ -275,4 +278,5 @@ struct HomeView: View {
 #Preview {
     HomeView()
         .environment(AppCommandCenter())
+        .environment(AccountActionCenter())
 }

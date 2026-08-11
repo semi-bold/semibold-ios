@@ -72,6 +72,23 @@ struct FolderRepository {
         return try context.count(for: request)
     }
 
+    /// Searches every non-deleted folder across the entire tree (not just
+    /// one parent's direct children) for a name match.
+    ///
+    /// A blank keyword returns no results rather than the whole tree —
+    /// the search drawer shows nothing until the person starts typing.
+    func search(keyword: String) throws -> [Folder] {
+        let trimmedKeyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKeyword.isEmpty else { return [] }
+
+        let request = FolderEntity.fetchRequest()
+        let deletedPredicate = NSPredicate(format: "deletedAt == nil")
+        let namePredicate = NSPredicate(format: "name CONTAINS[cd] %@", trimmedKeyword)
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [deletedPredicate, namePredicate])
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
+        return try context.fetch(request).map(Folder.init(entity:))
+    }
+
     /// Saves changes to an existing folder, refreshing `updatedAt`.
     @discardableResult
     func update(_ folder: Folder) throws -> Folder {
@@ -134,6 +151,23 @@ struct FolderRepository {
         for document in childDocuments {
             try documentRepository.deleteSubtree(of: document)
             context.delete(document)
+        }
+    }
+
+    /// Permanently removes every root-level folder (`parent == nil`) —
+    /// including ones already soft-deleted, not just live ones. Each root
+    /// folder's own `hardDelete(id:)` already cascades through its entire
+    /// subtree, so calling this for every root folder clears every
+    /// `Folder`/`Document`/`DocumentItem`/`TextItem`/`TextMark`/`MediaItem`
+    /// row in the store. Used by account deletion's full local wipe
+    /// (`tasks/NO-008.md` §5.2) — not for everyday delete-folder UI, which
+    /// soft-deletes instead.
+    func hardDeleteAll() throws {
+        let request = FolderEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "parent == nil")
+        for entity in try context.fetch(request) {
+            guard let id = entity.id else { continue }
+            try hardDelete(id: id)
         }
     }
 

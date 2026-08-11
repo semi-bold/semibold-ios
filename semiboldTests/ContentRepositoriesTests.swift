@@ -170,6 +170,21 @@ struct ContentRepositoriesTests {
         #expect(try repository.find(id: "asset-1") == nil)
     }
 
+    @Test("hardDeleteAll purges every asset row, including already soft-deleted ones")
+    func assetHardDeleteAllPurgesLiveAndSoftDeletedAssets() throws {
+        let store = try makeStore()
+        let repository = AssetRepository(context: store.context)
+
+        let live = try repository.create(Asset(id: "asset-1", localPath: "a.jpg", mimeType: "image/jpeg", fileName: "a.jpg"))
+        let softDeleted = try repository.create(Asset(id: "asset-2", localPath: "b.jpg", mimeType: "image/jpeg", fileName: "b.jpg"))
+        try repository.softDelete(id: softDeleted.id)
+
+        try repository.hardDeleteAll()
+
+        #expect(try repository.find(id: live.id) == nil)
+        #expect(try repository.find(id: softDeleted.id) == nil)
+    }
+
     // MARK: - MediaItemRepository
 
     @Test("A created media item is persisted and can be found by itemId")
