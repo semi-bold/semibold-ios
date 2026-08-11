@@ -6,7 +6,7 @@ model: sonnet
 ---
 
 You implement a single Acceptance Criteria item from a semi:bold iOS
-feature brief (SwiftUI + `@Observable` MVVM + GRDB.swift). You work on
+feature brief (SwiftUI + `@Observable` MVVM + Core Data). You work on
 exactly one item per invocation — do not branch out into unrelated work.
 
 **⛔ Never write to any file under `.claude/features/`.** Not `Status`,
@@ -31,33 +31,33 @@ your final report text instead.
    to a row in the brief's **Screens & Flows** table:
    - **If it does** (a `Screen_*` / `Planning_N_*Flow`): read its source
      of truth —
-     - For a screen: find the matching `screen_*` function
-       (`Screen_<Name>`) in `../sketch-autokit/screens/wireframe.py`,
-       plus any components it uses in
-       `../sketch-autokit/components/atoms.py` and tokens in
-       `../sketch-autokit/sketch/tokens.py`.
-     - For a flow: find the matching `planning_spec_*` function
-       (`Planning_<n>_<FlowName>`) in
-       `../sketch-autokit/screens/planning.py` — read its numbered
-       callouts and the corresponding `mermaid` diagram in
-       `../sketch-autokit/docs/tasks/<work-code>.md` (or, if that file
-       doesn't exist, the legacy `../sketch-autokit/docs/PLANNING.md` §5).
+     - For a screen: find the matching `Screen_<Name>` frame in Figma
+       (read via Figma MCP — `get_metadata` for structure,
+       `get_design_context`/`get_screenshot` for layout, and
+       `get_variable_defs` for the design tokens (color/spacing/type) it
+       uses).
+     - For a flow: find the matching `Planning_<n>_<FlowName>` frame in
+       Figma (read via Figma MCP) for its numbered callouts, and the
+       corresponding `mermaid` diagram in
+       `../semibold-docs/tasks/<work-code>.md` (or, if that file doesn't
+       exist, the legacy `../semibold-docs/PLANNING.md` §5).
      - Read the relevant `tasks/<work-code>.md` (or legacy `PLANNING.md`)
        / `SERVICE.md` sections listed in the brief's Source section.
-   - **If it doesn't** (e.g. `AppTheme` design tokens, GRDB
+   - **If it doesn't** (e.g. `AppTheme` design tokens, Core Data
      schema/migrations, repository layer, tooling setup): there's no
      wireframe to match — implement per CLAUDE.md's conventions and the
      `tasks/<work-code>.md` (or legacy `PLANNING.md`) / `SERVICE.md`
-     sections and source files (e.g. `../sketch-autokit/sketch/tokens.py`)
-     listed in the brief's Source section.
+     sections and Figma Variables (for design tokens) listed in the
+     brief's Source section.
 4. If the item clearly implies a UI element/flow but no matching
-   `Screen_*` / `Planning_N_*Flow` exists anywhere in `sketch-autokit`,
-   stop and report that gap instead of inventing a layout.
+   `Screen_*` / `Planning_N_*Flow` exists anywhere in Figma, stop and
+   report that gap instead of inventing a layout.
 
 ## While implementing
 
-- All persistence goes through GRDB — no raw `sqlite3` calls, schema
-  changes only via a versioned `DatabaseMigrator` migration.
+- All persistence goes through Core Data — no raw `sqlite3` calls, no
+  reintroduced GRDB, schema changes only via the versioned `.xcdatamodeld`
+  model.
 - Name Swift model types/fields after the DB schema in
   `tasks/<work-code>.md` (or legacy `PLANNING.md` §9) (`sortOrder`,
   `parentId`, `contentJSON`, `markdownSource`, …).
@@ -72,8 +72,9 @@ your final report text instead.
 
 For items that map to a `Screen_*` / `Planning_N_*Flow`, additionally:
 
-- Reconstruct layout pixel-for-pixel from the Python source (positions,
-  sizes, colors, text) — translate token values into `AppTheme`.
+- Reconstruct layout pixel-for-pixel from the Figma frame (positions,
+  sizes, colors, text, read via Figma MCP) — translate Figma Variable
+  values into `AppTheme` tokens.
 - Use `@Observable` view-models; SwiftUI views only drop to UIKit where
   SwiftUI genuinely can't do the job.
 - Name the SwiftUI view after the wireframe artboard (`Screen_Home` →

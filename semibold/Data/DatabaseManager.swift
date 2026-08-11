@@ -116,17 +116,15 @@ final class DatabaseManager {
     ///     local-only one, via `makeContainer(syncEnabled:storeURL:)`.
     ///     `shared` derives this from the Keychain session's `SessionMode`
     ///     at process start (NO-004 §4.2); tests pass it directly.
-    /// - Throws: if the existing store still needs migrating to
-    ///   `Self.model` and that migration (or its rollback) fails
-    ///   (`StoreMigrationCoordinator.MigrationError`), or if the persistent
-    ///   store can't be loaded (§15.2 "DB 열기 실패").
+    /// - Throws: if the persistent store can't be loaded (§15.2 "DB 열기
+    ///   실패").
     init(storeURL: URL?, syncEnabled: Bool = false) throws {
-        // A store still on a pre-NO-005 schema needs migrating before
-        // `loadPersistentStores` below can open it — `nil` storeURL is the
-        // in-memory case (tests/previews), which never touches disk and so
-        // never needs migrating (`tasks/NO-005.md` §4.1, §5).
+        // A store left over from an incompatible schema can't be opened by
+        // `loadPersistentStores` below — reset it before trying. `nil`
+        // storeURL is the in-memory case (tests/previews), which never
+        // touches disk and so never needs this check.
         if let storeURL {
-            try StoreMigrationCoordinator.migrateStoreIfNeeded(storeURL: storeURL, destinationModel: Self.model)
+            Self.resetStoreIfIncompatible(storeURL: storeURL)
         }
 
         let container = Self.makeContainer(syncEnabled: syncEnabled, storeURL: storeURL)
@@ -146,6 +144,33 @@ final class DatabaseManager {
 
         container.viewContext.automaticallyMergesChangesFromParent = true
         persistentContainer = container
+    }
+
+    /// Deletes the SQLite store at `storeURL` (and its `-wal`/`-shm`
+    /// sidecar files) if it exists but isn't compatible with `Self.model`,
+    /// so `loadPersistentStores` creates a fresh one instead of failing to
+    /// open it.
+    ///
+    /// No migration path exists between schema versions — semi:bold isn't
+    /// released yet, so there's no user data to carry forward across a
+    /// schema change, and an incompatible store is simply discarded rather
+    /// than converted.
+    private static func resetStoreIfIncompatible(storeURL: URL) {
+        guard FileManager.default.fileExists(atPath: storeURL.path) else { return }
+
+        let isCompatible = (try? NSPersistentStoreCoordinator.metadataForPersistentStore(
+            ofType: NSSQLiteStoreType, at: storeURL
+        )).map { model.isConfiguration(withName: nil, compatibleWithStoreMetadata: $0) } ?? false
+
+        guard !isCompatible else { return }
+
+        let sidecarSuffixes = ["-wal", "-shm"]
+        let urls = [storeURL] + sidecarSuffixes.map { suffix in
+            storeURL.deletingLastPathComponent().appendingPathComponent(storeURL.lastPathComponent + suffix)
+        }
+        for url in urls {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     /// The managed object context repositories should default to:

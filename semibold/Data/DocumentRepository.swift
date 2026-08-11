@@ -29,7 +29,11 @@ struct DocumentRepository {
 
     /// Fetches the documents that live directly inside `folderId` (or at
     /// the top level when `folderId` is `nil`), excluding soft-deleted
-    /// documents, ordered for display.
+    /// documents, newest-created first — personal document management
+    /// reads best most-recent-first, with keyword search covering lookup
+    /// of older items, rather than a manually-managed position
+    /// (`sortOrder` exists on the entity but is never set to anything but
+    /// its default and isn't used for ordering).
     func documents(in folderId: String?) throws -> [Document] {
         let request = DocumentEntity.fetchRequest()
         let deletedPredicate = NSPredicate(format: "deletedAt == nil")
@@ -40,10 +44,7 @@ struct DocumentRepository {
             folderPredicate = NSPredicate(format: "folder == nil")
         }
         request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [deletedPredicate, folderPredicate])
-        request.sortDescriptors = [
-            NSSortDescriptor(key: "sortOrder", ascending: true),
-            NSSortDescriptor(key: "createdAt", ascending: true)
-        ]
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
         return try context.fetch(request).map(Document.init(entity:))
     }
 
@@ -68,6 +69,29 @@ struct DocumentRepository {
         let folderPredicate = NSPredicate(format: "folder.id == %@", folderId)
         request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [deletedPredicate, folderPredicate])
         return try context.count(for: request)
+    }
+
+    /// Searches every non-deleted document across the entire folder tree
+    /// (not just one folder's direct children) for a title match, pairing
+    /// each result with its immediate parent folder's name so a search
+    /// results list can show "Notes — inside Work" without a second
+    /// lookup per row. `nil` parent name means the document lives at the
+    /// top level.
+    ///
+    /// A blank keyword returns no results rather than the whole space —
+    /// the search drawer shows nothing until the person starts typing.
+    func search(keyword: String) throws -> [(document: Document, parentFolderName: String?)] {
+        let trimmedKeyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKeyword.isEmpty else { return [] }
+
+        let request = DocumentEntity.fetchRequest()
+        let deletedPredicate = NSPredicate(format: "deletedAt == nil")
+        let titlePredicate = NSPredicate(format: "title CONTAINS[cd] %@", trimmedKeyword)
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [deletedPredicate, titlePredicate])
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
+        return try context.fetch(request).map { entity in
+            (document: Document(entity: entity), parentFolderName: entity.folder?.name)
+        }
     }
 
     /// Saves changes to an existing document, refreshing `updatedAt`.
@@ -133,6 +157,23 @@ struct DocumentRepository {
         for item in try context.fetch(request) {
             guard let itemId = item.id else { continue }
             try itemRepository.hardDelete(id: itemId)
+        }
+    }
+
+    /// Permanently removes every root-level document (`folder == nil`) —
+    /// including ones already soft-deleted, not just live ones. Each root
+    /// document's own `hardDelete(id:)` already cascades through its
+    /// entire `DocumentItem` subtree, so calling this for every root
+    /// document clears every top-level `Document` and its content rows.
+    /// Used alongside `FolderRepository.hardDeleteAll()` by account
+    /// deletion's full local wipe (`tasks/NO-008.md` §5.2) — not for
+    /// everyday delete-document UI, which soft-deletes instead.
+    func hardDeleteAll() throws {
+        let request = DocumentEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "folder == nil")
+        for entity in try context.fetch(request) {
+            guard let id = entity.id else { continue }
+            try hardDelete(id: id)
         }
     }
 

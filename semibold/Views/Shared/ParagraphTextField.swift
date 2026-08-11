@@ -77,6 +77,17 @@ struct ParagraphTextField: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UITextView, context: Context) {
+        // `Coordinator.parent` is only set once, in `makeCoordinator()` —
+        // refresh it on every update so `onEnter`/`onBackspaceAtStart`
+        // (which close over this call's `text`/`content`, not a value
+        // handed to them at call time the way `onTextChange`'s `String`
+        // argument is) run against this render's callbacks and captured
+        // state instead of whatever was current the first time this row
+        // appeared. Without this, a stale capture of e.g. `content
+        // .plainText` from that first (often-empty) render would silently
+        // stand in for the text actually on screen.
+        context.coordinator.parent = self
+
         if uiView.text != text {
             uiView.text = text
         }
@@ -104,11 +115,29 @@ struct ParagraphTextField: UIViewRepresentable {
         Coordinator(self)
     }
 
+    /// Without this override, SwiftUI falls back to `UITextView`'s own
+    /// sizing, which — since `isScrollEnabled = false` gives it no fixed
+    /// width to wrap against — hugs the width of its *text content*
+    /// instead of filling `proposal.width` (the row's full width, per the
+    /// call sites' `.frame(maxWidth: .infinity)`). The row's background
+    /// still visually spans the full width regardless (that's painted by
+    /// an ancestor view), but the `UITextView`'s actual bounds — and so
+    /// its tappable area — end up only as wide as the text, leaving
+    /// everything past it in the row untappable. Explicitly returning the
+    /// proposed width (falling back to the view's current width if none
+    /// is proposed) fixes that, while height still comes from the text
+    /// content, preserving the auto-growing multi-line behavior.
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        let width = proposal.width ?? uiView.bounds.width
+        let height = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+        return CGSize(width: width, height: height)
+    }
+
     /// Forwards `UITextView` editing events back to SwiftUI, and turns a
     /// plain Return keypress into "create a new block here" instead of
     /// letting it insert a newline.
     final class Coordinator: NSObject, UITextViewDelegate {
-        private let parent: ParagraphTextField
+        var parent: ParagraphTextField
 
         init(_ parent: ParagraphTextField) {
             self.parent = parent

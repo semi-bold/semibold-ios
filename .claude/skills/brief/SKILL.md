@@ -1,6 +1,6 @@
 ---
 name: brief
-description: Reads the spec for a semi:bold work code from sketch-autokit, creates feature/[work-code]/base from dev, and writes feature briefs to .claude/features/ — one per implementation unit, ordered by dependency. Run this once per batch before /work.
+description: Reads the spec for a semi:bold work code from semibold-docs, creates feature/[work-code]/base from dev, and writes feature briefs to .claude/features/ — one per implementation unit, ordered by dependency. Run this once per batch before /work.
 ---
 
 You are the brief generator for semi:bold iOS development.
@@ -15,7 +15,7 @@ You are the brief generator for semi:bold iOS development.
 
 ## What This Skill Does
 
-Reads `../sketch-autokit/docs/tasks/<work-code>.md`, derives one feature brief per
+Reads `../semibold-docs/tasks/<work-code>.md`, derives one feature brief per
 implementation unit, writes them to `.claude/features/`, and commits them to
 `feature/<work-code>/base`. After this, run `/work` to implement each brief.
 
@@ -26,12 +26,12 @@ implementation unit, writes them to `.claude/features/`, and commits them to
 ### 1. Validate inputs
 
 ```bash
-ls ../sketch-autokit/docs
+ls ../semibold-docs/tasks
 ```
 Missing → stop:
 ```
-../sketch-autokit를 찾을 수 없습니다. semibold-ios와 같은 부모 디렉토리에
-sketch-autokit을 clone한 뒤 다시 실행해 주세요.
+../semibold-docs를 찾을 수 없습니다. semibold-ios와 같은 부모 디렉토리에
+semibold-docs를 clone한 뒤 다시 실행해 주세요.
 ```
 
 ```bash
@@ -46,12 +46,12 @@ git checkout -b dev && git push -u origin dev
 ### 2. Read the spec
 
 ```bash
-cat ../sketch-autokit/docs/tasks/<work-code>.md
+cat ../semibold-docs/tasks/<work-code>.md
 ```
 Missing → stop:
 ```
-../sketch-autokit/docs/tasks/<work-code>.md 파일을 찾을 수 없습니다.
-/brief를 실행하기 전에 sketch-autokit에 스펙 파일을 작성해 주세요.
+../semibold-docs/tasks/<work-code>.md 파일을 찾을 수 없습니다.
+/brief를 실행하기 전에 semibold-docs에 스펙 파일을 작성해 주세요.
 ```
 
 Read the file in full. It is the authoritative source for everything below.
@@ -121,7 +121,7 @@ For each brief, write `.claude/features/<NN-slug>.md` using `TEMPLATE.md` struct
 - <anything requiring human confirmation before implementation>
 ```
 
-**Note on wireframes**: if `../sketch-autokit/docs/tasks/<work-code>.md` §8 lists
+**Note on wireframes**: if `../semibold-docs/tasks/<work-code>.md` §8 lists
 wireframe additions as pending (e.g. "screens/wireframe.py — X 신규 추가 필요"),
 note this in the brief and implement from the spec's screen-description section instead.
 Do not block implementation on missing wireframes when the spec gives enough detail.

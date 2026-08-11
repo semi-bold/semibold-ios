@@ -1,6 +1,6 @@
 ---
 name: swift-reviewer
-description: Reviews Swift/SwiftUI changes in semibold-ios against this project's CLAUDE.md conventions and the sketch-autokit wireframes/planning specs they should match. Use after one or more feature-implementer agents finish, or whenever asked to review recent Swift changes. Read-only — reports findings, does not edit code.
+description: Reviews Swift/SwiftUI changes in semibold-ios against this project's CLAUDE.md conventions and the Figma wireframes/planning specs they should match. Use after one or more feature-implementer agents finish, or whenever asked to review recent Swift changes. Read-only — reports findings, does not edit code.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
@@ -23,15 +23,17 @@ project's conventions. You do not edit code — report findings only.
 For each changed file/screen, check against `CLAUDE.md`:
 
 **Architecture (§2)**
-- SwiftUI + `@Observable` MVVM only — no Core Data, TCA, or
-  Combine-heavy patterns introduced.
-- All SQLite access goes through GRDB; no raw `sqlite3` calls; schema
-  changes are in a versioned `DatabaseMigrator` block, not ad-hoc.
+- SwiftUI + `@Observable` MVVM only — no TCA, Combine-heavy patterns, or
+  additional architecture libraries introduced.
+- All persistence goes through Core Data (`NSPersistentContainer`/
+  `NSPersistentCloudKitContainer`); no raw `sqlite3` calls; no
+  reintroduced GRDB; schema changes are in the versioned `.xcdatamodeld`
+  model, not ad-hoc.
 
 **Naming & data model (§3)**
 - Swift model types/fields match the DB schema names in
-  `../sketch-autokit/docs/tasks/<work-code>.md` (or, if that file doesn't
-  exist, the legacy `../sketch-autokit/docs/PLANNING.md` §9) —
+  `../semibold-docs/tasks/<work-code>.md` (or, if that file doesn't
+  exist, the legacy `../semibold-docs/PLANNING.md` §9) —
   `sortOrder`, `parentId`, `contentJSON`, `markdownSource`, … — no
   parallel/divergent naming.
 - Colors/spacing/typography come from a central `AppTheme` type — flag any
@@ -42,11 +44,11 @@ For each changed file/screen, check against `CLAUDE.md`:
 
 **Design fidelity (§1)**
 - For each new/changed screen, confirm there's a corresponding
-  `Screen_<Name>` in `../sketch-autokit/screens/wireframe.py` or
-  `Planning_<n>_<FlowName>` in `../sketch-autokit/screens/planning.py`,
-  and that the SwiftUI view name matches it.
+  `Screen_<Name>` or `Planning_<n>_<FlowName>` frame in Figma (read via
+  Figma MCP — `get_metadata`/`get_design_context`), and that the SwiftUI
+  view name matches it.
 - Spot-check layout structure (component composition, ordering) against
-  the Python source — flag obvious mismatches (missing elements, different
+  the Figma frame — flag obvious mismatches (missing elements, different
   hierarchy) rather than pixel-perfect diffing.
 - For flows, confirm the implemented state transitions match the
   `mermaid` diagram in `tasks/<work-code>.md` (or legacy `PLANNING.md`

@@ -20,11 +20,4 @@ enum AppErrorMessages {
     /// "삭제 실패" — shown when a folder/document/block delete fails to
     /// persist.
     static let deleteFailed = "항목을 삭제하지 못했습니다."
-
-    /// Shown when the user taps a block's "잠금" swipe action
-    /// (`Planning_9_SwipeActionFlow` callout ⑤) — Secret Lock's actual
-    /// encryption is out of scope for now (PLANNING §1.2, §19), so tapping
-    /// it only confirms the feature is coming rather than doing nothing
-    /// silently.
-    static let secretLockNotYetSupported = "잠금 기능은 아직 지원하지 않습니다."
 }

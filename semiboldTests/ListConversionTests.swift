@@ -70,6 +70,45 @@ struct ListConversionTests {
         #expect(stored.plainText == "Milk")
     }
 
+    @Test("Typing '* item' converts the item to a bulleted list item, saved immediately")
+    func typingAsteriskSpacePrefixConvertsBlockToBulletedListItem() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store, autosaveDebounceInterval: .seconds(10))
+        viewModel.load()
+        let blockId = try #require(viewModel.items.first?.id)
+
+        viewModel.updateBlockText(blockId, text: "* Milk")
+
+        let content = viewModel.textContent(forItemId: blockId)
+        #expect(content.textKind == TextItemKind.bulletedListItem)
+        #expect(content.plainText == "Milk")
+
+        let stored = try #require(try textItemRepository.find(itemId: blockId))
+        #expect(stored.textKind == TextItemKind.bulletedListItem)
+        #expect(stored.plainText == "Milk")
+    }
+
+    @Test("'*item' without a space doesn't trigger bulleted list conversion")
+    func asteriskWithoutSpaceDoesNotConvertToBulletedList() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let blockId = try #require(viewModel.items.first?.id)
+
+        viewModel.updateBlockText(blockId, text: "*item")
+
+        let content = viewModel.textContent(forItemId: blockId)
+        #expect(content.textKind == TextItemKind.paragraph)
+        #expect(content.plainText == "*item")
+    }
+
     @Test("Typing '1. item' converts the item to a numbered list item, saved immediately")
     func typingNumberDotSpacePrefixConvertsBlockToNumberedListItem() throws {
         let store = try makeStore()

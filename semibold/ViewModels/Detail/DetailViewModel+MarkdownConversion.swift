@@ -62,23 +62,31 @@ extension DetailViewModel {
 
     /// Detects whether `text` (the block's full text right after this
     /// keystroke) now starts with a complete Markdown list-item prefix —
-    /// `- ` (a hyphen + a space) for a bulleted list, or `<digits>. ` (one
-    /// or more digits + a period + a space) for a numbered list — per
-    /// §7.1/§7.3's `- item` / `1. item` → Bulleted/Numbered List syntax.
+    /// `- ` or `* ` (a hyphen or asterisk + a space) for a bulleted list,
+    /// or `<digits>. ` (one or more digits + a period + a space) for a
+    /// numbered list — per §7.1/§7.3's `- item` / `1. item` → Bulleted/
+    /// Numbered List syntax (`* item` is standard Markdown's other bulleted
+    /// prefix, alongside `- item`).
     ///
     /// Returns `nil` if `text` doesn't start with such a prefix, so the
-    /// caller leaves the block as a paragraph. `"-item"` (no space) and
-    /// `"-- item"` (a second `-` instead of the item text) don't match
-    /// §7.3's literal `- item` syntax and so don't convert. `"- [ ] task"`/
-    /// `"- [x] task"` (checklist syntax, §7.3) also don't match here —
-    /// `checklistConversion(forTypedText:)` runs before this and takes
-    /// precedence for those, so this never sees them in practice, but the
-    /// explicit exclusion keeps this function correct on its own.
-    /// `"> quote"` (blockquote syntax, §7.3) also doesn't match — it
-    /// doesn't start with `-` or a digit, so no explicit exclusion is
-    /// needed here.
+    /// caller leaves the block as a paragraph. `"-item"`/`"*item"` (no
+    /// space) and `"-- item"`/`"** item"` (a second `-`/`*` instead of the
+    /// item text) don't match §7.3's literal `- item` syntax and so don't
+    /// convert. `"- [ ] task"`/`"- [x] task"` (checklist syntax, §7.3) also
+    /// don't match here — `checklistConversion(forTypedText:)` runs before
+    /// this and takes precedence for those, so this never sees them in
+    /// practice, but the explicit exclusion keeps this function correct on
+    /// its own. `"> quote"` (blockquote syntax, §7.3) also doesn't match —
+    /// it doesn't start with `-`/`*` or a digit, so no explicit exclusion
+    /// is needed here.
+    ///
+    /// `"- "` alone converts to a bulleted list immediately, same as
+    /// before — typing `[ ] `/`[x] ` right after that is handled by
+    /// `checklistUpgradeFromBulletedListItem(forTypedText:)`, which
+    /// upgrades an already-converted bulleted list item to a checklist
+    /// item, rather than by delaying this conversion.
     static func listConversion(forTypedText text: String) -> ListConversion? {
-        if text.hasPrefix("- "), checklistConversion(forTypedText: text) == nil {
+        if (text.hasPrefix("- ") || text.hasPrefix("* ")), checklistConversion(forTypedText: text) == nil {
             let remainder = String(text.dropFirst(2))
             return ListConversion(textKind: TextItemKind.bulletedListItem, text: remainder)
         }
@@ -135,6 +143,34 @@ extension DetailViewModel {
         }
         if text.hasPrefix("- [x] ") {
             let remainder = String(text.dropFirst("- [x] ".count))
+            return ChecklistConversion(checked: true, text: remainder)
+        }
+        return nil
+    }
+
+    /// Detects whether `text` (a bulleted list item's full text right
+    /// after this keystroke) now starts with `[ ] `/`[x] ` — i.e. the
+    /// `- ` bulleted-list prefix already converted the block (per
+    /// `listConversion`), and the user kept typing the rest of the
+    /// checklist syntax right after it, one keystroke at a time (`"- "` →
+    /// `"["` → `"[ "` → `"[ ]"` → `"[ ] "`). `updateBlockText` checks this
+    /// when `currentKind == .bulletedListItem` (mirroring
+    /// `checklistConversion(forTypedText:)`'s paragraph-level check for
+    /// `"- [ ] "`/`"- [x] "` typed as one contiguous run), upgrading the
+    /// block from bulleted list to checklist rather than leaving `[ ] `/
+    /// `[x] ` as literal bullet text.
+    ///
+    /// Returns `nil` if `text` doesn't start with either bracket prefix,
+    /// so the bullet item's text is just edited normally. Same lowercase-
+    /// `x`-only, no-inner-space precedent as `checklistConversion`'s
+    /// `"- [X] "`/`"- [] "` exclusions.
+    static func checklistUpgradeFromBulletedListItem(forTypedText text: String) -> ChecklistConversion? {
+        if text.hasPrefix("[ ] ") {
+            let remainder = String(text.dropFirst("[ ] ".count))
+            return ChecklistConversion(checked: false, text: remainder)
+        }
+        if text.hasPrefix("[x] ") {
+            let remainder = String(text.dropFirst("[x] ".count))
             return ChecklistConversion(checked: true, text: remainder)
         }
         return nil
@@ -214,5 +250,20 @@ extension DetailViewModel {
         }
 
         return CodeBlockConversion(language: language.isEmpty ? nil : language, code: String(remainder))
+    }
+
+    /// Detects whether `text` (the block's full text right after this
+    /// keystroke) is exactly `"---"` — §7.3's Divider syntax. Unlike every
+    /// other conversion above, this is a complete, exact match rather than
+    /// a prefix: a divider has no remainder text to carry over (§8.1's
+    /// `{ type: "divider" }` has no `text` field at all), so there's
+    /// nothing to detect beyond the three characters themselves.
+    ///
+    /// Returns `false` for anything shorter (still being typed) or longer
+    /// (`"----"`, `"--- "`, etc. — once `text` no longer matches exactly,
+    /// this stops triggering, the same as how a partially-typed `"# "`
+    /// doesn't trigger `headingConversion` early).
+    static func isDividerTrigger(forTypedText text: String) -> Bool {
+        text == "---"
     }
 }

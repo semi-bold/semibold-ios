@@ -11,10 +11,10 @@
 
 ## Getting Started
 
-1. Clone this repo alongside its sibling `sketch-autokit` repo, under a
+1. Clone this repo alongside its sibling `semibold-docs` repo, under a
    common parent directory (e.g. `semi-bold/semibold-ios` and
-   `semi-bold/sketch-autokit`) — `CLAUDE.md` and `.claude/` workflows
-   reference it via `../sketch-autokit`
+   `semi-bold/semibold-docs`) — `CLAUDE.md` and `.claude/` workflows
+   reference it via `../semibold-docs`
 2. Run `xcodegen generate` to create `semibold.xcodeproj`
 3. Open `semibold.xcodeproj` in Xcode
 4. SPM dependencies resolve automatically on first build
@@ -37,5 +37,6 @@ xcodebuild test \
 
 ## Dependencies
 
-- [GRDB.swift](https://github.com/groue/GRDB.swift) — local SQLite
+- Core Data (`NSPersistentContainer`/`NSPersistentCloudKitContainer`) — local
+  persistence, part of the iOS SDK, no SPM package required
 - [SwiftLint](https://github.com/realm/SwiftLint) — enforced via SPM build plugin

@@ -28,6 +28,12 @@ struct FolderContentsView: View {
     /// callout ③).
     @State private var isAddMenuPresented = false
 
+    /// Whether the navigation drawer (`icon_menu` in
+    /// `Planning_Nav_1_TopBarFlow`) is showing — presented via
+    /// `SidebarDrawerView`, `03-sidebar-drawer`'s search-first drawer
+    /// (`Planning_Nav_2_DrawerFlow`).
+    @State private var isDrawerPresented = false
+
     /// Whether the new-folder name-entry sheet is showing
     /// (`Planning_2_FolderCreateFlow`, PLANNING §5.2), creating the
     /// folder as a child of this folder.
@@ -75,6 +81,19 @@ struct FolderContentsView: View {
             .scrollContentBackground(.hidden)
         }
         .background(AppTheme.Colors.Neutral.n900)
+        .overlay(alignment: .bottomTrailing) {
+            floatingAddButton
+                .padding(.trailing, AppTheme.Spacing.md)
+                .padding(.bottom, AppTheme.Spacing.md)
+        }
+        .overlay {
+            // This screen is itself a pushed `Folder.self` destination
+            // registered once at `HomeView`'s `NavigationStack` root — the
+            // drawer's search-result rows push through that same
+            // registration, the same way this screen's own `FolderRow`/
+            // `DocumentRow` rows do (`SidebarDrawerView`'s doc comment).
+            SidebarDrawerView(isPresented: $isDrawerPresented)
+        }
         .toolbar(.hidden)
         .onAppear {
             viewModel.load()
@@ -184,9 +203,11 @@ struct FolderContentsView: View {
     // MARK: - Navigation bar
 
     /// Top bar: a back label pointing at the previous screen, the
-    /// current folder's name as the centered title, and the add (+)
-    /// button that will start the new folder/document flows scoped to
-    /// this folder.
+    /// current folder's name as the centered title, and the menu
+    /// (hamburger) button that opens the navigation drawer. The add (+)
+    /// button that used to sit here moved to a floating button — see
+    /// `floatingAddButton`'s doc comment (`Planning_Nav_1_TopBarFlow`,
+    /// FLOW-NAV-001).
     private var navBar: some View {
         VStack(spacing: 0) {
             ZStack {
@@ -197,7 +218,7 @@ struct FolderContentsView: View {
                 HStack {
                     backButton
                     Spacer()
-                    addButton
+                    menuButton
                 }
             }
             .padding(.horizontal, AppTheme.Spacing.md)
@@ -210,36 +231,42 @@ struct FolderContentsView: View {
         .background(AppTheme.Colors.Neutral.n800)
     }
 
+    /// Opens the navigation drawer (`icon_menu` — `Planning_Nav_1_TopBarFlow`).
+    private var menuButton: some View {
+        MenuButton {
+            isDrawerPresented = true
+        }
+    }
+
     /// Returns to the previous screen in the navigation stack
     /// (`Planning_6_FolderNavigationFlow` callout ①). `NavigationStack`
     /// already supplies the system back gesture/button; this label just
-    /// matches the wireframe's literal text since the system back button
-    /// is hidden along with the rest of the nav bar (`.toolbar(.hidden)`).
+    /// matches the wireframe since the system back button is hidden along
+    /// with the rest of the nav bar (`.toolbar(.hidden)`).
     ///
-    /// Reads "< Semi:bold" for a root-level folder (going back to
-    /// `HomeView`), or "< <상위 폴더명>" for a nested folder (going back
-    /// to the parent folder's own `FolderContentsView`) — "하위 폴더
-    /// 진입 시 레이블은 상위 폴더명으로 바뀐다".
+    /// Icon-only, no folder-name text: a house for a root-level folder
+    /// (going back to `HomeView`), or a plain chevron for a nested folder
+    /// (going back to the parent folder's own `FolderContentsView`) —
+    /// showing the destination's name here used to read "< Semi:bold" /
+    /// "< <상위 폴더명>", but an arbitrarily long folder name could break
+    /// the NavBar's layout, so the name is only exposed via
+    /// `accessibilityLabel` now instead of as visible text.
     private var backButton: some View {
         Button {
             dismiss()
         } label: {
-            Text(viewModel.backButtonLabel.text)
-                .appTextStyle(AppTheme.Typography.body)
-                .foregroundStyle(AppTheme.Colors.accent)
+            BackButtonIcon(label: viewModel.backButtonLabel)
         }
+        .accessibilityLabel(viewModel.backButtonLabel.accessibilityLabel)
     }
 
     /// Entry point for the "new folder / new document" menu, scoped to
     /// this folder (`Planning_6_FolderNavigationFlow` callout ③).
-    private var addButton: some View {
-        Button {
+    /// Floating at the screen's bottom-trailing corner (`FAB_AddMenu`) as
+    /// of `Planning_Nav_1_TopBarFlow`, rather than inline in the NavBar.
+    private var floatingAddButton: some View {
+        AddButton(placement: .floating) {
             isAddMenuPresented = true
-        } label: {
-            Image(systemName: "plus")
-                .appTextStyle(AppTheme.Typography.title)
-                .foregroundStyle(AppTheme.Colors.Content.primary)
-                .frame(width: 24, height: 24)
         }
     }
 
@@ -249,4 +276,5 @@ struct FolderContentsView: View {
     NavigationStack {
         FolderContentsView(folder: Folder(name: "일상"))
     }
+    .environment(AccountActionCenter())
 }

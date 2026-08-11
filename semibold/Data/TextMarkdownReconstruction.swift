@@ -1,28 +1,29 @@
 import Foundation
 
+/// The kind of inline formatting a `TextMark.markType` records — bold,
+/// italic, strikethrough, inline code, or a link (`DOCUMENT_MODEL.md`
+/// §4.2). `link` pairs with `TextMark.valueText` for the link's
+/// destination URL.
+enum TextMarkKind {
+    static let bold = "bold"
+    static let italic = "italic"
+    static let strike = "strike"
+    static let inlineCode = "inline_code"
+    static let link = "link"
+}
+
 /// Rebuilds delimiter-literal Markdown text (`"**bold**"`, `` "`code`" ``,
 /// `"[label](url)"`, …) from a clean `TextContent.plainText` plus the
-/// `TextMark`s that describe its inline formatting — the inverse of
-/// `TextDecomposition.decompose(_:)` (`semibold/Data/TextDecomposition.swift`,
-/// brief 01), which strips a typed/imported block's literal delimiters out
-/// of `RichTextSpan`s into clean `plainText` + offset-based `TextMark`s.
-///
-/// Needed because a MIGRATED document's `plainText` has already had its
-/// delimiters stripped by that forward step — re-scanning it for delimiters
-/// (`RichTextSpan.parse(markdownText:)`) finds nothing, so without this,
-/// exporting a migrated document to Markdown silently drops all of its
-/// bold/italic/strike/inline-code/link formatting. Used by
+/// `TextMark`s that describe its inline formatting. Used by
 /// `MarkdownExporter.markdownLine(for:marks:numberedListNumber:)`
 /// (`tasks/NO-005.md` §8 Phase 5, AC6) to reconstruct each item's
-/// delimiter-literal Markdown line directly from `TextContent`/`TextMark`,
-/// without going through `DocumentBlock`/`BlockContent` at all.
+/// delimiter-literal Markdown line directly from `TextContent`/`TextMark`.
 enum TextMarkdownReconstruction {
     /// Wraps each of `marks`' UTF-16 range of `plainText` back in its
     /// Markdown delimiter. Returns `plainText` unchanged when `marks` is
     /// empty — the "freshly typed, no marks recorded yet" case, whose
     /// `plainText` already keeps any delimiters the user literally typed
-    /// (`BlockContent+InlineMarks.swift`'s deviation note) and needs no
-    /// reconstruction.
+    /// and needs no reconstruction.
     static func markdownText(plainText: String, marks: [TextMark]) -> String {
         guard !marks.isEmpty else { return plainText }
 
@@ -57,10 +58,9 @@ enum TextMarkdownReconstruction {
         /// Nesting tie-breaker for boundaries sharing the same `offset`:
         /// on open, larger spans (outer marks) sort first so they wrap
         /// smaller ones; on close, smaller spans (inner marks) sort first
-        /// so they close before their enclosing mark does. `TextDecomposition`
-        /// never actually emits overlapping/nested marks today (its doc
-        /// comment: "only looks at span.marks's first entry"), but this
-        /// keeps nesting correct in case that changes.
+        /// so they close before their enclosing mark does. Nothing emits
+        /// overlapping/nested marks today, but this keeps nesting correct
+        /// in case that changes.
         let spanLength: Int
         let text: String
     }
@@ -95,20 +95,18 @@ enum TextMarkdownReconstruction {
         }
     }
 
-    /// The Markdown delimiter pair for one `TextMark`, matching
-    /// `RichTextMark`'s raw values (`BlockContent.swift`) and
-    /// `TextDecomposition.strip(_:)`'s reverse mapping. A `link` mark wraps
+    /// The Markdown delimiter pair for one `TextMark`. A `link` mark wraps
     /// its range in `[` … `](url)` using `valueText` as the URL; falls back
     /// to no wrapping (both empty) for an unrecognized `markType` so this
     /// never invents delimiters for formatting this build doesn't know
     /// about.
     private static func delimiters(for mark: TextMark) -> (open: String, close: String) {
         switch mark.markType {
-        case RichTextMark.bold.rawValue: return ("**", "**")
-        case RichTextMark.italic.rawValue: return ("*", "*")
-        case RichTextMark.strike.rawValue: return ("~~", "~~")
-        case RichTextMark.inlineCode.rawValue: return ("`", "`")
-        case RichTextMark.link.rawValue: return ("[", "](\(mark.valueText ?? ""))")
+        case TextMarkKind.bold: return ("**", "**")
+        case TextMarkKind.italic: return ("*", "*")
+        case TextMarkKind.strike: return ("~~", "~~")
+        case TextMarkKind.inlineCode: return ("`", "`")
+        case TextMarkKind.link: return ("[", "](\(mark.valueText ?? ""))")
         default: return ("", "")
         }
     }

@@ -5,96 +5,60 @@ import Foundation
 /// inserted between two existing siblings later without renumbering the
 /// whole list.
 ///
-/// `fromLegacySortOrder` is the migration-time conversion: it reproduces a
-/// deterministic, lexicographically-sortable key per old
-/// `DocumentBlock.sortOrder` value. `between(_:_:)` is the general-purpose
-/// counterpart the DocumentItem repository layer's live callers use
-/// (`tasks/NO-005.md` §4.3) — `DetailViewModel` (NO-005's ViewModel
-/// migration) calls it when creating/reordering a block, instead of
-/// renumbering every sibling. Both keep siblings spaced 100 apart
-/// internally (matching the spacing `STORAGE_ARCHITECTURE.md` §4's
-/// `"000100"`/`"000200"` worked example uses, so a later insert between two
-/// items still has room) — the emitted string is wider than that example
-/// because of the fixed padding/offset below, e.g. `sortOrder = 0` →
-/// `"0100000000"`, not `"000100"`.
+/// `between(_:_:)` is the general-purpose entry point the DocumentItem
+/// repository layer's live callers use (`tasks/NO-005.md` §4.3) —
+/// `DetailViewModel` calls it when creating/reordering a block, instead of
+/// renumbering every sibling. Siblings stay spaced 100 apart internally
+/// (matching the spacing `STORAGE_ARCHITECTURE.md` §4's `"000100"`/
+/// `"000200"` worked example uses, so a later insert between two items
+/// still has room) — the emitted string is wider than that example because
+/// of the fixed padding below.
 enum OrderKey {
-    /// The zero-padded width every migrated `orderKey` uses. Every key is
-    /// padded to exactly this width — never left shorter, never allowed
-    /// to grow longer — so lexicographic string comparison always agrees
-    /// with numeric order, at any magnitude (`fromLegacySortOrder`'s
-    /// guarantee below).
+    /// The zero-padded width every `orderKey` uses. Every key is padded to
+    /// exactly this width — never left shorter, never allowed to grow
+    /// longer — so lexicographic string comparison always agrees with
+    /// numeric order, at any magnitude (`firstKey`/`after`/`before`'s
+    /// guarantee).
     ///
-    /// 10 digits covers `sortOrder` up to 99_999_998 (see `offset`/
-    /// `maxSpaced` below) — far beyond any realistic sibling-group size —
-    /// with room to spare before the fixed width would need to grow.
+    /// 10 digits leaves far more headroom than any realistic sibling-group
+    /// size needs, with room to spare before the fixed width would need to
+    /// grow.
     private static let paddedWidth = 10
 
-    /// `sortOrder` values are shifted up by this much before spacing so
-    /// that negative inputs (shouldn't occur in practice, but must still
-    /// round-trip to distinct keys rather than colliding) map to distinct,
-    /// correctly-ordered non-negative keys. Comfortably covers any
-    /// realistic negative `sortOrder`.
-    ///
-    /// Caveat: `sortOrder` values at or beyond ±`offset`/±`maxSpaced`
-    /// magnitude (far outside any real `DocumentBlock.sortOrder`, which is
-    /// a small per-parent list position) still clamp and can collide at
-    /// those extremes — this conversion is only exact within the
-    /// realistic legacy sortOrder range, not for arbitrary `Int64` input.
-    private static let offset: Int64 = 1_000_000
-
-    /// The largest `spaced` value `paddedWidth` digits can represent
-    /// (`10^paddedWidth - 1`). `sortOrder` is clamped so the padded
-    /// decimal string never grows past `paddedWidth` and silently breaks
-    /// the lexicographic-order guarantee.
+    /// The largest value `paddedWidth` digits can represent
+    /// (`10^paddedWidth - 1`) — the ceiling `after`/`before` clamp against
+    /// so the padded decimal string never grows past `paddedWidth` and
+    /// silently breaks the lexicographic-order guarantee.
     private static let maxSpaced: Int64 = {
         var value: Int64 = 1
         for _ in 0..<paddedWidth { value *= 10 }
         return value - 1
     }()
 
-    /// Builds the `orderKey` for the item that was at position
-    /// `sortOrder` (0-based, per-parent — `DocumentBlockRepository`
-    /// already scopes `sortOrder` to siblings under the same parent, so
-    /// this needs no `parentItemId` input of its own).
-    ///
-    /// Guarantee: for any two `sortOrder` values within the supported
-    /// range, `a < b` implies `fromLegacySortOrder(a) <
-    /// fromLegacySortOrder(b)` under plain string (lexicographic)
-    /// comparison — every key is padded to the same fixed
-    /// `paddedWidth`, so no magnitude jump (e.g. crossing from 6 digits
-    /// to 7) can ever invert the order the way an unpadded/overflowing
-    /// key would.
-    static func fromLegacySortOrder(_ sortOrder: Int64) -> String {
-        let shifted = max(0, sortOrder + offset)
-        let spaced = min(shifted, maxSpaced / 100) * 100
-        let digits = String(spaced)
-        return String(repeating: "0", count: paddedWidth - digits.count) + digits
-    }
+    /// The `orderKey` for the very first item in an otherwise-empty list
+    /// (`between(nil, nil)`) — a fixed starting point with headroom on
+    /// both sides (`"0100000000"`) for `before`/`after` to space further
+    /// inserts around.
+    private static let firstKey = "0100000000"
 
-    /// The spacing `fromLegacySortOrder` leaves between two consecutive
-    /// migrated siblings — reused by `after`/`before` below so a freshly
-    /// created item next to migrated ones keeps the same headroom for
-    /// further inserts.
+    /// The spacing `after`/`before` leave between two consecutive
+    /// siblings, so a freshly inserted item keeps headroom for further
+    /// inserts next to it.
     private static let spacing: Int64 = 100
 
     /// Builds a fresh `orderKey` for a new sibling, given its immediate
     /// neighbors' current `orderKey`s (`nil` meaning "no sibling on that
     /// side" — the very start/end of the list, or an otherwise-empty
-    /// parent). This is the live, general-purpose counterpart to
-    /// `fromLegacySortOrder` this file's original scope note deferred to
-    /// "the DocumentItem repository layer" (`tasks/NO-005.md` §2.2) —
-    /// `DetailViewModel` (`markdown-phase4`'s NO-005 ViewModel migration)
-    /// is that caller, using this instead of renumbering every sibling on
-    /// every block create/reorder.
+    /// parent).
     ///
     /// Only ever touches the ONE item being inserted/moved — every other
     /// sibling's `orderKey` stays exactly as it was, which is the whole
-    /// point of a fractional/string order key over the old integer
-    /// `sortOrder` (`tasks/NO-005.md` §2.2's motivation).
+    /// point of a fractional/string order key over a plain integer
+    /// position (`tasks/NO-005.md` §2.2's motivation).
     static func between(_ lower: String?, _ upper: String?) -> String {
         switch (lower, upper) {
         case (nil, nil):
-            return fromLegacySortOrder(0)
+            return firstKey
         case (nil, let upper?):
             return before(upper)
         case (let lower?, nil):
@@ -107,9 +71,10 @@ enum OrderKey {
     /// A key spaced `spacing` after `previous`, for appending a sibling
     /// with nothing after it (e.g. a new block added at the end of the
     /// document). Falls back to `digitMidpoint` (open-ended above) if
-    /// `previous` isn't in the plain fixed-width numeric shape this
-    /// spacing arithmetic expects — e.g. it was itself produced by an
-    /// earlier `digitMidpoint` digit-growth fallback.
+    /// `previous` isn't in the plain fixed-width numeric shape (`firstKey`,
+    /// or another `after`/`before` result) this spacing arithmetic
+    /// expects — e.g. it was itself produced by an earlier `digitMidpoint`
+    /// digit-growth fallback.
     private static func after(_ previous: String) -> String {
         guard previous.count == paddedWidth, let value = Int64(previous) else {
             return digitMidpoint(previous, nil)
@@ -148,9 +113,9 @@ enum OrderKey {
     /// inputs — since a longer string that shares a shorter one's digits
     /// as a prefix always sorts after it lexicographically (`"12" <
     /// "120"` the same way `"12" < "125"` does), this preserves the
-    /// "plain string comparison agrees with fraction order" guarantee
-    /// `fromLegacySortOrder`'s doc comment establishes, even once keys
-    /// stop sharing one fixed width.
+    /// "plain string comparison agrees with fraction order" guarantee this
+    /// type's top-level doc comment establishes, even once keys stop
+    /// sharing one fixed width.
     ///
     /// Bounded to `maxDigitGrowth` digits of growth PAST the longer of
     /// `lower`/`upper`'s own length, so a caller can never hit an infinite

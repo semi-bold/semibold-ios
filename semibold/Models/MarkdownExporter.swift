@@ -11,22 +11,19 @@ import Foundation
 /// ```
 ///
 /// `DetailViewModel.items`/`.textContents`/`.marksByItemId` are already the
-/// "문서/블록 조회" + "Block Tree 조립" steps (loaded and kept in `orderKey`
-/// order — see `reorderBlocks`/`moveBlock`), so this type only covers
+/// "문서/블록 조회" + "Block Tree 조립" steps (loaded in `orderKey` order via
+/// `DocumentItemRepository.children(documentId:parentItemId:)`), so this
+/// type only covers
 /// "Markdown Renderer" → "`.md` 문자열 생성": turning each item's `TextContent`
 /// (plus any inline `TextMark`s) into its literal Markdown line and joining
 /// them into one document-wide string.
 ///
-/// **NO-005 note**: this replaces the pre-NO-005 version of this type, which
-/// rendered `[DocumentBlock]`'s already-computed `markdownSource`. The new
-/// `TextContent` schema has no `markdownSource` field to read
-/// (`DOCUMENT_MODEL.md` §4.1's `text_items` shape only has `plainText`), so
-/// this now builds each line's literal Markdown itself from `textKind` +
-/// `plainText`, reconstructing inline formatting from `TextMark`s via
-/// `TextMarkdownReconstruction` — the output shape (heading `#`/`##`/`###`,
-/// bulleted `-`/numbered `<n>.`/checklist `- [ ]`/`- [x]` lists, blockquote
-/// `>`, code fences, `---` dividers, blank-line-separated blocks except
-/// within a run of same-family list items) is unchanged from before.
+/// Builds each line's literal Markdown from `textKind` + `plainText`
+/// (`DOCUMENT_MODEL.md` §4.1's `text_items` shape), reconstructing inline
+/// formatting from `TextMark`s via `TextMarkdownReconstruction` — heading
+/// `#`/`##`/`###`, bulleted `-`/numbered `<n>.`/checklist `- [ ]`/`- [x]`
+/// lists, blockquote `>`, code fences, `---` dividers, blank-line-separated
+/// blocks except within a run of same-family list items.
 enum MarkdownExporter {
     /// Renders a document's `items` (assumed already sorted by `orderKey`,
     /// as `DetailViewModel.items` always is) into one Markdown string
@@ -94,10 +91,9 @@ enum MarkdownExporter {
     /// `content.plainText` is reconstructed into delimiter-literal Markdown
     /// text first (`TextMarkdownReconstruction`) — a no-op passthrough for
     /// freshly typed content, whose `plainText` already keeps any Markdown
-    /// delimiters the user literally typed (`BlockContent+InlineMarks.swift`
-    /// deviation note), and a real reconstruction for migrated content,
-    /// whose formatting lives in `marks` instead of `plainText` — before the
-    /// per-`textKind` prefix/wrapper below is applied.
+    /// delimiters the user literally typed, and a real reconstruction for
+    /// content whose formatting lives in `marks` instead of `plainText` —
+    /// before the per-`textKind` prefix/wrapper below is applied.
     ///
     /// `.divider` carries no meaningful text (§8.1's `{ type: "divider" }`)
     /// — rendered directly as `"---"`, the standard Markdown horizontal

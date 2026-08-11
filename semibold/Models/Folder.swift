@@ -4,7 +4,10 @@ import Foundation
 ///
 /// Folders can be nested inside one another (`parentId` points at the
 /// parent folder, or is `nil` for a top-level folder) and hold both
-/// documents and other folders, ordered by `sortOrder`.
+/// documents and other folders. Listed newest-created first
+/// (`FolderRepository.children(of:)`) — `sortOrder` is kept on the entity
+/// but isn't read or written anywhere; nothing currently sets it to
+/// anything but its default.
 struct Folder: Identifiable, Hashable, Codable {
     var id: String
     var parentId: String?

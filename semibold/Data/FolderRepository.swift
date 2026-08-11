@@ -29,7 +29,11 @@ struct FolderRepository {
 
     /// Fetches the direct children of `parentId` (or the top-level
     /// folders when `parentId` is `nil`), excluding soft-deleted
-    /// folders, ordered for display.
+    /// folders, newest-created first — personal document management reads
+    /// best most-recent-first, with keyword search covering lookup of
+    /// older items, rather than a manually-managed position (`sortOrder`
+    /// exists on the entity but is never set to anything but its default
+    /// and isn't used for ordering).
     func children(of parentId: String?) throws -> [Folder] {
         let request = FolderEntity.fetchRequest()
         let deletedPredicate = NSPredicate(format: "deletedAt == nil")
@@ -40,10 +44,7 @@ struct FolderRepository {
             parentPredicate = NSPredicate(format: "parent == nil")
         }
         request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [deletedPredicate, parentPredicate])
-        request.sortDescriptors = [
-            NSSortDescriptor(key: "sortOrder", ascending: true),
-            NSSortDescriptor(key: "createdAt", ascending: true)
-        ]
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
         return try context.fetch(request).map(Folder.init(entity:))
     }
 
@@ -69,6 +70,23 @@ struct FolderRepository {
         let parentPredicate = NSPredicate(format: "parent.id == %@", parentId)
         request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [deletedPredicate, parentPredicate])
         return try context.count(for: request)
+    }
+
+    /// Searches every non-deleted folder across the entire tree (not just
+    /// one parent's direct children) for a name match.
+    ///
+    /// A blank keyword returns no results rather than the whole tree —
+    /// the search drawer shows nothing until the person starts typing.
+    func search(keyword: String) throws -> [Folder] {
+        let trimmedKeyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKeyword.isEmpty else { return [] }
+
+        let request = FolderEntity.fetchRequest()
+        let deletedPredicate = NSPredicate(format: "deletedAt == nil")
+        let namePredicate = NSPredicate(format: "name CONTAINS[cd] %@", trimmedKeyword)
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [deletedPredicate, namePredicate])
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
+        return try context.fetch(request).map(Folder.init(entity:))
     }
 
     /// Saves changes to an existing folder, refreshing `updatedAt`.
@@ -133,6 +151,23 @@ struct FolderRepository {
         for document in childDocuments {
             try documentRepository.deleteSubtree(of: document)
             context.delete(document)
+        }
+    }
+
+    /// Permanently removes every root-level folder (`parent == nil`) —
+    /// including ones already soft-deleted, not just live ones. Each root
+    /// folder's own `hardDelete(id:)` already cascades through its entire
+    /// subtree, so calling this for every root folder clears every
+    /// `Folder`/`Document`/`DocumentItem`/`TextItem`/`TextMark`/`MediaItem`
+    /// row in the store. Used by account deletion's full local wipe
+    /// (`tasks/NO-008.md` §5.2) — not for everyday delete-folder UI, which
+    /// soft-deletes instead.
+    func hardDeleteAll() throws {
+        let request = FolderEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "parent == nil")
+        for entity in try context.fetch(request) {
+            guard let id = entity.id else { continue }
+            try hardDelete(id: id)
         }
     }
 

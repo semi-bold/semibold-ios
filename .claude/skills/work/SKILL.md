@@ -92,7 +92,7 @@ git push -u origin feature/<work-code>/<NN-slug>
 ### 6. Read spec + brief
 
 ```bash
-cat ../sketch-autokit/docs/tasks/<work-code>.md   # primary spec (if exists)
+cat ../semibold-docs/tasks/<work-code>.md          # primary spec (if exists)
 cat .claude/features/<NN-slug>.md                  # brief
 cat CLAUDE.md                                       # conventions
 ```
@@ -109,7 +109,7 @@ For each unimplemented AC item, in order:
 **1. Spawn `feature-implementer`**
 - `subagent_type: feature-implementer`
 - Prompt includes: the AC item text verbatim, brief path, note to read CLAUDE.md
-  and the brief first, path to `../sketch-autokit/docs/tasks/<work-code>.md` as
+  and the brief first, path to `../semibold-docs/tasks/<work-code>.md` as
   primary spec, and the Screens & Flows row if applicable.
 - Never instruct it to edit the brief file.
 

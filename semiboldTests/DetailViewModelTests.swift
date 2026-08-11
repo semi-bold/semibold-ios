@@ -203,6 +203,201 @@ struct DetailViewModelTests {
         #expect(viewModel.focusedBlockId == viewModel.items[1].id)
     }
 
+    @Test(
+        "Pressing Enter inside a bulleted/numbered list item continues the list instead of dropping to a paragraph",
+        arguments: [TextItemKind.bulletedListItem, TextItemKind.numberedListItem]
+    )
+    func insertBlockAfterListItemContinuesSameListType(_ textKind: String) throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.items.first?.id)
+        viewModel.updateBlockText(firstBlockId, text: textKind == TextItemKind.bulletedListItem ? "- First" : "1. First")
+
+        viewModel.insertBlock(after: firstBlockId, currentText: "First", cursorOffset: "First".count)
+
+        #expect(viewModel.items.count == 2)
+        let newBlockId = try #require(viewModel.items.last?.id)
+        #expect(viewModel.textContent(forItemId: newBlockId).textKind == textKind)
+        #expect(viewModel.textContent(forItemId: newBlockId).plainText == "")
+        #expect(viewModel.focusedBlockId == newBlockId)
+    }
+
+    @Test("Pressing Enter inside a checklist item continues the checklist, always starting the new item unchecked")
+    func insertBlockAfterChecklistItemContinuesChecklistUnchecked() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.items.first?.id)
+        viewModel.updateBlockText(firstBlockId, text: "- [x] Done already")
+
+        viewModel.insertBlock(after: firstBlockId, currentText: "Done already", cursorOffset: "Done already".count)
+
+        #expect(viewModel.items.count == 2)
+        let newBlockId = try #require(viewModel.items.last?.id)
+        #expect(viewModel.textContent(forItemId: newBlockId).textKind == TextItemKind.checklist)
+        #expect(viewModel.textContent(forItemId: newBlockId).plainText == "")
+        // A new checklist item always starts unchecked, even though the
+        // item Enter was pressed inside was already checked.
+        #expect(viewModel.textContent(forItemId: newBlockId).isChecked == false)
+    }
+
+    @Test(
+        "Pressing Enter inside a non-list block (heading/quote/code) still creates a plain paragraph below it",
+        arguments: [TextItemKind.heading, TextItemKind.quote, TextItemKind.codeBlock]
+    )
+    func insertBlockAfterNonListBlockStillCreatesParagraph(_ textKind: String) throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.items.first?.id)
+        switch textKind {
+        case TextItemKind.heading: viewModel.updateBlockText(firstBlockId, text: "# Title")
+        case TextItemKind.quote: viewModel.updateBlockText(firstBlockId, text: "> Quote")
+        default: viewModel.updateBlockText(firstBlockId, text: "```swift")
+        }
+
+        viewModel.insertBlock(after: firstBlockId, currentText: "Title", cursorOffset: "Title".count)
+
+        let newBlockId = try #require(viewModel.items.last?.id)
+        #expect(viewModel.textContent(forItemId: newBlockId).textKind == TextItemKind.paragraph)
+    }
+
+    @Test(
+        "Pressing Enter on an empty list item exits the list — converts it to a paragraph instead of continuing",
+        arguments: [TextItemKind.bulletedListItem, TextItemKind.numberedListItem, TextItemKind.checklist]
+    )
+    func insertBlockOnEmptyListItemExitsToParagraph(_ textKind: String) throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let firstBlockId = try #require(viewModel.items.first?.id)
+        switch textKind {
+        case TextItemKind.bulletedListItem: viewModel.updateBlockText(firstBlockId, text: "- ")
+        case TextItemKind.numberedListItem: viewModel.updateBlockText(firstBlockId, text: "1. ")
+        default: viewModel.updateBlockText(firstBlockId, text: "- [ ] ")
+        }
+        #expect(viewModel.textContent(forItemId: firstBlockId).textKind == textKind)
+
+        viewModel.insertBlock(after: firstBlockId, currentText: "", cursorOffset: 0)
+
+        // No new block was created — the same block converted in place.
+        #expect(viewModel.items.map(\.id) == [firstBlockId])
+        #expect(viewModel.textContent(forItemId: firstBlockId).textKind == TextItemKind.paragraph)
+        #expect(viewModel.textContent(forItemId: firstBlockId).plainText == "")
+    }
+
+    @Test("Typing '---' converts a paragraph to a divider and drops keyboard focus")
+    func typingTripleDashConvertsToDividerAndDefocuses() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store, autosaveDebounceInterval: .seconds(10))
+        viewModel.load()
+        let blockId = try #require(viewModel.items.first?.id)
+
+        viewModel.updateBlockText(blockId, text: "---")
+
+        let content = viewModel.textContent(forItemId: blockId)
+        #expect(content.textKind == TextItemKind.divider)
+        #expect(content.plainText == "---")
+        // A divider has nothing left to type — focus drops immediately
+        // instead of staying in text-edit mode.
+        #expect(viewModel.blockIdToDefocus == blockId)
+
+        let stored = try #require(try textItemRepository.find(itemId: blockId))
+        #expect(stored.textKind == TextItemKind.divider)
+    }
+
+    @Test("'--' (two dashes) doesn't trigger divider conversion")
+    func doubleDashDoesNotConvertToDivider() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let blockId = try #require(viewModel.items.first?.id)
+
+        viewModel.updateBlockText(blockId, text: "--")
+
+        let content = viewModel.textContent(forItemId: blockId)
+        #expect(content.textKind == TextItemKind.paragraph)
+        #expect(content.plainText == "--")
+        #expect(viewModel.blockIdToDefocus == nil)
+    }
+
+    @Test("Picking Divider from the Slash Command sheet drops keyboard focus")
+    func convertBlockToDividerDropsKeyboardFocus() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let blockId = try #require(viewModel.items.first?.id)
+
+        viewModel.convertBlock(blockId, toSlashCommandOption: .divider)
+
+        #expect(viewModel.textContent(forItemId: blockId).textKind == TextItemKind.divider)
+        #expect(viewModel.blockIdToDefocus == blockId)
+    }
+
+    @Test("Editing a divider's literal '---' text keeps it a divider")
+    func editingDividerTextUnchangedStaysDivider() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let blockId = try #require(viewModel.items.first?.id)
+        viewModel.convertBlock(blockId, toSlashCommandOption: .divider)
+
+        viewModel.updateBlockText(blockId, text: "---")
+
+        #expect(viewModel.textContent(forItemId: blockId).textKind == TextItemKind.divider)
+        #expect(viewModel.textContent(forItemId: blockId).plainText == "---")
+    }
+
+    @Test("Editing a divider's text away from '---' converts it to a plain paragraph")
+    func editingDividerTextAwayFromRuleConvertsToParagraph() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store, autosaveDebounceInterval: .seconds(10))
+        viewModel.load()
+        let blockId = try #require(viewModel.items.first?.id)
+        viewModel.convertBlock(blockId, toSlashCommandOption: .divider)
+
+        viewModel.updateBlockText(blockId, text: "-- Notes")
+
+        let content = viewModel.textContent(forItemId: blockId)
+        #expect(content.textKind == TextItemKind.paragraph)
+        #expect(content.plainText == "-- Notes")
+
+        // A type change is a structural edit — persisted immediately.
+        let stored = try #require(try textItemRepository.find(itemId: blockId))
+        #expect(stored.textKind == TextItemKind.paragraph)
+        #expect(stored.plainText == "-- Notes")
+    }
+
     @Test("Pressing Enter on a block that isn't the last inserts the new block between them without touching the later block's orderKey")
     func insertBlockDoesNotDisturbLaterSiblingsOrderKey() throws {
         let store = try makeStore()
@@ -343,8 +538,11 @@ struct DetailViewModelTests {
         #expect(viewModel.focusedBlockId == nil)
     }
 
-    @Test("moveBlock swaps a block with the neighbor above it and persists the new order")
-    func moveBlockUpSwapsSortOrderAndPersists() throws {
+    @Test(
+        "Backspace on an empty list item exits the list — converts it to a paragraph instead of deleting/merging",
+        arguments: [TextItemKind.bulletedListItem, TextItemKind.numberedListItem, TextItemKind.checklist]
+    )
+    func mergeOrDeleteBlockOnEmptyListItemExitsToParagraph(_ textKind: String) throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
         let documentItemRepository = DocumentItemRepository(context: store.context)
@@ -354,29 +552,44 @@ struct DetailViewModelTests {
         let viewModel = makeViewModel(document: document, store: store)
         viewModel.load()
         let firstBlockId = try #require(viewModel.items.first?.id)
-        viewModel.updateBlockText(firstBlockId, text: "First")
-        viewModel.flushPendingChanges()
 
+        // Add a second, empty list item right below the first — this
+        // exercises the non-first-block path too (the first-block path is
+        // covered by `backspaceAtStartOfFirstBlockDoesNothing`'s sibling
+        // below).
         let secondOrderKey = OrderKey.between(viewModel.items[0].orderKey, nil)
         let secondItem = try documentItemRepository.create(
             DocumentItem(documentId: document.id, contentType: "text", orderKey: secondOrderKey)
         )
-        _ = try textItemRepository.create(TextContent(itemId: secondItem.id, textKind: TextItemKind.paragraph, plainText: "Second"))
-        viewModel.load()
-        #expect(viewModel.items.map { viewModel.textContent(forItemId: $0.id).plainText } == ["First", "Second"])
-
-        viewModel.moveBlock(id: secondItem.id, direction: .up)
-
-        #expect(viewModel.items.map { viewModel.textContent(forItemId: $0.id).plainText } == ["Second", "First"])
-
-        let stored = try storedPlainTexts(
-            documentId: document.id, documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        let isChecked = textKind == TextItemKind.checklist ? false : nil
+        _ = try textItemRepository.create(
+            TextContent(itemId: secondItem.id, textKind: textKind, plainText: "", isChecked: isChecked)
         )
-        #expect(stored == ["Second", "First"])
+        // Reload to pick up the second block *before* editing the first
+        // one — editing goes through the debounced save path, so doing it
+        // before this reload would have the reload's fresh-from-DB read
+        // stomp the in-memory-only edit right back to empty.
+        viewModel.load()
+        viewModel.updateBlockText(firstBlockId, text: "First")
+
+        viewModel.mergeOrDeleteBlock(secondItem.id, currentText: "")
+
+        // No block was deleted or merged — the second block converted in
+        // place, and the first block's text is untouched.
+        #expect(viewModel.items.map(\.id) == [firstBlockId, secondItem.id])
+        #expect(viewModel.textContent(forItemId: firstBlockId).plainText == "First")
+        #expect(viewModel.textContent(forItemId: secondItem.id).textKind == TextItemKind.paragraph)
+        #expect(viewModel.textContent(forItemId: secondItem.id).plainText == "")
+
+        let stored = try documentItemRepository.find(id: secondItem.id)
+        #expect(stored?.deletedAt == nil)
     }
 
-    @Test("moveBlock does nothing when the block is already at the top or bottom")
-    func moveBlockAtBoundaryDoesNothing() throws {
+    @Test(
+        "Backspace on an empty list item that's also the document's first block still exits to a paragraph",
+        arguments: [TextItemKind.bulletedListItem, TextItemKind.numberedListItem, TextItemKind.checklist]
+    )
+    func mergeOrDeleteBlockOnEmptyFirstListItemExitsToParagraph(_ textKind: String) throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
 
@@ -384,201 +597,16 @@ struct DetailViewModelTests {
         let viewModel = makeViewModel(document: document, store: store)
         viewModel.load()
         let firstBlockId = try #require(viewModel.items.first?.id)
-        viewModel.updateBlockText(firstBlockId, text: "Only block")
-
-        viewModel.moveBlock(id: firstBlockId, direction: .up)
-        #expect(viewModel.items.map { viewModel.textContent(forItemId: $0.id).plainText } == ["Only block"])
-
-        viewModel.moveBlock(id: firstBlockId, direction: .down)
-        #expect(viewModel.items.map { viewModel.textContent(forItemId: $0.id).plainText } == ["Only block"])
-    }
-
-    /// Loads a document with four paragraph blocks ("A", "B", "C", "D"),
-    /// for the drag & drop reorder tests below (§12.3).
-    private func loadFourBlockDocument(
-        document: Document,
-        viewModel: DetailViewModel,
-        documentItemRepository: DocumentItemRepository,
-        textItemRepository: TextItemRepository
-    ) throws -> [DocumentItem] {
-        viewModel.load()
-        let firstBlockId = try #require(viewModel.items.first?.id)
-        viewModel.updateBlockText(firstBlockId, text: "A")
-        viewModel.flushPendingChanges()
-
-        var previousOrderKey = viewModel.items[0].orderKey
-        for text in ["B", "C", "D"] {
-            let orderKey = OrderKey.between(previousOrderKey, nil)
-            let item = try documentItemRepository.create(
-                DocumentItem(documentId: document.id, contentType: "text", orderKey: orderKey)
-            )
-            _ = try textItemRepository.create(TextContent(itemId: item.id, textKind: TextItemKind.paragraph, plainText: text))
-            previousOrderKey = orderKey
+        switch textKind {
+        case TextItemKind.bulletedListItem: viewModel.updateBlockText(firstBlockId, text: "- ")
+        case TextItemKind.numberedListItem: viewModel.updateBlockText(firstBlockId, text: "1. ")
+        default: viewModel.updateBlockText(firstBlockId, text: "- [ ] ")
         }
-        viewModel.load()
-        #expect(viewModel.items.map { viewModel.textContent(forItemId: $0.id).plainText } == ["A", "B", "C", "D"])
 
-        return viewModel.items
-    }
+        viewModel.mergeOrDeleteBlock(firstBlockId, currentText: "")
 
-    @Test("reorderBlocks moves a block to a later position, assigning it a new orderKey between its new neighbors")
-    func reorderBlocksMovesBlockLaterAndReordersKey() throws {
-        let store = try makeStore()
-        let documentRepository = DocumentRepository(context: store.context)
-        let documentItemRepository = DocumentItemRepository(context: store.context)
-        let textItemRepository = TextItemRepository(context: store.context)
-        let document = try documentRepository.create(Document(title: "Diary"))
-        let viewModel = makeViewModel(document: document, store: store)
-        _ = try loadFourBlockDocument(
-            document: document, viewModel: viewModel,
-            documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
-        )
-
-        // Move "B" (index 1) to just after "C" (SwiftUI's onMove
-        // `toOffset` semantics: destination index in the pre-removal array).
-        viewModel.reorderBlocks(fromOffsets: IndexSet(integer: 1), toOffset: 3)
-
-        #expect(viewModel.items.map { viewModel.textContent(forItemId: $0.id).plainText } == ["A", "C", "B", "D"])
-
-        let stored = try storedPlainTexts(
-            documentId: document.id, documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
-        )
-        #expect(stored == ["A", "C", "B", "D"])
-    }
-
-    @Test("reorderBlocks moves a block to an earlier position, assigning it a new orderKey between its new neighbors")
-    func reorderBlocksMovesBlockEarlierAndReordersKey() throws {
-        let store = try makeStore()
-        let documentRepository = DocumentRepository(context: store.context)
-        let documentItemRepository = DocumentItemRepository(context: store.context)
-        let textItemRepository = TextItemRepository(context: store.context)
-        let document = try documentRepository.create(Document(title: "Diary"))
-        let viewModel = makeViewModel(document: document, store: store)
-        _ = try loadFourBlockDocument(
-            document: document, viewModel: viewModel,
-            documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
-        )
-
-        // Move "D" (index 3) to the front.
-        viewModel.reorderBlocks(fromOffsets: IndexSet(integer: 3), toOffset: 0)
-
-        #expect(viewModel.items.map { viewModel.textContent(forItemId: $0.id).plainText } == ["D", "A", "B", "C"])
-
-        let stored = try storedPlainTexts(
-            documentId: document.id, documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
-        )
-        #expect(stored == ["D", "A", "B", "C"])
-    }
-
-    @Test("reorderBlocks to the same position is a no-op that persists nothing new")
-    func reorderBlocksToSamePositionIsNoOp() throws {
-        let store = try makeStore()
-        let documentRepository = DocumentRepository(context: store.context)
-        let documentItemRepository = DocumentItemRepository(context: store.context)
-        let textItemRepository = TextItemRepository(context: store.context)
-        let document = try documentRepository.create(Document(title: "Diary"))
-        let viewModel = makeViewModel(document: document, store: store)
-        _ = try loadFourBlockDocument(
-            document: document, viewModel: viewModel,
-            documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
-        )
-
-        // Moving index 1 to destination 1 (or 2, which `Array.move`
-        // treats as "stay put" when moving a single element forward by
-        // one) leaves the order unchanged.
-        viewModel.reorderBlocks(fromOffsets: IndexSet(integer: 1), toOffset: 1)
-
-        #expect(viewModel.items.map { viewModel.textContent(forItemId: $0.id).plainText } == ["A", "B", "C", "D"])
-    }
-
-    @Test("reorderBlocks with an empty source does nothing")
-    func reorderBlocksWithEmptySourceDoesNothing() throws {
-        let store = try makeStore()
-        let documentRepository = DocumentRepository(context: store.context)
-        let documentItemRepository = DocumentItemRepository(context: store.context)
-        let textItemRepository = TextItemRepository(context: store.context)
-        let document = try documentRepository.create(Document(title: "Diary"))
-        let viewModel = makeViewModel(document: document, store: store)
-        _ = try loadFourBlockDocument(
-            document: document, viewModel: viewModel,
-            documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
-        )
-
-        viewModel.reorderBlocks(fromOffsets: IndexSet(), toOffset: 2)
-
-        #expect(viewModel.items.map { viewModel.textContent(forItemId: $0.id).plainText } == ["A", "B", "C", "D"])
-    }
-
-    @Test("moveBlock(id:beforeBlockId:) moves a dragged block to sit just above the drop target")
-    func moveBlockBeforeTargetReordersAndPersists() throws {
-        let store = try makeStore()
-        let documentRepository = DocumentRepository(context: store.context)
-        let documentItemRepository = DocumentItemRepository(context: store.context)
-        let textItemRepository = TextItemRepository(context: store.context)
-        let document = try documentRepository.create(Document(title: "Diary"))
-        let viewModel = makeViewModel(document: document, store: store)
-        let blocks = try loadFourBlockDocument(
-            document: document, viewModel: viewModel,
-            documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
-        )
-
-        // Drag "A" (first) and drop it onto "C" — "A" should land directly
-        // above "C".
-        let blockA = blocks[0]
-        let blockC = blocks[2]
-        viewModel.moveBlock(id: blockA.id, beforeBlockId: blockC.id)
-
-        #expect(viewModel.items.map { viewModel.textContent(forItemId: $0.id).plainText } == ["B", "A", "C", "D"])
-
-        let stored = try storedPlainTexts(
-            documentId: document.id, documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
-        )
-        #expect(stored == ["B", "A", "C", "D"])
-    }
-
-    @Test("moveBlock(id:beforeBlockId:) moves a dragged block backwards above an earlier target")
-    func moveBlockBeforeEarlierTargetReordersAndPersists() throws {
-        let store = try makeStore()
-        let documentRepository = DocumentRepository(context: store.context)
-        let documentItemRepository = DocumentItemRepository(context: store.context)
-        let textItemRepository = TextItemRepository(context: store.context)
-        let document = try documentRepository.create(Document(title: "Diary"))
-        let viewModel = makeViewModel(document: document, store: store)
-        let blocks = try loadFourBlockDocument(
-            document: document, viewModel: viewModel,
-            documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
-        )
-
-        // Drag "D" (last) and drop it onto "B" — "D" should land directly
-        // above "B".
-        let blockB = blocks[1]
-        let blockD = blocks[3]
-        viewModel.moveBlock(id: blockD.id, beforeBlockId: blockB.id)
-
-        #expect(viewModel.items.map { viewModel.textContent(forItemId: $0.id).plainText } == ["A", "D", "B", "C"])
-
-        let stored = try storedPlainTexts(
-            documentId: document.id, documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
-        )
-        #expect(stored == ["A", "D", "B", "C"])
-    }
-
-    @Test("moveBlock(id:beforeBlockId:) does nothing when dragging a block onto itself")
-    func moveBlockBeforeSelfDoesNothing() throws {
-        let store = try makeStore()
-        let documentRepository = DocumentRepository(context: store.context)
-        let documentItemRepository = DocumentItemRepository(context: store.context)
-        let textItemRepository = TextItemRepository(context: store.context)
-        let document = try documentRepository.create(Document(title: "Diary"))
-        let viewModel = makeViewModel(document: document, store: store)
-        let blocks = try loadFourBlockDocument(
-            document: document, viewModel: viewModel,
-            documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
-        )
-
-        viewModel.moveBlock(id: blocks[1].id, beforeBlockId: blocks[1].id)
-
-        #expect(viewModel.items.map { viewModel.textContent(forItemId: $0.id).plainText } == ["A", "B", "C", "D"])
+        #expect(viewModel.items.map(\.id) == [firstBlockId])
+        #expect(viewModel.textContent(forItemId: firstBlockId).textKind == TextItemKind.paragraph)
     }
 
     @Test("A brand-new document with no content shows the empty-state placeholder")
@@ -706,8 +734,8 @@ struct DetailViewModelTests {
 
     // MARK: - Back button label (`Planning_6_FolderNavigationFlow` callout ①)
 
-    @Test("A root-level document keeps the existing '< Back' label")
-    func loadKeepsExistingBackLabelForRootDocument() throws {
+    @Test("A root-level document shows the house icon back button")
+    func loadShowsHouseIconForRootDocument() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
 
@@ -717,10 +745,10 @@ struct DetailViewModelTests {
         viewModel.load()
 
         #expect(viewModel.backButtonLabel == .root)
-        #expect(viewModel.backButtonText == "< Back")
+        #expect(viewModel.backButtonLabel.iconName == "house.fill")
     }
 
-    @Test("A document filed inside a folder shows that folder's name in the back label")
+    @Test("A document filed inside a folder shows the chevron icon, naming that folder only for accessibility")
     func loadResolvesParentFolderNameForDocumentInFolder() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
@@ -733,7 +761,8 @@ struct DetailViewModelTests {
         viewModel.load()
 
         #expect(viewModel.backButtonLabel == .parentFolder(name: "일상"))
-        #expect(viewModel.backButtonText == "< 일상")
+        #expect(viewModel.backButtonLabel.iconName == "chevron.left")
+        #expect(viewModel.backButtonLabel.accessibilityLabel == "뒤로가기, 일상")
     }
 
     @Test("A document whose folder lookup fails falls back to the root back label")
@@ -748,28 +777,7 @@ struct DetailViewModelTests {
         viewModel.load()
 
         #expect(viewModel.backButtonLabel == .root)
-        #expect(viewModel.backButtonText == "< Back")
+        #expect(viewModel.backButtonLabel.iconName == "house.fill")
     }
 
-    @Test("Tapping a block's '잠금' swipe action sets the not-yet-supported notice")
-    func lockBlockTappedSetsNotYetSupportedNotice() throws {
-        let store = try makeStore()
-        let documentRepository = DocumentRepository(context: store.context)
-
-        let document = try documentRepository.create(Document(title: "오늘의 일기"))
-        let viewModel = makeViewModel(document: document, store: store)
-        viewModel.load()
-        let blockId = try #require(viewModel.items.first?.id)
-
-        #expect(viewModel.lockNotice == nil)
-
-        viewModel.lockBlockTapped(blockId)
-
-        // `Planning_9_SwipeActionFlow` callout ⑤ / NO-001 §1.2 — Secret
-        // Lock's actual encryption is out of scope, so this only surfaces
-        // a short notice rather than locking anything for real.
-        #expect(viewModel.lockNotice == AppErrorMessages.secretLockNotYetSupported)
-        // The block itself is untouched — no actual lock state exists yet.
-        #expect(viewModel.items.first?.id == blockId)
-    }
 }

@@ -95,7 +95,15 @@ extension DetailViewModel {
         case .codeBlock:
             textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.codeBlock, plainText: "")
         case .divider:
-            textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.divider, plainText: "")
+            // `plainText` is the literal `"---"` (not empty) so tapping
+            // the rendered rule to edit it (`BlockRow.dividerBody`'s tap
+            // gesture, `DetailView.swift`) has real Markdown source text
+            // to show, matching Obsidian's "tap a rule to reveal/edit its
+            // raw `---` line" behavior. `blockIdToDefocus` drops keyboard
+            // focus right away so it shows as the rendered rule
+            // immediately instead of staying in text-edit mode.
+            textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.divider, plainText: "---")
+            blockIdToDefocus = blockId
         }
 
         cancelPendingSave(blockId)

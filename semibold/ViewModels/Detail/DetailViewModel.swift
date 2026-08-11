@@ -1,19 +1,15 @@
 import Foundation
 
-/// The exact `TextContent.textKind` string values this editor recognizes,
-/// matching `DocumentBlockMigrationPolicy`'s vocabulary
-/// (`semibold/Data/DocumentBlockMigrationPolicy.swift`) so a document
-/// edited here and a document produced by migrating pre-NO-005 data read
-/// back identically. Kept as named constants (rather than string literals
-/// scattered across `DetailViewModel`/its extensions) so a typo doesn't
-/// silently create a new, unrecognized kind.
+/// The exact `TextContent.textKind` string values this editor recognizes
+/// (`DOCUMENT_MODEL.md` §4.1's recommended vocabulary). Kept as named
+/// constants (rather than string literals scattered across
+/// `DetailViewModel`/its extensions) so a typo doesn't silently create a
+/// new, unrecognized kind.
 enum TextItemKind {
     static let paragraph = "paragraph"
     static let heading = "heading"
     /// A blockquote — named `"quote"`, not `"blockquote"`, matching
-    /// `DocumentBlockMigrationPolicy.textKind(for:)`'s rename of the old
-    /// `BlockType.blockquote` case to `DOCUMENT_MODEL.md` §4.1's
-    /// recommended `quote` vocabulary.
+    /// `DOCUMENT_MODEL.md` §4.1's recommended `quote` vocabulary.
     static let quote = "quote"
     static let checklist = "checklist"
     static let bulletedListItem = "bulleted_list_item"
@@ -21,8 +17,9 @@ enum TextItemKind {
     static let codeBlock = "code_block"
     static let divider = "divider"
     /// Content this build doesn't recognize, preserved read-only rather
-    /// than guessed at (`DOCUMENT_MODEL.md` §4.5,
-    /// `DocumentBlockMigrationPolicy`'s unrecognized-`BlockType` branch).
+    /// than guessed at (`DOCUMENT_MODEL.md` §4.5) — a forward-compat
+    /// safety net for content a newer app version wrote that this build
+    /// doesn't know how to render.
     static let unknown = "unknown"
 }
 
@@ -35,49 +32,32 @@ enum TextItemKind {
 /// keeping everything before it in the current block and saving
 /// everything after it into a new paragraph block placed right below,
 /// with editing focus moving to that new block. It also implements
-/// Backspace-at-start merge/delete and block reorder
-/// (PLANNING §6.3/§13.1, §5.4) — see `mergeOrDeleteBlock` and
-/// `moveBlock`.
+/// Backspace-at-start merge/delete (PLANNING §6.3/§13.1, §5.4) — see
+/// `mergeOrDeleteBlock`.
 ///
-/// **NO-005 model note**: a "block" in this file's naming/comments is the
-/// same planner-level concept `tasks/NO-001.md`/PLANNING always meant by
-/// it — one editable paragraph/heading/list item/etc. row. Internally it's
-/// now backed by a `DocumentItem` (position/hierarchy — `items`) plus that
-/// item's `TextContent` (the actual text — `textContents`), per
-/// `STORAGE_ARCHITECTURE.md` §5.5's "구조와 콘텐츠 분리" assembly rather than
-/// the old single `DocumentBlock` row. Only top-level items (`parentItemId
-/// == nil`) are loaded/edited here — nesting is out of this editor's scope,
-/// same as the pre-NO-005 version only ever reading `parentId == nil`
-/// blocks.
+/// A "block" in this file's naming/comments is the same planner-level
+/// concept `tasks/NO-001.md`/PLANNING always meant by it — one editable
+/// paragraph/heading/list item/etc. row. Internally it's backed by a
+/// `DocumentItem` (position/hierarchy — `items`) plus that item's
+/// `TextContent` (the actual text — `textContents`), per
+/// `STORAGE_ARCHITECTURE.md` §5.5's "구조와 콘텐츠 분리" assembly. Only
+/// top-level items (`parentItemId == nil`) are loaded/edited here —
+/// nesting is out of this editor's scope.
 @Observable
 @MainActor
 final class DetailViewModel {
     /// The document being viewed/edited.
     private(set) var document: Document
 
-    /// The back-button label `DetailView`'s nav bar shows
-    /// (`Planning_6_FolderNavigationFlow` callout ①, extended to the
-    /// editor screen). Starts out `.root` and is replaced with the
-    /// document's folder name once `load()` looks it up, for documents
+    /// The back-button label `DetailView`'s nav bar shows — icon-only, the
+    /// same house-for-root/chevron-for-nested-folder rule as
+    /// `FolderContentsView`'s back button (`Planning_6_FolderNavigationFlow`
+    /// callout ①, extended to the editor screen so both screens handle an
+    /// arbitrarily long folder name the same way instead of one of them
+    /// risking a broken NavBar layout). Starts out `.root` and is replaced
+    /// with the document's folder once `load()` looks it up, for documents
     /// filed inside a folder.
     private(set) var backButtonLabel = FolderBackButtonLabel.root
-
-    /// The literal text `DetailView`'s back button shows.
-    ///
-    /// Unlike `FolderContentsView` (which always returns to another
-    /// `FolderContentsView`/`HomeView` screen named "Semi:bold"),
-    /// `DetailView`'s root-level back button has always read "< Back" —
-    /// that existing label is kept as-is for a root document rather than
-    /// switched to `FolderBackButtonLabel.root`'s "< Semi:bold" text, so
-    /// this only overrides it for documents filed inside a named folder.
-    var backButtonText: String {
-        switch backButtonLabel {
-        case .root:
-            return "< Back"
-        case .parentFolder:
-            return backButtonLabel.text
-        }
-    }
 
     /// The document's top-level content items, in display order, excluding
     /// soft-deleted ones — the structural half of each "block"
@@ -156,6 +136,21 @@ final class DetailViewModel {
     /// wherever the text view puts it by default."
     private(set) var focusedBlockCursorOffset: Int?
 
+    /// The id of a block whose keyboard focus should be explicitly
+    /// dropped — the opposite of `focusedBlockId`. Set right after a
+    /// block becomes a divider (Slash Command's Divider option, or typing
+    /// the literal `"---"` markdown prefix), since a divider has no text
+    /// to keep typing: it should immediately show as the rendered rule
+    /// with the keyboard dismissed, matching Obsidian's "tap a `---` rule
+    /// to reveal its editable source, tap away to render it again"
+    /// behavior (`BlockRow.body`/`dividerBody` in `DetailView.swift`).
+    /// The view observes this and clears its local focus state to match,
+    /// then calls `defocusHandled()`. Not `private(set)` like
+    /// `focusedBlockId` — Swift's `private` is file-scoped, and
+    /// `DetailViewModel+SlashCommand.swift`'s `convertBlock` (a different
+    /// file) also needs to set this.
+    var blockIdToDefocus: String?
+
     /// The id of the block whose Slash Command bottom sheet should be
     /// shown (§12.2 "Slash Command는 bottom sheet 가능", §13.1 "/: Slash
     /// Command 열기"), or `nil` if no sheet should be shown. Set by
@@ -168,13 +163,6 @@ final class DetailViewModel {
     /// message. `nil` once the message has been shown/dismissed, or after
     /// the next successful save/delete.
     var errorMessage: String?
-
-    /// Set when the user taps a block's "잠금" swipe action
-    /// (`Planning_9_SwipeActionFlow` callout ⑤). Secret Lock's actual
-    /// encryption is out of scope for now (PLANNING §1.2, §19), so this
-    /// only carries a short "not yet supported" message for `DetailView`
-    /// to show — `nil` once it's been shown/dismissed.
-    var lockNotice: String?
 
     private let documentItemRepository: DocumentItemRepository
     private let textItemRepository: TextItemRepository
@@ -263,13 +251,20 @@ final class DetailViewModel {
     }
 
     /// Creates the single empty paragraph item a brand-new document
-    /// starts with.
+    /// starts with. Both inserts commit as one transaction
+    /// (`STORAGE_ARCHITECTURE.md` §6) so a crash between them can't leave
+    /// a `DocumentItem` row with no matching `TextItem` detail row.
     private func createFirstItem() throws -> DocumentItem {
-        let item = try documentItemRepository.create(
-            DocumentItem(documentId: document.id, contentType: "text", orderKey: OrderKey.between(nil, nil))
-        )
-        _ = try textItemRepository.create(TextContent(itemId: item.id, textKind: TextItemKind.paragraph, plainText: ""))
-        return item
+        try documentItemRepository.context.withTransaction {
+            let item = try documentItemRepository.create(
+                DocumentItem(documentId: document.id, contentType: "text", orderKey: OrderKey.between(nil, nil)),
+                save: false
+            )
+            _ = try textItemRepository.create(
+                TextContent(itemId: item.id, textKind: TextItemKind.paragraph, plainText: ""), save: false
+            )
+            return item
+        }
     }
 
     /// Batch-fetches `items`' text/media detail and every text item's
@@ -339,17 +334,14 @@ final class DetailViewModel {
     /// (§11.2 "블록 생성/삭제/순서 변경: 즉시 저장").
     ///
     /// **Inline marks deviation**: `plainText` is set to `text` exactly as
-    /// typed, delimiters (`**`/`*`/etc.) and all — matching the pre-NO-005
-    /// editor's `displayText`, which also kept delimiters literal
-    /// (`BlockContent+InlineMarks.swift`'s documented deviation) so the
-    /// plain `UITextView`-backed input round-trips what the user typed
-    /// without the delimiters vanishing mid-edit. This means edits made
-    /// here don't parse `text` into `TextMark` rows the way
-    /// `DocumentBlockMigrationPolicy`'s migrated content does — and, per
-    /// `marksByItemId`'s doc comment, `persistBlock` invalidates (drops)
-    /// any `TextMark`s the block already had once this edit is saved,
-    /// rather than leaving them pointing at stale offsets in the new text;
-    /// flagged as a gap for a future WYSIWYG-editing pass to close.
+    /// typed, delimiters (`**`/`*`/etc.) and all, so the plain
+    /// `UITextView`-backed input round-trips what the user typed without
+    /// the delimiters vanishing mid-edit. This means edits made here don't
+    /// parse `text` into `TextMark` rows — and, per `marksByItemId`'s doc
+    /// comment, `persistBlock` invalidates (drops) any `TextMark`s the
+    /// block already had once this edit is saved, rather than leaving them
+    /// pointing at stale offsets in the new text; flagged as a gap for a
+    /// future WYSIWYG-editing pass to close.
     func updateBlockText(_ blockId: String, text: String) {
         guard items.contains(where: { $0.id == blockId }) else { return }
         let currentKind = textContent(forItemId: blockId).textKind
@@ -390,6 +382,23 @@ final class DetailViewModel {
             return
         }
 
+        // `"- "` already converted this block to a bulleted list item
+        // above (in an earlier keystroke) — if the user kept typing
+        // `"[ ] "`/`"[x] "` right after that, upgrade it to a checklist
+        // item instead of leaving the brackets as literal bullet text, so
+        // `"- [ ] task"` still ends up a checklist even though `"- "`
+        // alone converts immediately rather than waiting to see whether
+        // checklist syntax follows.
+        if currentKind == TextItemKind.bulletedListItem,
+           let checklist = Self.checklistUpgradeFromBulletedListItem(forTypedText: text) {
+            textContents[blockId] = TextContent(
+                itemId: blockId, textKind: TextItemKind.checklist, plainText: checklist.text, isChecked: checklist.checked
+            )
+            cancelPendingSave(blockId)
+            persistBlock(blockId)
+            return
+        }
+
         if currentKind == TextItemKind.paragraph, let blockquote = Self.blockquoteConversion(forTypedText: text) {
             textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.quote, plainText: blockquote.text)
             cancelPendingSave(blockId)
@@ -402,11 +411,36 @@ final class DetailViewModel {
             // fence, e.g. `"swift"`) has nowhere to live in `TextContent`
             // — `DOCUMENT_MODEL.md` §4.1's `text_items` fields don't
             // include one — so it's detected (to trigger the conversion)
-            // but not persisted. Flagged as a pre-existing schema gap
-            // (`DocumentBlockMigrationPolicy` already drops it the same
-            // way when migrating an old `.codeBlock` block), not something
-            // introduced here.
+            // but not persisted. Flagged as a known schema gap.
             textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.codeBlock, plainText: codeBlock.code)
+            cancelPendingSave(blockId)
+            persistBlock(blockId)
+            return
+        }
+
+        if currentKind == TextItemKind.paragraph, Self.isDividerTrigger(forTypedText: text) {
+            // Unlike the conversions above, a divider has no "remainder"
+            // text to keep typing — §7.3's `---` is a complete, exact
+            // trigger on its own, not a prefix. Converting immediately
+            // drops keyboard focus (`blockIdToDefocus`) so the block shows
+            // as the rendered rule right away instead of staying in
+            // text-edit mode with nothing left to type.
+            textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.divider, plainText: text)
+            cancelPendingSave(blockId)
+            persistBlock(blockId)
+            blockIdToDefocus = blockId
+            return
+        }
+
+        // Editing a divider's literal "---" text away from that exact
+        // string means it's no longer a valid rule — matching Obsidian's
+        // "edit a `---` rule's raw text into something else and it just
+        // becomes a normal line" behavior, this converts the block to a
+        // plain paragraph holding whatever was typed, rather than leaving
+        // it stuck as a "divider" with arbitrary text `dividerBody` would
+        // never actually render.
+        if currentKind == TextItemKind.divider, text != "---" {
+            textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.paragraph, plainText: text)
             cancelPendingSave(blockId)
             persistBlock(blockId)
             return
@@ -476,14 +510,20 @@ final class DetailViewModel {
         let content = textContent(forItemId: blockId)
 
         do {
-            if let existingMarks = marksByItemId[blockId], !existingMarks.isEmpty {
-                try textMarkRepository.deleteAll(itemId: blockId)
-                marksByItemId[blockId] = nil
+            // One transaction (`STORAGE_ARCHITECTURE.md` §6) instead of up
+            // to three separate `context.save()` calls — a crash between
+            // them could otherwise leave e.g. this text saved but its
+            // owning item's `revision` bump lost.
+            try documentItemRepository.context.withTransaction {
+                if let existingMarks = marksByItemId[blockId], !existingMarks.isEmpty {
+                    try textMarkRepository.deleteAll(itemId: blockId, save: false)
+                    marksByItemId[blockId] = nil
+                }
+                textContents[blockId] = try textItemRepository.update(content, save: false)
+                var item = items[index]
+                item.revision += 1
+                items[index] = try documentItemRepository.update(item, save: false)
             }
-            textContents[blockId] = try textItemRepository.update(content)
-            var item = items[index]
-            item.revision += 1
-            items[index] = try documentItemRepository.update(item)
         } catch {
             // §15.2 "저장 실패" — the edit stays in memory (so the user
             // doesn't lose what they typed) but didn't reach the database;
@@ -510,15 +550,6 @@ final class DetailViewModel {
         persistBlock(blockId)
     }
 
-    /// Handles tapping a block's "잠금" swipe action
-    /// (`Planning_9_SwipeActionFlow` callout ⑤, `iOS_SwipeAction`'s
-    /// `SwipeAction_Lock`). Secret Lock's actual encryption is out of scope
-    /// for now (NO-001 §1.2, PLANNING §19) — this just surfaces a short
-    /// notice so the tap isn't silently ignored.
-    func lockBlockTapped(_ blockId: String) {
-        lockNotice = AppErrorMessages.secretLockNotYetSupported
-    }
-
     /// Writes every block with a pending debounced save right away
     /// (PLANNING §11.2 "앱 백그라운드 진입: pending change flush"). Called
     /// when the app moves to the background so no edits are lost while the
@@ -532,21 +563,38 @@ final class DetailViewModel {
     }
 
     /// Handles pressing Enter/Return while editing `block` with the
-    /// cursor at `cursorOffset` within its text (PLANNING §5.4 "Enter →
-    /// 새 paragraph block 생성", §13.1 "Enter: 현재 블록 뒤에 새 paragraph
-    /// block 생성").
+    /// cursor at `cursorOffset` within its text (PLANNING §5.4/§13.1
+    /// "Enter → 새 paragraph block 생성").
     ///
     /// Splits `text` at the cursor: everything before stays in `block`,
-    /// everything after becomes a new empty-or-continued paragraph block
-    /// placed immediately below it, and focus moves to that new block so
-    /// typing continues naturally. The new item's `orderKey` is generated
-    /// between the current item and whatever (if anything) already
-    /// followed it (`OrderKey.between`, `tasks/NO-005.md` §2.2) — no other
-    /// sibling's `orderKey` is touched, unlike the old integer `sortOrder`
-    /// version of this method, which had to shift every later block down
-    /// by one.
+    /// everything after becomes a new block placed immediately below it,
+    /// and focus moves to that new block so typing continues naturally.
+    /// The new item's `orderKey` is generated between the current item and
+    /// whatever (if anything) already followed it (`OrderKey.between`,
+    /// `tasks/NO-005.md` §2.2) — no other sibling's `orderKey` is touched,
+    /// unlike the old integer `sortOrder` version of this method, which
+    /// had to shift every later block down by one.
+    ///
+    /// **List continuation**: if `block` is a bulleted list, numbered
+    /// list, or checklist item, the new block keeps that same
+    /// `textKind` instead of resetting to `.paragraph` — pressing Enter
+    /// mid-list continues the list, matching every other block-based
+    /// editor (Notion, etc.), rather than dropping back to a plain
+    /// paragraph after every line. A new checklist item always starts
+    /// unchecked regardless of `block`'s own checked state. Every other
+    /// block type (heading, quote, code block, paragraph) still creates a
+    /// plain paragraph below it, unchanged.
+    ///
+    /// **List exit**: pressing Enter on an *empty* list item doesn't
+    /// continue the list — `exitEmptyListItem` converts that item to a
+    /// plain paragraph in place instead, with no new block created and
+    /// focus staying put (the standard "empty list item + Enter exits the
+    /// list" behavior). Otherwise every Enter press inside a list would
+    /// leave a trail of empty items with no way to stop it via Enter
+    /// alone.
     func insertBlock(after blockId: String, currentText: String, cursorOffset: Int) {
         guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
+        guard !exitEmptyListItem(blockId, currentText: currentText) else { return }
 
         // `cursorOffset` comes from `UITextView` as a UTF-16 offset, so
         // split using the UTF-16 view and clamp to its bounds before
@@ -572,16 +620,41 @@ final class DetailViewModel {
         let nextOrderKey = items.indices.contains(index + 1) ? items[index + 1].orderKey : nil
         let newOrderKey = OrderKey.between(items[index].orderKey, nextOrderKey)
 
+        // Continuing a list on Enter keeps the current item's textKind (a
+        // new checklist item always starts unchecked); every other type
+        // resets to a plain paragraph, as before.
+        let currentKind = textContent(forItemId: blockId).textKind
+        let newTextKind: String
+        let newIsChecked: Bool?
+        switch currentKind {
+        case TextItemKind.bulletedListItem, TextItemKind.numberedListItem:
+            newTextKind = currentKind
+            newIsChecked = nil
+        case TextItemKind.checklist:
+            newTextKind = currentKind
+            newIsChecked = false
+        default:
+            newTextKind = TextItemKind.paragraph
+            newIsChecked = nil
+        }
+
         do {
-            let createdItem = try documentItemRepository.create(
-                DocumentItem(documentId: document.id, contentType: "text", orderKey: newOrderKey)
-            )
-            let createdContent = try textItemRepository.create(
-                TextContent(itemId: createdItem.id, textKind: TextItemKind.paragraph, plainText: afterText)
-            )
-            items.insert(createdItem, at: index + 1)
-            textContents[createdItem.id] = createdContent
-            focusedBlockId = createdItem.id
+            // One transaction (`STORAGE_ARCHITECTURE.md` §6) — see
+            // `createFirstItem`'s doc comment for why splitting a new
+            // item's structural row and its text detail row across two
+            // separate commits is unsafe.
+            try documentItemRepository.context.withTransaction {
+                let createdItem = try documentItemRepository.create(
+                    DocumentItem(documentId: document.id, contentType: "text", orderKey: newOrderKey), save: false
+                )
+                let createdContent = try textItemRepository.create(
+                    TextContent(itemId: createdItem.id, textKind: newTextKind, plainText: afterText, isChecked: newIsChecked),
+                    save: false
+                )
+                items.insert(createdItem, at: index + 1)
+                textContents[createdItem.id] = createdContent
+                focusedBlockId = createdItem.id
+            }
         } catch {
             // §15.2 "저장 실패" — the new block stays local-only; reloading
             // the document reconciles it once the database is reachable
@@ -598,6 +671,12 @@ final class DetailViewModel {
         focusedBlockCursorOffset = nil
     }
 
+    /// Clears `blockIdToDefocus` once the view has dropped local keyboard
+    /// focus from it, so it doesn't keep re-triggering.
+    func defocusHandled() {
+        blockIdToDefocus = nil
+    }
+
     /// Closes the Slash Command bottom sheet without converting the block —
     /// either the user picked an option (handled by
     /// `convertBlock(_:toSlashCommandOption:)`, which also calls this) or
@@ -607,11 +686,39 @@ final class DetailViewModel {
         slashCommandBlockId = nil
     }
 
+    /// Converts `blockId`'s empty bulleted/numbered/checklist item back to
+    /// a plain paragraph in place, if that's what it is — the shared
+    /// "empty list item" exit behavior for both Enter (`insertBlock`) and
+    /// Backspace-at-start (`mergeOrDeleteBlock`), matching every other
+    /// block-based editor (Notion, etc.): the first Enter/Backspace on an
+    /// empty list item exits the list rather than continuing it or
+    /// deleting/merging the block outright.
+    ///
+    /// Returns whether it did so, so callers know whether to continue
+    /// their own normal handling (`false`) or stop here (`true`).
+    private func exitEmptyListItem(_ blockId: String, currentText: String) -> Bool {
+        let currentKind = textContent(forItemId: blockId).textKind
+        let isListKind = [TextItemKind.bulletedListItem, TextItemKind.numberedListItem, TextItemKind.checklist]
+            .contains(currentKind)
+        guard isListKind, currentText.isEmpty else { return false }
+
+        textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.paragraph, plainText: "")
+        cancelPendingSave(blockId)
+        persistBlock(blockId)
+        return true
+    }
+
     /// Handles pressing Backspace with the caret at the very start of
     /// `blockId`'s text (PLANNING §13.1 "Backspace at empty block: 이전
     /// 블록과 병합 또는 현재 블록 삭제", §6.3 "Backspace로 빈 블록 병합 또는
     /// 삭제").
     ///
+    /// - If `blockId` is an *empty* list item, `exitEmptyListItem` converts
+    ///   it to a plain paragraph in place instead of merging/deleting —
+    ///   the standard "empty list item + Backspace exits the list first"
+    ///   behavior, symmetric with `insertBlock`'s Enter handling. This
+    ///   takes precedence even for the document's first block, unlike the
+    ///   merge/delete path below.
     /// - If `blockId` is the document's first block, there's nothing to
     ///   merge/delete into — every document keeps at least one block
     ///   (`load()`'s bootstrap invariant), so this does nothing.
@@ -631,6 +738,7 @@ final class DetailViewModel {
     /// behavior this replaces.
     func mergeOrDeleteBlock(_ blockId: String, currentText: String) {
         guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
+        guard !exitEmptyListItem(blockId, currentText: currentText) else { return }
         guard index > 0 else {
             // First block in the document — Backspace at its start does
             // nothing, matching AC2's "every document has ≥1 block".
@@ -668,106 +776,4 @@ final class DetailViewModel {
         }
     }
 
-    /// The direction a block moves in `moveBlock(id:direction:)`.
-    enum MoveDirection {
-        case up
-        case down
-    }
-
-    /// Moves `blockId` one position up or down in display order
-    /// (`Planning_4_BlockCreateFlow` callout ⑤ / PLANNING §6.3 "Drag & Drop
-    /// 또는 키보드 조작으로 블록 순서 변경"), persisting the move immediately
-    /// (PLANNING §11.2 "블록 생성/삭제/순서 변경: 즉시 저장").
-    ///
-    /// Does nothing if `blockId` is already at the top (for `.up`) or
-    /// bottom (for `.down`) of the list. The reorder UI itself (drag &
-    /// drop or a keyboard control) is `quality-phase5` — this is the
-    /// persistence-layer half a future UI calls into.
-    func moveBlock(id blockId: String, direction: MoveDirection) {
-        guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
-
-        let neighborIndex = direction == .up ? index - 1 : index + 1
-        guard items.indices.contains(neighborIndex) else { return }
-
-        let destination = direction == .up ? neighborIndex : neighborIndex + 1
-        reorderBlocks(fromOffsets: IndexSet(integer: index), toOffset: destination)
-    }
-
-    /// Moves the blocks at `fromOffsets` to just before `toOffset` in
-    /// display order (`Planning_5_MacOSMainFlow` / §12.3's drag & drop
-    /// block reordering), matching SwiftUI's `List.onMove(perform:)`
-    /// signature so it can also back a drag handle if one is ever added.
-    ///
-    /// After reordering the in-memory array, each moved item gets a fresh
-    /// `orderKey` computed from its NEW neighbors (`OrderKey.between`,
-    /// `tasks/NO-005.md` §2.2) and is saved immediately — every
-    /// NOT-moved sibling's `orderKey` is left untouched, unlike the old
-    /// integer-`sortOrder` version of this method (which recomputed every
-    /// item's `sortOrder` on every reorder). Like
-    /// `moveBlock(id:direction:)` above, reordering is a structural change
-    /// that bypasses the debounce (PLANNING §11.2 "블록 생성/삭제/순서 변경:
-    /// 즉시 저장").
-    func reorderBlocks(fromOffsets source: IndexSet, toOffset destination: Int) {
-        guard !source.isEmpty else { return }
-
-        let movedIds = source.map { items[$0].id }
-        items.move(fromOffsets: source, toOffset: destination)
-
-        // Processed in the order the moved items now appear, so a later
-        // moved item's neighbor lookup sees an earlier moved item's
-        // already-updated `orderKey` rather than its stale pre-move value
-        // — only matters for a multi-item move (no current call site
-        // passes more than one id, but this keeps the method correct if
-        // one ever does).
-        for movedId in movedIds {
-            guard let index = items.firstIndex(where: { $0.id == movedId }) else { continue }
-            let previousOrderKey = index > 0 ? items[index - 1].orderKey : nil
-            let nextOrderKey = index < items.count - 1 ? items[index + 1].orderKey : nil
-            let newOrderKey = OrderKey.between(previousOrderKey, nextOrderKey)
-            guard newOrderKey != items[index].orderKey else { continue }
-
-            items[index].orderKey = newOrderKey
-            persistItemOrder(movedId)
-        }
-    }
-
-    /// Immediately writes `blockId`'s current in-memory `orderKey` to the
-    /// database (bumping its `revision`), without touching its text
-    /// content — the reorder-only counterpart to `persistBlock`.
-    private func persistItemOrder(_ blockId: String) {
-        guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
-        do {
-            var item = items[index]
-            item.revision += 1
-            items[index] = try documentItemRepository.update(item)
-        } catch {
-            // §15.2 "저장 실패" — leave the in-memory order as-is if the
-            // save fails, so the editor's order keeps matching what's
-            // persisted once the next reload happens.
-            errorMessage = AppErrorMessages.saveFailed
-        }
-    }
-
-    /// Moves `draggedBlockId` so it sits immediately before `targetBlockId`
-    /// in display order — the persistence-layer counterpart to a
-    /// `.dropDestination` drop in `DetailView` (§12.3 drag & drop block
-    /// reordering). Does nothing if either id can't be found, or if
-    /// `draggedBlockId` is already immediately before `targetBlockId`.
-    func moveBlock(id draggedBlockId: String, beforeBlockId targetBlockId: String) {
-        guard let fromIndex = items.firstIndex(where: { $0.id == draggedBlockId }),
-              let targetIndex = items.firstIndex(where: { $0.id == targetBlockId }),
-              draggedBlockId != targetBlockId else {
-            return
-        }
-
-        // `move(fromOffsets:toOffset:)` interprets `toOffset` as an index
-        // into the array *before* the moved element is removed, and then
-        // inserts the moved element just before whatever ends up at that
-        // index post-removal. When the dragged block starts above the
-        // target, removing it shifts the target (and everything between
-        // them) up by one — so `toOffset == targetIndex` lands the dragged
-        // block directly above the target either way.
-        let destination = targetIndex
-        reorderBlocks(fromOffsets: IndexSet(integer: fromIndex), toOffset: destination)
-    }
 }

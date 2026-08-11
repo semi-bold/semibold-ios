@@ -24,12 +24,14 @@ struct DocumentItemRepository {
         self.context = context
     }
 
-    /// Inserts a new content item.
+    /// Inserts a new content item. Pass `save: false` to fold this into a
+    /// caller's `context.withTransaction { ... }` alongside other
+    /// repository mutations instead of committing on its own.
     @discardableResult
-    func create(_ item: DocumentItem) throws -> DocumentItem {
+    func create(_ item: DocumentItem, save: Bool = true) throws -> DocumentItem {
         let entity = DocumentItemEntity(context: context)
         apply(item, to: entity)
-        try context.save()
+        if save { try context.save() }
         return item
     }
 
@@ -61,29 +63,34 @@ struct DocumentItemRepository {
         return try context.fetch(request).map(DocumentItem.init(entity:))
     }
 
-    /// Saves changes to an existing item, refreshing `updatedAt`.
+    /// Saves changes to an existing item, refreshing `updatedAt`. Pass
+    /// `save: false` to fold this into a caller's `context.withTransaction
+    /// { ... }` alongside other repository mutations instead of
+    /// committing on its own.
     @discardableResult
-    func update(_ item: DocumentItem) throws -> DocumentItem {
+    func update(_ item: DocumentItem, save: Bool = true) throws -> DocumentItem {
         var updated = item
         updated.updatedAt = Date()
         guard let entity = try fetchEntity(id: updated.id) else {
             throw RepositoryError.recordNotFound
         }
         apply(updated, to: entity)
-        try context.save()
+        if save { try context.save() }
         return updated
     }
 
     /// Marks an item as deleted without removing its row, so it can be
-    /// restored later.
-    func softDelete(id: String) throws {
+    /// restored later. Pass `save: false` to fold this into a caller's
+    /// `context.withTransaction { ... }` alongside other repository
+    /// mutations instead of committing on its own.
+    func softDelete(id: String, save: Bool = true) throws {
         guard let entity = try fetchEntity(id: id) else {
             throw RepositoryError.recordNotFound
         }
         let now = Date()
         entity.deletedAt = now
         entity.updatedAt = now
-        try context.save()
+        if save { try context.save() }
     }
 
     /// Permanently removes an item row, its entire nested subtree, and

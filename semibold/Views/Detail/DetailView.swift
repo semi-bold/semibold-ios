@@ -23,6 +23,12 @@ struct DetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
+    /// Whether the navigation drawer (`icon_menu` in
+    /// `Planning_Nav_1_TopBarFlow`) is showing — presented via
+    /// `SidebarDrawerView`, `03-sidebar-drawer`'s search-first drawer
+    /// (`Planning_Nav_2_DrawerFlow`).
+    @State private var isDrawerPresented = false
+
     init(document: Document) {
         _viewModel = State(initialValue: DetailViewModel(document: document))
     }
@@ -40,6 +46,15 @@ struct DetailView: View {
         }
         .background(AppTheme.Colors.Neutral.n900)
         .background(keyboardShortcuts)
+        .overlay {
+            // This screen is itself a pushed `Document.self` destination
+            // registered once at `HomeView`'s `NavigationStack` root — the
+            // drawer's search-result rows push through that same
+            // registration, the same way `HomeView`/`FolderContentsView`'s
+            // own `FolderRow`/`DocumentRow` rows do (`SidebarDrawerView`'s
+            // doc comment).
+            SidebarDrawerView(isPresented: $isDrawerPresented)
+        }
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             viewModel.load()
@@ -49,6 +64,13 @@ struct DetailView: View {
             focusedBlockId = newValue
             cursorOffsetToApply = viewModel.focusedBlockCursorOffset
             viewModel.focusHandled()
+        }
+        .onChange(of: viewModel.blockIdToDefocus) { _, newValue in
+            guard let newValue else { return }
+            if focusedBlockId == newValue {
+                focusedBlockId = nil
+            }
+            viewModel.defocusHandled()
         }
         .onChange(of: scenePhase) { _, newPhase in
             // Flush any debounced block edits before the app moves to the
@@ -85,21 +107,6 @@ struct DetailView: View {
             // create, or delete couldn't be persisted.
             Text(message)
         }
-        .alert(
-            "잠금",
-            isPresented: lockNoticeAlertPresented,
-            presenting: viewModel.lockNotice
-        ) { _ in
-            Button("OK") {
-                viewModel.lockNotice = nil
-            }
-        } message: { message in
-            // `Planning_9_SwipeActionFlow` callout ⑤ — Secret Lock's
-            // actual encryption is out of scope for now, so the "잠금"
-            // swipe action just confirms it's coming rather than doing
-            // nothing.
-            Text(message)
-        }
     }
 
     /// Whether the §15.2 save/delete-failure alert is shown — driven by
@@ -127,20 +134,6 @@ struct DetailView: View {
             set: { isPresented in
                 if !isPresented {
                     viewModel.dismissSlashCommand()
-                }
-            }
-        )
-    }
-
-    /// Whether the "잠금" swipe action's not-yet-supported notice is
-    /// shown — driven by `viewModel.lockNotice`. Dismissing it clears the
-    /// message so it doesn't reappear.
-    private var lockNoticeAlertPresented: Binding<Bool> {
-        Binding(
-            get: { viewModel.lockNotice != nil },
-            set: { isPresented in
-                if !isPresented {
-                    viewModel.lockNotice = nil
                 }
             }
         )
@@ -195,10 +188,13 @@ struct DetailView: View {
 
     /// Top bar with a back button to return to wherever this document was
     /// opened from — `HomeView`'s document list for a root-level document,
-    /// or the owning `FolderContentsView` for one filed inside a folder, in
-    /// which case the label names that folder instead of staying generic
-    /// (`viewModel.backButtonText`, mirroring
-    /// `Planning_6_FolderNavigationFlow` callout ①).
+    /// or the owning `FolderContentsView` for one filed inside a folder.
+    /// Icon-only (a house for root, a chevron for a nested folder), the
+    /// same as `FolderContentsView`'s back button
+    /// (`viewModel.backButtonLabel`, mirroring
+    /// `Planning_6_FolderNavigationFlow` callout ①) — the destination
+    /// folder's name isn't shown as text here either, so it can't break
+    /// the NavBar's layout however long it is.
     ///
     /// The wireframe also shows a "잠금" (lock) button on the right
     /// (`DocLockBtn`) — that's Secret Lock, explicitly out of this
@@ -211,20 +207,27 @@ struct DetailView: View {
     /// "잠금" button is shown there, and that's the out-of-scope Secret Lock
     /// button above), so this reuses the back button's row/typography and a
     /// standard SF Symbol share icon rather than inventing new layout.
+    ///
+    /// A menu (hamburger) button joins it in the trailing group as of
+    /// `Planning_Nav_1_TopBarFlow` (FLOW-NAV-001) — this NavBar previously
+    /// had no trailing element besides `exportShareLink`; same trailing
+    /// inset/spacing as `HomeView`/`FolderContentsView` use for their own
+    /// menu buttons.
     private var navBar: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: AppTheme.Spacing.sm) {
                 Button {
                     dismiss()
                 } label: {
-                    Text(viewModel.backButtonText)
-                        .appTextStyle(AppTheme.Typography.body)
-                        .foregroundStyle(AppTheme.Colors.accent)
+                    BackButtonIcon(label: viewModel.backButtonLabel)
                 }
+                .accessibilityLabel(viewModel.backButtonLabel.accessibilityLabel)
 
                 Spacer()
 
                 exportShareLink
+
+                menuButton
             }
             .padding(.horizontal, AppTheme.Spacing.md)
             .frame(height: 52)
@@ -234,6 +237,13 @@ struct DetailView: View {
                 .frame(height: 1)
         }
         .background(AppTheme.Colors.Neutral.n800)
+    }
+
+    /// Opens the navigation drawer (`icon_menu` — `Planning_Nav_1_TopBarFlow`).
+    private var menuButton: some View {
+        MenuButton {
+            isDrawerPresented = true
+        }
     }
 
     /// "파일 저장 또는 공유" (§10.3's final step): shares the document's
@@ -296,6 +306,10 @@ struct DetailView: View {
     /// so this list is never empty by the time it's shown.
     private var blockList: some View {
         ScrollView {
+            // The top padding is breathing room below the title area's
+            // divider line, above the first block only — each block row's
+            // own vertical padding (`AppTheme.Spacing.sm`) already governs
+            // the gap *between* blocks, so this doesn't affect that.
             LazyVStack(spacing: 0) {
                 ForEach(viewModel.items) { item in
                     BlockRow(
@@ -315,25 +329,11 @@ struct DetailView: View {
                         },
                         onToggleChecklist: {
                             viewModel.toggleChecklistItem(blockId: item.id)
-                        },
-                        onLockTapped: {
-                            viewModel.lockBlockTapped(item.id)
                         }
                     )
-                    // Drag & drop block reordering (§12.3): dropping
-                    // another block onto this row moves it to this row's
-                    // position (PLANNING §11.2 "블록 생성/삭제/순서 변경: 즉시
-                    // 저장" — `moveBlock(id:beforeBlockId:)` persists the new
-                    // `orderKey` right away, no debounce). The drag itself
-                    // starts from `BlockRow`'s trailing grip handle, so it
-                    // doesn't conflict with tapping into the row to edit.
-                    .dropDestination(for: String.self) { droppedIds, _ in
-                        guard let draggedBlockId = droppedIds.first else { return false }
-                        viewModel.moveBlock(id: draggedBlockId, beforeBlockId: item.id)
-                        return true
-                    }
                 }
             }
+            .padding(.top, AppTheme.Spacing.md)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(AppTheme.Colors.Neutral.n900)
@@ -355,12 +355,18 @@ struct DetailView: View {
     /// input underneath, and it disappears as soon as the user types
     /// anything (Markdown) or presses `/` (which opens the Slash Command
     /// sheet from the previous AC).
+    ///
+    /// Top padding is `blockList`'s `LazyVStack` top padding plus the
+    /// block row's own vertical padding, matching where that (only) empty
+    /// block's text actually sits — this overlay is positioned relative to
+    /// `blockList`/`ScrollView`, not the `LazyVStack` itself.
     private var emptyContentPlaceholder: some View {
         Text("Markdown으로 작성하거나 / 를 눌러 블록을 추가하세요.")
             .appTextStyle(AppTheme.Typography.body)
             .foregroundStyle(AppTheme.Colors.Content.secondary)
             .padding(.horizontal, AppTheme.Spacing.md)
-            .padding(.vertical, AppTheme.Spacing.md)
+            .padding(.top, AppTheme.Spacing.md + AppTheme.Spacing.sm)
+            .padding(.bottom, AppTheme.Spacing.sm)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
@@ -380,11 +386,9 @@ struct DetailView: View {
 /// (§7.1/§7.3's ` ```lang ` syntax).
 ///
 /// Backed by a `DocumentItem` (`item` — position/hierarchy) plus that
-/// item's `TextContent` (`content` — the actual text), per
-/// `DetailViewModel`'s NO-005 model, rather than the old single
-/// `DocumentBlock`. `content.textKind` is compared against `TextItemKind`'s
-/// constants rather than a closed `BlockType` enum — see
-/// `DetailViewModel.swift`'s `TextItemKind` doc comment.
+/// item's `TextContent` (`content` — the actual text). `content.textKind`
+/// is compared against `TextItemKind`'s constants rather than a closed
+/// enum — see `DetailViewModel.swift`'s `TextItemKind` doc comment.
 private struct BlockRow: View {
     let item: DocumentItem
     let content: TextContent
@@ -398,9 +402,27 @@ private struct BlockRow: View {
     let onEnter: (String, Int) -> Void
     let onBackspaceAtStart: (String) -> Void
     let onToggleChecklist: () -> Void
-    let onLockTapped: () -> Void
 
-    @State private var text: String
+    /// Reads straight from `content.plainText` (the view model's source of
+    /// truth) rather than mirroring it into a separate local `@State` —
+    /// keystrokes still flow out via `onTextChange`, so this binding's
+    /// setter is a no-op, and `ParagraphTextField.updateUIView` picks up
+    /// the authoritative value on every render.
+    ///
+    /// A local echo used to exist here, kept in sync via
+    /// `.onChange(of: content.plainText)`, but that only fires when the
+    /// value actually differs between renders — which silently broke the
+    /// Slash Command flow: typing `/` writes `"/"` into the `UITextView`
+    /// directly (see `ParagraphTextField.Coordinator.textViewDidChange`),
+    /// then `updateBlockText` clears the block straight back to the
+    /// empty string it already was (`"" → "/" → ""`, a net no-op from the
+    /// view model's perspective), so the `onChange` never fired and the
+    /// stray `/` stuck around in the text field even after picking a type
+    /// from the sheet. Deriving directly from `content.plainText` removes
+    /// the second copy of the truth instead of patching the sync.
+    private var text: Binding<String> {
+        Binding(get: { content.plainText }, set: { _ in })
+    }
 
     init(
         item: DocumentItem,
@@ -411,8 +433,7 @@ private struct BlockRow: View {
         onTextChange: @escaping (String) -> Void,
         onEnter: @escaping (String, Int) -> Void,
         onBackspaceAtStart: @escaping (String) -> Void,
-        onToggleChecklist: @escaping () -> Void,
-        onLockTapped: @escaping () -> Void
+        onToggleChecklist: @escaping () -> Void
     ) {
         self.item = item
         self.content = content
@@ -423,8 +444,6 @@ private struct BlockRow: View {
         self.onEnter = onEnter
         self.onBackspaceAtStart = onBackspaceAtStart
         self.onToggleChecklist = onToggleChecklist
-        self.onLockTapped = onLockTapped
-        _text = State(initialValue: content.plainText)
     }
 
     /// The typography this block's text is shown in — heading levels 1-3
@@ -475,273 +494,129 @@ private struct BlockRow: View {
         content.textKind == TextItemKind.divider
     }
 
+    /// Whether this row is currently showing the rendered `---` rule
+    /// rather than its editable text — a divider that isn't focused.
+    private var showsDividerRule: Bool {
+        isDivider && focusedBlockId.wrappedValue != item.id
+    }
+
+    /// Always renders `editableBody` — critically, this means the
+    /// `ParagraphTextField` underneath a divider's rule is never
+    /// destroyed/recreated when focus moves in and out of it. An earlier
+    /// version swapped between two entirely different view trees (a bare
+    /// `Rectangle` vs. the text field) based on focus, which meant tapping
+    /// the rule had to simultaneously *insert* a brand-new
+    /// `ParagraphTextField` *and* focus it in the same update — a known
+    /// fragile SwiftUI/UIKit interop timing case (this custom
+    /// `UIViewRepresentable` has no explicit `becomeFirstResponder()` of
+    /// its own; it relies entirely on `.focused()` finding an
+    /// already-attached view) — which silently failed to ever bring up
+    /// the keyboard, making the rule untappable in practice. Keeping the
+    /// text field permanently in the tree and overlaying the rule visual
+    /// on top (`editableBody`) reuses the exact same always-present
+    /// mechanism every other block type already focuses reliably.
     var body: some View {
-        if isDivider {
-            dividerBody
-        } else {
-            // The drag handle is a sibling of the swipe-wrapped editable
-            // content, not nested inside it — `SwipeToRevealLockAction`
-            // attaches its own left-swipe `DragGesture` to whatever it
-            // wraps, so the reorder handle's long-press-then-pan
-            // `.draggable` gesture needs to live outside that subtree
-            // entirely to avoid both gestures recognizing the same touch.
-            HStack(alignment: .top, spacing: 0) {
-                SwipeToRevealLockAction(onLockTapped: onLockTapped) {
-                    editableBody
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                dragHandle
-                    .padding(.top, AppTheme.Spacing.md + (textStyle.lineHeight - AppTheme.Spacing.lg) / 2)
-                    .padding(.trailing, AppTheme.Spacing.md)
-                    .background(AppTheme.Colors.Neutral.n900)
-            }
-        }
-    }
-
-    /// A divider block's row: a horizontal rule, matching the visual
-    /// language of a Markdown `---` divider. Not editable — there's no
-    /// `ParagraphTextField` for a divider since it has no text content
-    /// (§8.1 `{ type: "divider" }`).
-    private var dividerBody: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: AppTheme.Spacing.sm) {
-                Rectangle()
-                    .fill(AppTheme.Colors.Stroke.border)
-                    .frame(height: 1)
-
-                dragHandle
-            }
-            .padding(.horizontal, AppTheme.Spacing.md)
-            .padding(.vertical, AppTheme.Spacing.lg)
-
-            Rectangle()
-                .fill(AppTheme.Colors.Stroke.divider)
-                .frame(height: 1)
-        }
-        .background(AppTheme.Colors.Neutral.n900)
-    }
-
-    /// A small grip icon at the trailing edge of a block row — the drag
-    /// source for §12.3's drag & drop reordering. Long-pressing it and
-    /// dragging onto another row moves this block to that row's position
-    /// (`DetailView.blockList`'s `.dropDestination` handles the drop).
-    private var dragHandle: some View {
-        Image(systemName: "line.3.horizontal")
-            .foregroundStyle(AppTheme.Colors.Content.secondary)
-            .frame(width: AppTheme.Spacing.lg, height: AppTheme.Spacing.lg)
-            .draggable(item.id)
+        editableBody
     }
 
     private var editableBody: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                // A code block's fence language identifier (e.g. `swift`
-                // for ` ```swift `) isn't modeled on `TextContent` — see
-                // `DetailViewModel.updateBlockText`'s doc comment — so
-                // unlike the pre-NO-005 editor, no language caption shows
-                // above the code here.
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+            // A code block's fence language identifier (e.g. `swift`
+            // for ` ```swift `) isn't modeled on `TextContent` — see
+            // `DetailViewModel.updateBlockText`'s doc comment — so
+            // unlike the pre-NO-005 editor, no language caption shows
+            // above the code here.
 
-                HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
-                    if let listMarker {
-                        Text(listMarker)
-                            .appTextStyle(textStyle)
-                            .foregroundStyle(AppTheme.Colors.Content.primary)
-                            .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
-                    } else if content.textKind == TextItemKind.checklist {
-                        let isChecked = content.isChecked ?? false
-                        Button(action: onToggleChecklist) {
-                            Image(systemName: isChecked ? "checkmark.square" : "square")
-                                .foregroundStyle(isChecked ? AppTheme.Colors.accent : AppTheme.Colors.Content.secondary)
-                        }
-                        .buttonStyle(.plain)
+            // No spacing beyond the marker column's own `minWidth`
+            // below (unchanged) — the previous `AppTheme.Spacing.sm`
+            // (8pt) gap on top of that column left too much empty
+            // space between a marker (bullet/number/checkbox/quote
+            // bar) and its text.
+            HStack(alignment: .top, spacing: 0) {
+                if let listMarker {
+                    Text(listMarker)
+                        .appTextStyle(textStyle)
+                        .foregroundStyle(AppTheme.Colors.Content.primary)
                         .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
-                        .frame(height: textStyle.lineHeight, alignment: .center)
-                    } else if content.textKind == TextItemKind.quote {
-                        Rectangle()
-                            .fill(AppTheme.Colors.Stroke.border)
-                            .frame(width: AppTheme.Spacing.xs)
-                            .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+                } else if content.textKind == TextItemKind.checklist {
+                    let isChecked = content.isChecked ?? false
+                    Button(action: onToggleChecklist) {
+                        Image(systemName: isChecked ? "checkmark.square" : "square")
+                            .foregroundStyle(isChecked ? AppTheme.Colors.accent : AppTheme.Colors.Content.secondary)
                     }
+                    .buttonStyle(.plain)
+                    .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+                    .frame(height: textStyle.lineHeight, alignment: .center)
+                } else if content.textKind == TextItemKind.quote {
+                    Rectangle()
+                        .fill(AppTheme.Colors.Stroke.border)
+                        .frame(width: AppTheme.Spacing.xs)
+                        .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+                }
 
+                ZStack(alignment: .leading) {
+                    // Always at full opacity (alpha 1), even while the
+                    // divider rule is drawn on top of it
+                    // (`showsDividerRule`) — a `UIViewRepresentable`-wrapped
+                    // `UITextView` whose SwiftUI `.opacity()` is 0 gets its
+                    // real `UIView.alpha` set to 0 too, and UIKit's own
+                    // `hitTest(_:with:)` refuses to hit-test any view with
+                    // `alpha < 0.01` *regardless* of SwiftUI's
+                    // `allowsHitTesting` — a rule `.allowsHitTesting()`
+                    // can't override, since it only affects SwiftUI's own
+                    // hit-testing pass, not UIKit's. Hiding this via
+                    // opacity (an earlier version of this fix) therefore
+                    // made it — and everything behind it — completely
+                    // untappable while a divider's rule was showing.
+                    //
+                    // Staying opaque keeps a tap anywhere on the row
+                    // reaching this real `UITextView` directly, focusing it
+                    // through the ordinary native UIKit path (touch →
+                    // `becomeFirstResponder()` → `.focused()` observes the
+                    // change) — the same reliable mechanism every other
+                    // block type already uses. The `"---"` text itself is
+                    // hidden by matching its color to the row's background
+                    // instead (`showsDividerRule ? background : textColor`
+                    // below), which only affects what's drawn, not the
+                    // view's alpha/hit-testability.
                     ParagraphTextField(
-                        text: $text,
+                        text: text,
                         textStyle: textStyle,
-                        textColor: textColor,
+                        textColor: showsDividerRule ? AppTheme.Colors.Neutral.n900 : textColor,
                         isMonospaced: isCodeBlock,
                         onTextChange: onTextChange,
                         onEnter: { cursorOffset in
-                            onEnter(text, cursorOffset)
+                            onEnter(content.plainText, cursorOffset)
                         },
                         onBackspaceAtStart: {
-                            onBackspaceAtStart(text)
+                            onBackspaceAtStart(content.plainText)
                         },
                         cursorOffsetToApply: focusedBlockId.wrappedValue == item.id ? $cursorOffsetToApply : .constant(nil)
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .focused(focusedBlockId, equals: item.id)
+
+                    // A divider block's `"---"` text sits underneath this
+                    // rule (color-matched to the background, invisible)
+                    // whenever it isn't focused. Purely a visual overlay —
+                    // `allowsHitTesting(false)` lets every tap pass
+                    // straight through to the text field above, which
+                    // reveals the literal `"---"` for editing/deleting once
+                    // it's focused (see that field's comment above for why
+                    // taps aren't handled here instead).
+                    Rectangle()
+                        .fill(AppTheme.Colors.Stroke.border)
+                        .frame(height: 1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .opacity(showsDividerRule ? 1 : 0)
+                        .allowsHitTesting(false)
                 }
-            }
-            .padding(.horizontal, AppTheme.Spacing.md)
-            .padding(.vertical, AppTheme.Spacing.md)
-            .background(isCodeBlock ? AppTheme.Colors.Neutral.n700 : AppTheme.Colors.Neutral.n900)
-
-            Rectangle()
-                .fill(AppTheme.Colors.Stroke.divider)
-                .frame(height: 1)
-        }
-        .background(AppTheme.Colors.Neutral.n900)
-        .onChange(of: content.plainText) { _, newText in
-            // Keep this row's text in sync when the view model changes
-            // `content`'s text without the user typing here directly —
-            // e.g. a later block's Backspace-at-start merge appends its
-            // text onto the end of this block.
-            if text != newText {
-                text = newText
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-    }
-}
-
-/// Reveals a "잠금" (lock) button when its content is swiped left, matching
-/// `iOS_SwipeAction`'s `SwipeAction_Lock` layer (`Planning_9_SwipeActionFlow`
-/// callout ⑤): an 80pt-wide button with a lock icon and label.
-///
-/// `DetailView`'s block list is a `ScrollView`/`LazyVStack` rather than a
-/// `List`, so the standard `.swipeActions(edge:)` modifier (used for the
-/// folder/document row actions elsewhere in this app) isn't available
-/// here — it only attaches to `List` rows. This reproduces the same
-/// swipe-to-reveal interaction with a `DragGesture` that drags `content`
-/// left to reveal the button underneath, snapping open past a small
-/// threshold and closed otherwise, the same left-swipe gesture pattern
-/// the wireframe shows for both HomeView rows and editor blocks.
-private enum SwipeToRevealLockActionLayout {
-    /// The lock button's fixed width, matching `SwipeAction_Lock`'s `w=80`
-    /// frame in the wireframe (same width as the HomeView row actions).
-    static let actionWidth: CGFloat = 80
-}
-
-private struct SwipeToRevealLockAction<Content: View>: View {
-    let onLockTapped: () -> Void
-    @ViewBuilder let content: () -> Content
-
-    @State private var dragTranslation: CGFloat = 0
-    @State private var isRevealed = false
-
-    private var revealOffset: CGFloat {
-        isRevealed ? -SwipeToRevealLockActionLayout.actionWidth : 0
-    }
-
-    private var currentOffset: CGFloat {
-        let proposed = revealOffset + dragTranslation
-        // Only allow swiping left (to reveal) or back right (to close) —
-        // never past fully open or back into a rightward overscroll.
-        return min(0, max(-SwipeToRevealLockActionLayout.actionWidth, proposed))
-    }
-
-    var body: some View {
-        ZStack(alignment: .trailing) {
-            lockButton
-
-            content()
-                .background(AppTheme.Colors.Neutral.n900)
-                .offset(x: currentOffset)
-                // `.simultaneousGesture` (rather than `.gesture`) so this
-                // doesn't steal the tap-to-focus/cursor-placement gestures
-                // `ParagraphTextField`'s underlying `UITextView` and the
-                // drag handle's `.draggable` need — it only recognizes a
-                // genuine horizontal drag, which those don't.
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 16)
-                        .onChanged { value in
-                            // Only react to a horizontal drag, so this
-                            // doesn't fight the editor's own vertical
-                            // scrolling or the text view's own touch
-                            // handling.
-                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                            dragTranslation = value.translation.width
-                        }
-                        .onEnded { value in
-                            // Same axis-dominance check as `.onChanged` —
-                            // without it, a mostly-vertical gesture (e.g.
-                            // scrolling) that happened to clear the 16pt
-                            // minimum distance could still flip
-                            // `isRevealed` here based on a stale/diagonal
-                            // translation even though `dragTranslation`
-                            // was never updated for it. Still snap back to
-                            // wherever it was before this gesture
-                            // (`dragTranslation = 0`) so the row doesn't
-                            // stay visually offset if it was horizontal for
-                            // a moment earlier in the same gesture.
-                            guard abs(value.translation.width) > abs(value.translation.height) else {
-                                withAnimation(.easeOut(duration: 0.2)) {
-                                    dragTranslation = 0
-                                }
-                                return
-                            }
-                            let projected = revealOffset + value.translation.width
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                isRevealed = projected < -SwipeToRevealLockActionLayout.actionWidth / 2
-                                dragTranslation = 0
-                            }
-                        }
-                )
-                // While the lock button is showing, a plain tap anywhere
-                // on the block closes it again — same as tapping away from
-                // a `.swipeActions` row elsewhere in this app. Only added
-                // while revealed, so it never competes with the text
-                // view's own tap-to-place-cursor handling during normal
-                // editing.
-                .modifier(CloseOnTapIfRevealed(isRevealed: $isRevealed))
-        }
-        .clipped()
-    }
-
-    /// The "잠금" button itself, matching `SwipeAction_Lock`'s lock icon +
-    /// label — a neutral gray fill (distinct from the destructive red used
-    /// for folder/document delete) since locking a block isn't destructive.
-    /// Fills the row's full (variable) height, like the system
-    /// `.swipeActions` buttons used for the folder/document rows.
-    private var lockButton: some View {
-        Button {
-            withAnimation(.easeOut(duration: 0.2)) {
-                isRevealed = false
-            }
-            onLockTapped()
-        } label: {
-            VStack(spacing: AppTheme.Spacing.xs) {
-                Image(systemName: "lock.fill")
-                    .foregroundStyle(AppTheme.Colors.Content.primary)
-
-                Text("잠금")
-                    .appTextStyle(AppTheme.Typography.caption)
-                    .foregroundStyle(AppTheme.Colors.Content.primary)
-            }
-            .frame(width: SwipeToRevealLockActionLayout.actionWidth)
-            .frame(maxHeight: .infinity)
-            .background(AppTheme.Colors.Neutral.n600)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-/// Adds a tap-to-close gesture only while a `SwipeToRevealLockAction` row
-/// is in its revealed state — never present otherwise, so it can't
-/// intercept the normal tap-to-focus interaction on the block content
-/// underneath during regular editing.
-private struct CloseOnTapIfRevealed: ViewModifier {
-    @Binding var isRevealed: Bool
-
-    func body(content: Content) -> some View {
-        if isRevealed {
-            content.onTapGesture {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    isRevealed = false
-                }
-            }
-        } else {
-            content
-        }
+        .padding(.horizontal, AppTheme.Spacing.md)
+        .padding(.vertical, showsDividerRule ? AppTheme.Spacing.lg : AppTheme.Spacing.sm)
+        .background(isCodeBlock ? AppTheme.Colors.Neutral.n700 : AppTheme.Colors.Neutral.n900)
     }
 }
 
@@ -749,4 +624,5 @@ private struct CloseOnTapIfRevealed: ViewModifier {
     NavigationStack {
         DetailView(document: Document(title: "오늘의 일기"))
     }
+    .environment(AccountActionCenter())
 }

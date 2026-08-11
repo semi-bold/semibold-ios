@@ -73,6 +73,25 @@ struct AssetRepository {
         try context.save()
     }
 
+    /// Permanently removes every asset row — including already soft-deleted
+    /// ones, with no other filter. `Asset` rows aren't reachable by
+    /// walking the folder/document tree the way `FolderRepository.
+    /// hardDeleteAll()`/`DocumentRepository.hardDeleteAll()`'s cascades
+    /// are (a `MediaItem` only references an asset by id, and assets can
+    /// be shared across items — see this type's doc comment), so a full
+    /// account wipe needs this as its own explicit step. Deletes every row
+    /// in memory first and commits with a single `context.save()`, rather
+    /// than one save per row.
+    func hardDeleteAll() throws {
+        let request = AssetEntity.fetchRequest()
+        let entities = try context.fetch(request)
+        guard !entities.isEmpty else { return }
+        for entity in entities {
+            context.delete(entity)
+        }
+        try context.save()
+    }
+
     private func fetchEntity(id: String) throws -> AssetEntity? {
         let request = AssetEntity.fetchRequest()
         request.predicate = NSPredicate(format: "id == %@", id)
