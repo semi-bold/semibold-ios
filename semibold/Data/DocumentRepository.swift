@@ -160,6 +160,23 @@ struct DocumentRepository {
         }
     }
 
+    /// Permanently removes every root-level document (`folder == nil`) —
+    /// including ones already soft-deleted, not just live ones. Each root
+    /// document's own `hardDelete(id:)` already cascades through its
+    /// entire `DocumentItem` subtree, so calling this for every root
+    /// document clears every top-level `Document` and its content rows.
+    /// Used alongside `FolderRepository.hardDeleteAll()` by account
+    /// deletion's full local wipe (`tasks/NO-008.md` §5.2) — not for
+    /// everyday delete-document UI, which soft-deletes instead.
+    func hardDeleteAll() throws {
+        let request = DocumentEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "folder == nil")
+        for entity in try context.fetch(request) {
+            guard let id = entity.id else { continue }
+            try hardDelete(id: id)
+        }
+    }
+
     private func fetchEntity(id: String) throws -> DocumentEntity? {
         let request = DocumentEntity.fetchRequest()
         request.predicate = NSPredicate(format: "id == %@", id)

@@ -154,6 +154,23 @@ struct FolderRepository {
         }
     }
 
+    /// Permanently removes every root-level folder (`parent == nil`) —
+    /// including ones already soft-deleted, not just live ones. Each root
+    /// folder's own `hardDelete(id:)` already cascades through its entire
+    /// subtree, so calling this for every root folder clears every
+    /// `Folder`/`Document`/`DocumentItem`/`TextItem`/`TextMark`/`MediaItem`
+    /// row in the store. Used by account deletion's full local wipe
+    /// (`tasks/NO-008.md` §5.2) — not for everyday delete-folder UI, which
+    /// soft-deletes instead.
+    func hardDeleteAll() throws {
+        let request = FolderEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "parent == nil")
+        for entity in try context.fetch(request) {
+            guard let id = entity.id else { continue }
+            try hardDelete(id: id)
+        }
+    }
+
     private func fetchEntity(id: String) throws -> FolderEntity? {
         let request = FolderEntity.fetchRequest()
         request.predicate = NSPredicate(format: "id == %@", id)

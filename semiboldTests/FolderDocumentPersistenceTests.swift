@@ -111,6 +111,51 @@ struct FolderDocumentPersistenceTests {
         #expect(viewModel.backButtonLabel == .root)
     }
 
+    @Test("FolderRepository.hardDeleteAll purges every root folder, including already soft-deleted ones and their subtrees")
+    func folderHardDeleteAllPurgesLiveAndSoftDeletedRootFolders() throws {
+        let store = try makeStore()
+        let folderRepository = FolderRepository(context: store.context)
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let liveRoot = try folderRepository.create(Folder(name: "Live Root"))
+        let nested = try folderRepository.create(Folder(parentId: liveRoot.id, name: "Nested"))
+        let nestedDocument = try documentRepository.create(Document(folderId: nested.id, title: "Nested Doc"))
+
+        // Already soft-deleted before the wipe — proves hardDeleteAll doesn't
+        // filter by deletedAt the way children(of:) does.
+        let softDeletedRoot = try folderRepository.create(Folder(name: "Already Deleted Root"))
+        try folderRepository.softDelete(id: softDeletedRoot.id)
+
+        try folderRepository.hardDeleteAll()
+
+        #expect(try folderRepository.find(id: liveRoot.id) == nil)
+        #expect(try folderRepository.find(id: nested.id) == nil)
+        #expect(try folderRepository.find(id: softDeletedRoot.id) == nil)
+        #expect(try documentRepository.find(id: nestedDocument.id) == nil)
+    }
+
+    @Test("DocumentRepository.hardDeleteAll purges every root document, including already soft-deleted ones")
+    func documentHardDeleteAllPurgesLiveAndSoftDeletedRootDocuments() throws {
+        let store = try makeStore()
+        let folderRepository = FolderRepository(context: store.context)
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let liveRootDocument = try documentRepository.create(Document(title: "Live Root Doc"))
+        let folder = try folderRepository.create(Folder(name: "Some Folder"))
+        // Not a root document (it's inside `folder`) — must be untouched by
+        // hardDeleteAll's `folder == nil` predicate.
+        let nestedDocument = try documentRepository.create(Document(folderId: folder.id, title: "Nested Doc"))
+
+        let softDeletedRootDocument = try documentRepository.create(Document(title: "Already Deleted Root Doc"))
+        try documentRepository.softDelete(id: softDeletedRootDocument.id)
+
+        try documentRepository.hardDeleteAll()
+
+        #expect(try documentRepository.find(id: liveRootDocument.id) == nil)
+        #expect(try documentRepository.find(id: softDeletedRootDocument.id) == nil)
+        #expect(try documentRepository.find(id: nestedDocument.id) != nil)
+    }
+
     @Test("FolderContentsViewModel resolves the parent folder's name as the back label for a nested folder")
     func folderContentsViewModelResolvesParentNameBackLabel() throws {
         let store = try makeStore()

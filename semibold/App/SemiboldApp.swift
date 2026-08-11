@@ -79,19 +79,17 @@ struct SemiboldApp: App {
                     .environment(commandCenter)
                     .environment(accountActionCenter)
                     .onAppear {
-                        // `deleteAccount` still defaults to a no-op
-                        // (05-account-deletion's job to wire it to the real
-                        // hard-delete + reset-to-onboarding flow);
-                        // `resetToOnboarding` is assigned onto the shared
+                        // Both closures are assigned onto the shared
                         // `accountActionCenter` instance here rather than
-                        // passed to an initializer, since it captures
+                        // passed to an initializer, since each captures
                         // `self` and can't be supplied at `@State`
                         // construction time. `accountActionCenter` itself
                         // is built once (see its declaration above), so
-                        // this only ever updates the closure stored on
+                        // this only ever updates the closures stored on
                         // that one shared instance — it never creates a
                         // new `AccountActionCenter`.
                         accountActionCenter.resetToOnboarding = resetToOnboarding
+                        accountActionCenter.deleteAccount = deleteAccount
                     }
             }
             }
@@ -131,6 +129,49 @@ struct SemiboldApp: App {
     /// tooltip's "로그아웃" alert, `04-account-tooltip-and-alerts`), so
     /// both call the exact same path instead of drifting apart.
     private func resetToOnboarding() {
+        KeychainSessionStore().delete()
+        DatabaseManager.resetShared()
+        launchState = .showOnboarding
+    }
+
+    // MARK: - Account deletion (tasks/NO-008.md §5.2)
+
+    /// Permanently deletes the account: wipes every folder/document/content
+    /// row from the local store, then follows the exact same "end the
+    /// session and go to onboarding" steps as `resetToOnboarding()` above.
+    /// Wired onto `AccountActionCenter.deleteAccount` from `.home`'s
+    /// `.onAppear`, and called from the drawer's "탈퇴하기" confirm alert
+    /// (`SidebarDrawerView`, `04-account-tooltip-and-alerts`).
+    ///
+    /// The hard-delete must run against the still-live `DatabaseManager.
+    /// shared` store *before* `DatabaseManager.resetShared()` — `resetShared()`
+    /// only clears the cached in-memory reference to the store, it never
+    /// touches the on-disk file, so wiping after resetting would just
+    /// discard the reference to a store that was never actually cleared.
+    ///
+    /// Local-mode and iCloud-mode sessions get exactly the same treatment
+    /// here — `AccountDataWipe.wipeAll()` reads/writes through whichever
+    /// store (`local.sqlite`/`cloud.sqlite`) the current session's
+    /// `DatabaseManager` already points at, so there's no sync-mode
+    /// branching to do. For an iCloud-mode session this only guarantees the
+    /// *local* mirror is wiped — whether/how to also guarantee the
+    /// CloudKit-side copy is removed (rather than relying on
+    /// `NSPersistentCloudKitContainer`'s best-effort, non-immediate export
+    /// of local deletes) is a known open question (`tasks/NO-008.md` §5.2),
+    /// not solved here.
+    private func deleteAccount() {
+        do {
+            try AccountDataWipe.wipeAll()
+        } catch {
+            // Nothing meaningful to recover to if the wipe itself fails
+            // partway — surfacing a retry UI is out of scope for this
+            // brief, so this just logs for on-device debugging and still
+            // proceeds to end the session below, matching how
+            // `checkAppleCredentialRevocation` treats Keychain/session
+            // state as the source of truth for "am I signed in", not the
+            // content that happens to still be on disk.
+            print("⚠️ AccountDataWipe.wipeAll failed during account deletion: \(error)")
+        }
         KeychainSessionStore().delete()
         DatabaseManager.resetShared()
         launchState = .showOnboarding
