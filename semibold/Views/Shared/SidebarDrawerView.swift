@@ -30,14 +30,29 @@ import SwiftUI
 struct SidebarDrawerView: View {
     @Binding var isPresented: Bool
 
-    /// Tap hook for the bottom account row. No behavior yet — the tooltip
-    /// menu (logout/withdraw) it should open is `04-account-tooltip-and-
-    /// alerts`'s job, not this one's; this brief only exposes the tap
-    /// target (Acceptance Criteria "account row ... is tappable (hook
-    /// only)").
-    var onAccountTapped: () -> Void = {}
-
     @State private var viewModel = SidebarDrawerViewModel()
+
+    /// The account flow's two possible outcomes (sign out / delete
+    /// account) — see `AccountActionCenter`'s doc comment for why this
+    /// is read from the environment rather than threaded through this
+    /// view's own `init`.
+    @Environment(AccountActionCenter.self) private var accountActionCenter
+
+    /// Whether the account row's tooltip menu ("로그아웃"/"탈퇴하기",
+    /// `iOS_SidebarDrawer_AccountMenu`) is showing — the account flow's
+    /// first step (`04-account-tooltip-and-alerts`,
+    /// `Planning_Nav_3_AccountFlow`/FLOW-NAV-003).
+    @State private var isAccountTooltipPresented = false
+
+    /// Whether the logout confirmation popup
+    /// (`iOS_SidebarDrawer_LogoutAlert`) is showing — the account flow's
+    /// second step after tapping "로그아웃" in the tooltip.
+    @State private var isLogoutAlertPresented = false
+
+    /// Whether the delete-account confirmation popup
+    /// (`iOS_SidebarDrawer_DeleteAccountAlert`) is showing — the account
+    /// flow's second step after tapping "탈퇴하기" in the tooltip.
+    @State private var isDeleteAccountAlertPresented = false
 
     /// The drawer panel's fixed width — narrow enough that the dimmed
     /// background stays visible (and tappable-to-dismiss) alongside it on
@@ -54,6 +69,19 @@ struct SidebarDrawerView: View {
         .onChange(of: isPresented) { _, presented in
             if !presented {
                 viewModel.reset()
+                isAccountTooltipPresented = false
+                isLogoutAlertPresented = false
+                isDeleteAccountAlertPresented = false
+            }
+        }
+        .overlay {
+            // Screen-covering, on top of the drawer itself — the account
+            // flow's second step stays reachable even though the drawer
+            // panel underneath is narrower than the full screen.
+            if isLogoutAlertPresented {
+                logoutAlertOverlay
+            } else if isDeleteAccountAlertPresented {
+                deleteAccountAlertOverlay
             }
         }
     }
@@ -153,10 +181,13 @@ struct SidebarDrawerView: View {
 
     /// Bottom "계정" row, shown in both states
     /// (`Planning_Nav_2_DrawerFlow`'s "설정" → "계정" swap, `tasks/NO-008.md`
-    /// §2.1). Tapping it is only a hook for now — see `onAccountTapped`'s
-    /// doc comment.
+    /// §2.1). Tapping it opens `accountTooltipOverlay` above it — the
+    /// account flow's first step (`04-account-tooltip-and-alerts`,
+    /// `Planning_Nav_3_AccountFlow`/FLOW-NAV-003).
     private var accountRow: some View {
-        Button(action: onAccountTapped) {
+        Button {
+            isAccountTooltipPresented.toggle()
+        } label: {
             HStack(spacing: AppTheme.Spacing.md) {
                 Image(systemName: "person.circle")
                     .foregroundStyle(AppTheme.Colors.Content.secondary)
@@ -171,6 +202,99 @@ struct SidebarDrawerView: View {
             .padding(AppTheme.Spacing.md)
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .topLeading) {
+            if isAccountTooltipPresented {
+                accountTooltipOverlay
+            }
+        }
+    }
+
+    /// The account tooltip, anchored above `accountRow` — its bottom
+    /// pointer sits just above the row's top edge regardless of the
+    /// tooltip's own height, via the standard SwiftUI "flip an overlay
+    /// above its anchor" `alignmentGuide` trick (overriding the guide the
+    /// enclosing `.overlay(alignment: .topLeading)` aligns against to be
+    /// this content's own bottom edge instead of its top).
+    private var accountTooltipOverlay: some View {
+        AccountActionTooltip(
+            onLogoutTapped: {
+                isAccountTooltipPresented = false
+                isLogoutAlertPresented = true
+            },
+            onDeleteAccountTapped: {
+                isAccountTooltipPresented = false
+                isDeleteAccountAlertPresented = true
+            }
+        )
+        .alignmentGuide(.top) { dimensions in dimensions[.bottom] + AppTheme.Spacing.sm }
+        .padding(.leading, AppTheme.Spacing.md)
+    }
+
+    // MARK: - Account alerts
+
+    /// Second step after tapping "로그아웃" in the tooltip — reproduces
+    /// `HomeView`'s former `switchAccountButton` confirmation copy
+    /// verbatim, just restyled as a `CenteredAlertCard` instead of a
+    /// `.confirmationDialog`. Still branches on `isICloud` the same way
+    /// that dialog did: an iCloud-mode session shows the "로그아웃" copy,
+    /// a local-mode session shows the "Apple 로그인으로 전환" copy, since
+    /// there's no active cloud session to log out of in that case.
+    private var logoutAlertOverlay: some View {
+        let isICloud = KeychainSessionStore().load()?.mode == .icloud
+        return centeredAlertOverlay {
+            CenteredAlertCard(
+                title: isICloud ? "로그아웃" : "Apple 로그인으로 전환",
+                message: isICloud
+                    ? "로그아웃하면 이 기기에서 iCloud 동기화가 중단됩니다. 데이터는 iCloud에 유지됩니다."
+                    : "로컬 데이터는 유지되며, Apple 로그인 이후에도 로컬로 이용을 선택하면 다시 돌아올 수 있습니다.",
+                cancelTitle: "취소",
+                confirmTitle: isICloud ? "로그아웃" : "Apple로 로그인",
+                isConfirmDestructive: isICloud,
+                onCancel: {
+                    isLogoutAlertPresented = false
+                },
+                onConfirm: {
+                    isLogoutAlertPresented = false
+                    accountActionCenter.resetToOnboarding()
+                }
+            )
+        }
+    }
+
+    /// Second step after tapping "탈퇴하기" in the tooltip — new, stronger
+    /// warning copy covering permanent deletion and irreversibility
+    /// (`04-account-tooltip-and-alerts`'s Decisions & Deviations).
+    /// Confirming calls `accountActionCenter.deleteAccount` — currently a
+    /// stub; see that property's doc comment.
+    private var deleteAccountAlertOverlay: some View {
+        centeredAlertOverlay {
+            CenteredAlertCard(
+                title: "계정을 탈퇴할까요?",
+                message: "탈퇴하면 이 계정과 iCloud에 저장된 모든 문서·폴더가 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+                cancelTitle: "취소",
+                confirmTitle: "탈퇴하기",
+                isConfirmDestructive: true,
+                onCancel: {
+                    isDeleteAccountAlertPresented = false
+                },
+                onConfirm: {
+                    isDeleteAccountAlertPresented = false
+                    accountActionCenter.deleteAccount()
+                }
+            )
+        }
+    }
+
+    /// Shared dim-background + centering chrome both account alerts sit
+    /// in — `CenteredAlertCard` itself is only the card; this is what
+    /// makes it read as a modal popup over the whole screen.
+    private func centeredAlertOverlay(@ViewBuilder card: () -> some View) -> some View {
+        ZStack {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+
+            card()
+        }
     }
 }
 
@@ -251,6 +375,7 @@ private struct SidebarDrawerPreviewHost: View {
                 }
                 .overlay {
                     SidebarDrawerView(isPresented: $isPresented)
+                        .environment(AccountActionCenter())
                 }
         }
     }

@@ -624,4 +624,5 @@ private struct BlockRow: View {
     NavigationStack {
         DetailView(document: Document(title: "오늘의 일기"))
     }
+    .environment(AccountActionCenter())
 }

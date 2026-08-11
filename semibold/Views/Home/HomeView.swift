@@ -11,10 +11,14 @@ import SwiftUI
 struct HomeView: View {
     /// Called when the user wants to return to OnboardingView — clears
     /// the Keychain session and transitions back to `.showOnboarding`.
+    /// No longer called directly from this screen (the account row that
+    /// used to trigger it moved into the navigation drawer,
+    /// `03-sidebar-drawer`/`04-account-tooltip-and-alerts`) — `SemiboldApp`
+    /// still passes it in so it can build `AccountActionCenter.resetToOnboarding`
+    /// from the same closure, keeping one source of truth for this path.
     var onResetToOnboarding: (() -> Void)?
 
     @State private var viewModel = HomeViewModel()
-    @State private var isResetConfirmationPresented = false
 
     /// Shared trigger point for the macOS "New Document"/"New Folder" menu
     /// commands (Cmd+N / Cmd+Shift+N, §13.2) — see `AppCommandCenter`.
@@ -225,8 +229,9 @@ struct HomeView: View {
 
     /// Top bar: app name and the drawer's menu (hamburger) button. The
     /// account button and the "+" that used to sit here both moved out —
-    /// see `switchAccountButton`'s and `floatingAddButton`'s doc comments
-    /// for where they went (`Planning_Nav_1_TopBarFlow`, FLOW-NAV-001).
+    /// the account row now lives in `SidebarDrawerView`
+    /// (`03-sidebar-drawer`/`04-account-tooltip-and-alerts`), and "+" moved
+    /// to `floatingAddButton` (`Planning_Nav_1_TopBarFlow`, FLOW-NAV-001).
     private var navBar: some View {
         VStack(spacing: 0) {
             HStack(spacing: AppTheme.Spacing.sm) {
@@ -256,39 +261,6 @@ struct HomeView: View {
         }
     }
 
-    /// Account switching entry point. No longer shown in the NavBar as of
-    /// `Planning_Nav_1_TopBarFlow` — account handling moves into the
-    /// navigation drawer being built in `03-sidebar-drawer`. The
-    /// underlying button/dialog stays here unreferenced for now; full
-    /// removal is `04-account-tooltip-and-alerts`'s job, not this one's.
-    /// Lets the user sign out (iCloud mode) or switch to Apple Sign-In
-    /// (local mode) by returning to OnboardingView.
-    private var switchAccountButton: some View {
-        let isICloud = KeychainSessionStore().load()?.mode == .icloud
-        return Button {
-            isResetConfirmationPresented = true
-        } label: {
-            Image(systemName: isICloud ? "person.circle.fill" : "person.circle")
-                .appTextStyle(AppTheme.Typography.title)
-                .foregroundStyle(AppTheme.Colors.Content.secondary)
-                .frame(width: 40, height: 40)
-        }
-        .confirmationDialog(
-            isICloud ? "로그아웃" : "Apple 로그인으로 전환",
-            isPresented: $isResetConfirmationPresented
-        ) {
-            Button(isICloud ? "로그아웃" : "Apple로 로그인", role: isICloud ? .destructive : .none) {
-                onResetToOnboarding?()
-            }
-            Button("취소", role: .cancel) {}
-        } message: {
-            Text(isICloud
-                 ? "로그아웃하면 이 기기에서 iCloud 동기화가 중단됩니다. 데이터는 iCloud에 유지됩니다."
-                 : "로컬 데이터는 유지되며, Apple 로그인 이후에도 로컬로 이용을 선택하면 다시 돌아올 수 있습니다."
-            )
-        }
-    }
-
     /// Entry point for the "new folder / new document" menu
     /// (`Planning_2_FolderCreateFlow` / `Planning_3_DocumentCreateFlow`,
     /// callout ① — "현재 보고 있는 위치를 기준으로 무언가를 새로 만들기
@@ -306,4 +278,5 @@ struct HomeView: View {
 #Preview {
     HomeView()
         .environment(AppCommandCenter())
+        .environment(AccountActionCenter())
 }
