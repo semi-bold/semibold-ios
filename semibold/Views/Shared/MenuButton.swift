@@ -11,9 +11,9 @@ import SwiftUI
 /// same convention `BackButtonIcon` follows for `IconHome` — since no SF
 /// Symbol matches Figma's `icon_menu` glyph exactly.
 ///
-/// The drawer's actual content is built in a later feature
+/// The drawer's actual content is `SidebarDrawerView`
 /// (`03-sidebar-drawer`); this button only wires the `isDrawerPresented`
-/// toggle each call site owns for now.
+/// toggle each call site owns.
 struct MenuButton: View {
     let action: () -> Void
 

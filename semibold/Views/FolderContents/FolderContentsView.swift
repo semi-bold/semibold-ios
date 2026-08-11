@@ -29,9 +29,9 @@ struct FolderContentsView: View {
     @State private var isAddMenuPresented = false
 
     /// Whether the navigation drawer (`icon_menu` in
-    /// `Planning_Nav_1_TopBarFlow`) is showing. The drawer's content is
-    /// built in `03-sidebar-drawer` — this only wires the toggle for now.
-    // TODO(03-sidebar-drawer): present the drawer when this is true.
+    /// `Planning_Nav_1_TopBarFlow`) is showing — presented via
+    /// `SidebarDrawerView`, `03-sidebar-drawer`'s search-first drawer
+    /// (`Planning_Nav_2_DrawerFlow`).
     @State private var isDrawerPresented = false
 
     /// Whether the new-folder name-entry sheet is showing
@@ -85,6 +85,14 @@ struct FolderContentsView: View {
             floatingAddButton
                 .padding(.trailing, AppTheme.Spacing.md)
                 .padding(.bottom, AppTheme.Spacing.md)
+        }
+        .overlay {
+            // This screen is itself a pushed `Folder.self` destination
+            // registered once at `HomeView`'s `NavigationStack` root — the
+            // drawer's search-result rows push through that same
+            // registration, the same way this screen's own `FolderRow`/
+            // `DocumentRow` rows do (`SidebarDrawerView`'s doc comment).
+            SidebarDrawerView(isPresented: $isDrawerPresented)
         }
         .toolbar(.hidden)
         .onAppear {
