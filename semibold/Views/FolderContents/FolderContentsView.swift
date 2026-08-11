@@ -276,4 +276,5 @@ struct FolderContentsView: View {
     NavigationStack {
         FolderContentsView(folder: Folder(name: "일상"))
     }
+    .environment(AccountActionCenter())
 }

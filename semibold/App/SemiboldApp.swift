@@ -7,6 +7,15 @@ struct SemiboldApp: App {
     /// below — see `AppCommandCenter`.
     @State private var commandCenter = AppCommandCenter()
 
+    /// Shared trigger point for the drawer's account flow — see
+    /// `AccountActionCenter`'s doc comment. Built once via the no-arg
+    /// initializer, exactly like `commandCenter` above; `body`'s `.home`
+    /// case wires `resetToOnboarding` onto this same instance (in an
+    /// `.onAppear`, since a plain assignment statement can't sit inside a
+    /// `@ViewBuilder`/`@SceneBuilder` case body) rather than constructing a
+    /// fresh `AccountActionCenter`.
+    @State private var accountActionCenter = AccountActionCenter()
+
     /// Computed once at launch (NO-004 §3.1's "전체 진입 플로우") — see
     /// `RootLaunchState.resolve` for the full branching logic based on the
     /// Keychain session and iCloud availability.
@@ -66,12 +75,24 @@ struct SemiboldApp: App {
                     }
                 }
             case .home:
-                HomeView(onResetToOnboarding: {
-                    KeychainSessionStore().delete()
-                    DatabaseManager.resetShared()
-                    launchState = .showOnboarding
-                })
-                .environment(commandCenter)
+                HomeView(onResetToOnboarding: resetToOnboarding)
+                    .environment(commandCenter)
+                    .environment(accountActionCenter)
+                    .onAppear {
+                        // `deleteAccount` still defaults to a no-op
+                        // (05-account-deletion's job to wire it to the real
+                        // hard-delete + reset-to-onboarding flow);
+                        // `resetToOnboarding` is assigned onto the shared
+                        // `accountActionCenter` instance here rather than
+                        // passed to an initializer, since it captures
+                        // `self` and can't be supplied at `@State`
+                        // construction time. `accountActionCenter` itself
+                        // is built once (see its declaration above), so
+                        // this only ever updates the closure stored on
+                        // that one shared instance — it never creates a
+                        // new `AccountActionCenter`.
+                        accountActionCenter.resetToOnboarding = resetToOnboarding
+                    }
             }
             }
         }
@@ -100,6 +121,19 @@ struct SemiboldApp: App {
                 .keyboardShortcut("n", modifiers: [.command, .shift])
             }
         }
+    }
+
+    // MARK: - Reset to onboarding
+
+    /// Signs the current session out and returns to `OnboardingView` —
+    /// shared by `HomeView`'s `onResetToOnboarding` init param and
+    /// `AccountActionCenter.resetToOnboarding` (the drawer's account
+    /// tooltip's "로그아웃" alert, `04-account-tooltip-and-alerts`), so
+    /// both call the exact same path instead of drifting apart.
+    private func resetToOnboarding() {
+        KeychainSessionStore().delete()
+        DatabaseManager.resetShared()
+        launchState = .showOnboarding
     }
 
     // MARK: - Apple credential revocation (NO-004 §4.4)
