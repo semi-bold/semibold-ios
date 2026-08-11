@@ -264,8 +264,9 @@ struct SidebarDrawerView: View {
     /// Second step after tapping "탈퇴하기" in the tooltip — new, stronger
     /// warning copy covering permanent deletion and irreversibility
     /// (`04-account-tooltip-and-alerts`'s Decisions & Deviations).
-    /// Confirming calls `accountActionCenter.deleteAccount` — currently a
-    /// stub; see that property's doc comment.
+    /// Confirming calls `accountActionCenter.deleteAccount`, which
+    /// permanently hard-deletes the local store and returns to onboarding
+    /// (`05-account-deletion`; see that property's doc comment).
     private var deleteAccountAlertOverlay: some View {
         centeredAlertOverlay {
             CenteredAlertCard(

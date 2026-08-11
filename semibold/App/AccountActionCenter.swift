@@ -43,15 +43,13 @@ final class AccountActionCenter {
     /// comment above) since it can't be supplied at `init` time.
     var resetToOnboarding: () -> Void
 
-    /// Deletes the account and its data (local + iCloud) and returns to
-    /// onboarding. Currently a no-op placeholder: this brief only needs
-    /// the drawer's "탈퇴하기" alert to call a real, wired callback rather
-    /// than silently doing nothing — what that callback actually *does*
-    /// (the hard-delete itself) is `05-account-deletion`'s job, which will
-    /// wire this to the real hard-delete (local Core Data + iCloud,
-    /// `tasks/NO-008.md` §5.2) + reset-to-onboarding flow once that brief
-    /// lands. `var` to mirror `resetToOnboarding`, even though today it's
-    /// still only ever set via `init`'s default.
+    /// Permanently deletes the account: hard-deletes every folder/document/
+    /// content row in the local store, then ends the session and returns to
+    /// onboarding (`tasks/NO-008.md` §5.2). Assigned onto the shared
+    /// instance from `SemiboldApp`'s `.home` `.onAppear`, mirroring
+    /// `resetToOnboarding` — see this type's doc comment above. `var` to
+    /// match `resetToOnboarding`, for the same "can't be supplied at
+    /// `@State` construction time" reason.
     var deleteAccount: () -> Void
 
     init(
