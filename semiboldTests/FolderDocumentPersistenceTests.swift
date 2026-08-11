@@ -4,7 +4,7 @@ import Testing
 @testable import semibold
 
 /// Round-trip tests for the folder/document repositories backing
-/// `HomeView`'s lists.
+/// `HomeScreen`'s lists.
 ///
 /// These exercise the same path `HomeViewModel` relies on end-to-end:
 /// create a row through the repository, then read it back the way
@@ -17,7 +17,7 @@ struct FolderDocumentPersistenceTests {
         try CoreDataTestStore()
     }
 
-    @Test("A created root-level folder is persisted and shows up in HomeView's folder list")
+    @Test("A created root-level folder is persisted and shows up in HomeScreen's folder list")
     func createFolderPersistsAndIsListed() throws {
         let store = try makeStore()
         let folderRepository = FolderRepository(context: store.context)
@@ -34,7 +34,7 @@ struct FolderDocumentPersistenceTests {
         #expect(rootFolders.first?.name == "Recipes")
     }
 
-    @Test("A created root-level document is persisted and shows up in HomeView's document list")
+    @Test("A created root-level document is persisted and shows up in HomeScreen's document list")
     func createDocumentPersistsAndIsListed() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)

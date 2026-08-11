@@ -1,7 +1,7 @@
 import CoreData
 import Foundation
 
-/// Drives `HomeView` — the Private Layer's top-level folder/document
+/// Drives `HomeScreen` — the Private Layer's top-level folder/document
 /// list.
 ///
 /// Loads the root-level folders and documents (the ones with no parent
@@ -12,7 +12,7 @@ final class HomeViewModel {
     private(set) var folders: [Folder] = []
     private(set) var documents: [Document] = []
 
-    /// Set when a delete fails to persist, so `HomeView` can show the
+    /// Set when a delete fails to persist, so `HomeScreen` can show the
     /// §15.2 "삭제 실패" alert. `nil` once dismissed.
     var errorMessage: String?
 

@@ -150,7 +150,7 @@ struct OnboardingView: View {
     }
 
     /// Persists a local-only session and transitions the app directly to
-    /// `HomeView` — no iCloud check needed (NO-004 §2.3).
+    /// `HomeScreen` — no iCloud check needed (NO-004 §2.3).
     private func handleLocalMode() {
         KeychainSessionStore().save(
             AuthSession(appleUserID: "", mode: .local)

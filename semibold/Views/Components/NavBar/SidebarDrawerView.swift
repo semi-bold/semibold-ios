@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The navigation drawer opened from the hamburger `MenuButton` in
-/// `HomeView`/`FolderContentsView`/`DetailView`'s NavBars
+/// `HomeScreen`/`FolderContentsScreen`/`DetailView`'s NavBars
 /// (`Planning_Nav_2_DrawerFlow`, FLOW-NAV-002).
 ///
 /// Two states, matching the flow's two artboards:
@@ -233,7 +233,7 @@ struct SidebarDrawerView: View {
     // MARK: - Account alerts
 
     /// Second step after tapping "로그아웃" in the tooltip — reproduces
-    /// `HomeView`'s former `switchAccountButton` confirmation copy
+    /// `HomeScreen`'s former `switchAccountButton` confirmation copy
     /// verbatim, just restyled as a `CenteredAlertCard` instead of a
     /// `.confirmationDialog`. Still branches on `isICloud` the same way
     /// that dialog did: an iCloud-mode session shows the "로그아웃" copy,
@@ -305,13 +305,13 @@ struct SidebarDrawerView: View {
 /// rather than fabricating new icons (`03-sidebar-drawer`'s Decisions &
 /// Deviations).
 ///
-/// Tapping either pushes onto the same `NavigationStack` `HomeView`'s own
+/// Tapping either pushes onto the same `NavigationStack` `HomeScreen`'s own
 /// `FolderRow`/`DocumentRow` push onto — this drawer is mounted as an
-/// `.overlay` on a view already inside that stack (`HomeView` itself, or a
-/// screen `HomeView` pushed), so a plain `NavigationLink(value:)` here
+/// `.overlay` on a view already inside that stack (`HomeScreen` itself, or a
+/// screen `HomeScreen` pushed), so a plain `NavigationLink(value:)` here
 /// resolves through the exact same `.navigationDestination(for:)` pair
-/// registered once at `HomeView`'s `NavigationStack` root — the same
-/// mechanism that already lets a nested `FolderContentsView` push further
+/// registered once at `HomeScreen`'s `NavigationStack` root — the same
+/// mechanism that already lets a nested `FolderContentsScreen` push further
 /// folders/documents through destinations it never registers itself.
 private struct SidebarSearchResultRow: View {
     let result: SidebarSearchResult

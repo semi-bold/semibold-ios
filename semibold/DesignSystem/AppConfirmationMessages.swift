@@ -5,8 +5,8 @@ import Foundation
 /// (`Planning_9_SwipeActionFlow` callout ③, PLANNING §6.1 "폴더 삭제
 /// 정책").
 ///
-/// Centralized here, alongside `AppErrorMessages`, so `HomeView` and
-/// `FolderContentsView` show the exact same wording for the same
+/// Centralized here, alongside `AppErrorMessages`, so `HomeScreen` and
+/// `FolderContentsScreen` show the exact same wording for the same
 /// situation instead of drifting apart.
 enum AppConfirmationMessages {
     /// Title shown on every delete-confirmation alert, regardless of

@@ -8,7 +8,7 @@ import SwiftUI
 /// current space ("Private") and an add button, followed by a "폴더"
 /// (folders) section and a "문서" (documents) section listing everything
 /// at the root of the user's document tree.
-struct HomeView: View {
+struct HomeScreen: View {
     /// Called when the user wants to return to OnboardingView — clears
     /// the Keychain session and transitions back to `.showOnboarding`.
     /// No longer called directly from this screen (the account row that
@@ -57,10 +57,9 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                navBar
-
-                List {
+            ContentListLayout(
+                navBar: { navBar },
+                content: {
                     folderSection(
                         folders: viewModel.folders,
                         emptyText: "첫 폴더를 만들어보세요.",
@@ -74,42 +73,27 @@ struct HomeView: View {
                         onEdit: { entryBeingRenamed = .document($0) },
                         onDelete: { entryPendingDelete = .document($0) }
                     )
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-            }
-            .background(AppTheme.Colors.Neutral.n900)
-            .overlay(alignment: .bottomTrailing) {
-                floatingAddButton
-                    .padding(.trailing, AppTheme.Spacing.md)
-                    .padding(.bottom, AppTheme.Spacing.md)
-            }
-            .toolbar(.hidden)
+                },
+                onAddTapped: { isAddMenuPresented = true },
+                isDrawerPresented: $isDrawerPresented
+            )
             .navigationDestination(for: Folder.self) { folder in
                 // Registered once at the stack root so every push in the
                 // chain — including the recursive pushes nested folders
-                // make from inside `FolderContentsView` itself — resolves
+                // make from inside `FolderContentsScreen` itself — resolves
                 // through this same destination (`Planning_6_FolderNavigationFlow`
                 // callout ④).
-                FolderContentsView(folder: folder)
+                FolderContentsScreen(folder: folder)
             }
             .navigationDestination(for: Document.self) { document in
                 // Same reasoning as the `Folder.self` destination above —
                 // registered once here so a document row tapped from this
-                // screen or from any nested `FolderContentsView` resolves
+                // screen or from any nested `FolderContentsScreen` resolves
                 // through this same destination (`Planning_6_FolderNavigationFlow`
                 // callout ⑤). This restores document-row navigation that a
-                // since-merged debugging commit had stripped from `HomeView`
+                // since-merged debugging commit had stripped from `HomeScreen`
                 // — not new functionality.
                 DetailView(document: document)
-            }
-            .overlay {
-                // Registered after both `navigationDestination`s above so
-                // the drawer's own search-result rows push through those
-                // same destinations, the same way this screen's own
-                // `FolderRow`/`DocumentRow` rows do
-                // (`SidebarDrawerView`'s doc comment).
-                SidebarDrawerView(isPresented: $isDrawerPresented)
             }
         }
         .onAppear {
@@ -231,9 +215,10 @@ struct HomeView: View {
     /// account button and the "+" that used to sit here both moved out —
     /// the account row now lives in `SidebarDrawerView`
     /// (`03-sidebar-drawer`/`04-account-tooltip-and-alerts`), and "+" moved
-    /// to `floatingAddButton` (`Planning_Nav_1_TopBarFlow`, FLOW-NAV-001).
-    /// Shared chrome (height/divider/background) lives in `NavBar`
-    /// (`Views/NavBar/NavBar.swift`) — this screen only supplies its
+    /// to `ContentListLayout`'s floating add button
+    /// (`Planning_Nav_1_TopBarFlow`, FLOW-NAV-001). Shared chrome
+    /// (height/divider/background) lives in `NavBar`
+    /// (`Views/Layouts/NavBar.swift`) — this screen only supplies its
     /// leading content.
     private var navBar: some View {
         NavBar(
@@ -249,22 +234,10 @@ struct HomeView: View {
         )
     }
 
-    /// Entry point for the "new folder / new document" menu
-    /// (`Planning_2_FolderCreateFlow` / `Planning_3_DocumentCreateFlow`,
-    /// callout ① — "현재 보고 있는 위치를 기준으로 무언가를 새로 만들기
-    /// 시작하는 단일 진입점"). Floating at the screen's bottom-trailing
-    /// corner (`FAB_AddMenu`) as of `Planning_Nav_1_TopBarFlow`, rather
-    /// than inline in the NavBar.
-    private var floatingAddButton: some View {
-        AddButton(placement: .floating) {
-            isAddMenuPresented = true
-        }
-    }
-
 }
 
 #Preview {
-    HomeView()
+    HomeScreen()
         .environment(AppCommandCenter())
         .environment(AccountActionCenter())
 }

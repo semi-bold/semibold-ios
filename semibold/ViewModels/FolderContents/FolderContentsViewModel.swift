@@ -1,6 +1,6 @@
 import Foundation
 
-/// Drives `FolderContentsView` — the screen shown after tapping into a
+/// Drives `FolderContentsScreen` — the screen shown after tapping into a
 /// folder, listing that folder's nested folders and documents.
 ///
 /// Loads the folders and documents that live directly inside the given
@@ -13,14 +13,14 @@ final class FolderContentsViewModel {
     private(set) var folders: [Folder] = []
     private(set) var documents: [Document] = []
 
-    /// The back-button label `FolderContentsView`'s nav bar shows
+    /// The back-button label `FolderContentsScreen`'s nav bar shows
     /// (`Planning_6_FolderNavigationFlow` callout ①). Starts out
     /// matching the root context's label and is replaced with the parent
     /// folder's name once `load()` looks it up, for folders nested
     /// inside another folder.
     private(set) var backButtonLabel = FolderBackButtonLabel.root
 
-    /// Set when a delete fails to persist, so `FolderContentsView` can
+    /// Set when a delete fails to persist, so `FolderContentsScreen` can
     /// show the §15.2 "삭제 실패" alert. `nil` once dismissed.
     var errorMessage: String?
 

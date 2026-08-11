@@ -51,7 +51,7 @@ final class DetailViewModel {
 
     /// The back-button label `DetailView`'s nav bar shows — icon-only, the
     /// same house-for-root/chevron-for-nested-folder rule as
-    /// `FolderContentsView`'s back button (`Planning_6_FolderNavigationFlow`
+    /// `FolderContentsScreen`'s back button (`Planning_6_FolderNavigationFlow`
     /// callout ①, extended to the editor screen so both screens handle an
     /// arbitrarily long folder name the same way instead of one of them
     /// risking a broken NavBar layout). Starts out `.root` and is replaced

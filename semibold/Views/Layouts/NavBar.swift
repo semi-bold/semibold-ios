@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The layout-composition layer for every screen's top bar — the shared
 /// chrome (fixed 52pt content row, horizontal padding, 1px divider, n800
-/// background) that `HomeView`/`FolderContentsView`/`DetailView` used to
+/// background) that `HomeScreen`/`FolderContentsScreen`/`DetailView` used to
 /// each hand-roll separately with near-identical `VStack`/`HStack` code.
 ///
 /// Screens plug in only what actually differs between them via three

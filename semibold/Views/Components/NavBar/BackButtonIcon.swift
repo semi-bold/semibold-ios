@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Renders `FolderBackButtonLabel`'s icon — shared by `FolderContentsView`
+/// Renders `FolderBackButtonLabel`'s icon — shared by `FolderContentsScreen`
 /// and `DetailView`'s back buttons (`Planning_6_FolderNavigationFlow`
 /// callout ①) so both screens' icon-only back button (see
 /// `FolderBackButtonLabel.iconName`'s doc comment) look and size the same.

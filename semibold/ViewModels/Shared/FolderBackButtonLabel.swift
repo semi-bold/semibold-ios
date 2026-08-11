@@ -1,6 +1,6 @@
 import Foundation
 
-/// Decides what `FolderContentsView`'s and `DetailView`'s nav bar back
+/// Decides what `FolderContentsScreen`'s and `DetailView`'s nav bar back
 /// buttons show — both screens follow the same icon-only rule.
 ///
 /// Pulled out of `FolderContentsViewModel` so this branching logic has a
@@ -9,16 +9,16 @@ import Foundation
 enum FolderBackButtonLabel: Equatable {
     /// The folder/document being shown is at the root of the user's
     /// document tree (`parentId`/`folderId == nil`) — going back returns
-    /// to `HomeView`.
+    /// to `HomeScreen`.
     case root
     /// The folder/document being shown is filed inside a folder — going
-    /// back returns to that folder's own `FolderContentsView`. `name`
+    /// back returns to that folder's own `FolderContentsScreen`. `name`
     /// isn't shown as visible text (see `iconName`) — kept only for
     /// `accessibilityLabel`, since VoiceOver still needs to say where the
     /// button goes even though the icon alone doesn't.
     case parentFolder(name: String)
 
-    /// The SF Symbol `FolderContentsView`'s back button shows — icon-only,
+    /// The SF Symbol `FolderContentsScreen`'s back button shows — icon-only,
     /// no folder-name text, per `Planning_6_FolderNavigationFlow` callout
     /// ①'s revised spec: a house for the root case (returning to Private
     /// Space) and a plain chevron for a nested folder (returning to its
@@ -44,7 +44,7 @@ enum FolderBackButtonLabel: Equatable {
         }
     }
 
-    /// Computes which label `FolderContentsView` should show for the
+    /// Computes which label `FolderContentsScreen` should show for the
     /// folder currently on screen.
     ///
     /// - Parameters:

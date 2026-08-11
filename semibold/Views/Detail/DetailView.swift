@@ -48,9 +48,9 @@ struct DetailView: View {
         .background(keyboardShortcuts)
         .overlay {
             // This screen is itself a pushed `Document.self` destination
-            // registered once at `HomeView`'s `NavigationStack` root — the
+            // registered once at `HomeScreen`'s `NavigationStack` root — the
             // drawer's search-result rows push through that same
-            // registration, the same way `HomeView`/`FolderContentsView`'s
+            // registration, the same way `HomeScreen`/`FolderContentsScreen`'s
             // own `FolderRow`/`DocumentRow` rows do (`SidebarDrawerView`'s
             // doc comment).
             SidebarDrawerView(isPresented: $isDrawerPresented)
@@ -187,10 +187,10 @@ struct DetailView: View {
     // MARK: - Nav bar
 
     /// Top bar with a back button to return to wherever this document was
-    /// opened from — `HomeView`'s document list for a root-level document,
-    /// or the owning `FolderContentsView` for one filed inside a folder.
+    /// opened from — `HomeScreen`'s document list for a root-level document,
+    /// or the owning `FolderContentsScreen` for one filed inside a folder.
     /// Icon-only (a house for root, a chevron for a nested folder), the
-    /// same as `FolderContentsView`'s back button
+    /// same as `FolderContentsScreen`'s back button
     /// (`viewModel.backButtonLabel`, mirroring
     /// `Planning_6_FolderNavigationFlow` callout ①) — the destination
     /// folder's name isn't shown as text here either, so it can't break
@@ -211,7 +211,7 @@ struct DetailView: View {
     /// A menu (hamburger) button joins it in the trailing group as of
     /// `Planning_Nav_1_TopBarFlow` (FLOW-NAV-001) — this NavBar previously
     /// had no trailing element besides `exportShareLink`; same trailing
-    /// inset/spacing as `HomeView`/`FolderContentsView` use for their own
+    /// inset/spacing as `HomeScreen`/`FolderContentsScreen` use for their own
     /// menu buttons.
     private var navBar: some View {
         NavBar(

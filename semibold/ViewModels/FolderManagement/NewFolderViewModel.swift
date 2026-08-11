@@ -1,6 +1,6 @@
 import Foundation
 
-/// Drives the "new folder" name-entry sheet opened from `HomeView`'s "+"
+/// Drives the "new folder" name-entry sheet opened from `HomeScreen`'s "+"
 /// menu (`Planning_2_FolderCreateFlow`, PLANNING §5.2).
 ///
 /// Walks through the flow's state diagram: the user types a name, the
