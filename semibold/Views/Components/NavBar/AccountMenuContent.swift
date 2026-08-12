@@ -46,6 +46,15 @@ struct AccountMenuContent: View {
     }
 
     private static let rowHeight: CGFloat = 52
+    private static let dividerHeight: CGFloat = 1
+
+    /// This view's total intrinsic height (status row + 2 dividers + 2
+    /// action rows) — used to pin the iPhone sheet fallback to a compact
+    /// `.presentationDetents([.height(...)])` instead of the system
+    /// default `.large` (full screen), which is what was actually causing
+    /// the sheet to cover the whole screen with this content stranded in
+    /// the middle of it rather than pinned to the bottom edge.
+    static let contentHeight: CGFloat = rowHeight * 3 + dividerHeight * 2
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -103,7 +112,7 @@ struct AccountMenuContent: View {
     private var divider: some View {
         Rectangle()
             .fill(AppTheme.Colors.Stroke.divider)
-            .frame(height: 1)
+            .frame(height: Self.dividerHeight)
             .padding(.horizontal, AppTheme.Spacing.md)
     }
 }

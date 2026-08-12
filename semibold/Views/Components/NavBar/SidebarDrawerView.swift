@@ -228,6 +228,14 @@ struct SidebarDrawerView: View {
                     isDeleteAccountAlertPresented = true
                 }
             )
+            // Pins the iPhone sheet fallback to a compact height matching
+            // the content instead of the system default `.large` (full
+            // screen) — without this, the sheet covered the whole screen
+            // with the content stranded in the middle instead of pinned
+            // to the bottom edge. No effect on iPad's true popover, which
+            // ignores presentationDetents entirely.
+            .presentationDetents([.height(AccountMenuContent.contentHeight)])
+            .presentationDragIndicator(.visible)
         }
     }
 
