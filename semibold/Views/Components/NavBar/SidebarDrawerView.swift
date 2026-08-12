@@ -38,20 +38,23 @@ struct SidebarDrawerView: View {
     /// view's own `init`.
     @Environment(AccountActionCenter.self) private var accountActionCenter
 
-    /// Whether the account row's tooltip menu ("로그아웃"/"탈퇴하기",
-    /// `iOS_SidebarDrawer_AccountMenu`) is showing — the account flow's
-    /// first step (`04-account-tooltip-and-alerts`,
-    /// `Planning_Nav_3_AccountFlow`/FLOW-NAV-003).
-    @State private var isAccountTooltipPresented = false
+    /// Whether the account row's menu ("로그아웃"/"탈퇴하기",
+    /// `iOS_SidebarDrawer_AccountSheet`/`iPadOS_SidebarDrawer_AccountMenu`)
+    /// is showing — the account flow's first step
+    /// (`04-account-tooltip-and-alerts`,
+    /// `Planning_Nav_3_AccountFlow`/FLOW-NAV-003). Presented via the
+    /// system's native `.popover`, not a custom overlay — see
+    /// `accountRow`'s doc comment.
+    @State private var isAccountMenuPresented = false
 
     /// Whether the logout confirmation popup
     /// (`iOS_SidebarDrawer_LogoutAlert`) is showing — the account flow's
-    /// second step after tapping "로그아웃" in the tooltip.
+    /// second step after tapping "로그아웃" in the account menu.
     @State private var isLogoutAlertPresented = false
 
     /// Whether the delete-account confirmation popup
     /// (`iOS_SidebarDrawer_DeleteAccountAlert`) is showing — the account
-    /// flow's second step after tapping "탈퇴하기" in the tooltip.
+    /// flow's second step after tapping "탈퇴하기" in the account menu.
     @State private var isDeleteAccountAlertPresented = false
 
     /// The drawer panel's fixed width — narrow enough that the dimmed
@@ -69,7 +72,7 @@ struct SidebarDrawerView: View {
         .onChange(of: isPresented) { _, presented in
             if !presented {
                 viewModel.reset()
-                isAccountTooltipPresented = false
+                isAccountMenuPresented = false
                 isLogoutAlertPresented = false
                 isDeleteAccountAlertPresented = false
             }
@@ -181,12 +184,24 @@ struct SidebarDrawerView: View {
 
     /// Bottom "계정" row, shown in both states
     /// (`Planning_Nav_2_DrawerFlow`'s "설정" → "계정" swap, `tasks/NO-008.md`
-    /// §2.1). Tapping it opens `accountTooltipOverlay` above it — the
-    /// account flow's first step (`04-account-tooltip-and-alerts`,
+    /// §2.1). Tapping it opens `AccountMenuContent` via the system's
+    /// native `.popover` — the account flow's first step
+    /// (`04-account-tooltip-and-alerts`,
     /// `Planning_Nav_3_AccountFlow`/FLOW-NAV-003).
+    ///
+    /// `.popover` (not a hand-rolled overlay) is deliberate: its own
+    /// per-size-class default already does exactly what the two Figma
+    /// mockups show — a small anchored card with an arrow on iPad
+    /// (regular size class), automatically adapted into a bottom sheet on
+    /// iPhone (compact size class) — with the system correctly measuring
+    /// this row's real on-screen frame to position against, which a
+    /// hand-rolled `alignmentGuide` (the previous approach) never did.
+    /// `presentationCompactAdaptation` is intentionally NOT set here, so
+    /// the iPhone sheet fallback stays the platform default rather than
+    /// being forced back into a floating card.
     private var accountRow: some View {
         Button {
-            isAccountTooltipPresented.toggle()
+            isAccountMenuPresented.toggle()
         } label: {
             HStack(spacing: AppTheme.Spacing.md) {
                 Image(systemName: "person.circle")
@@ -202,37 +217,23 @@ struct SidebarDrawerView: View {
             .padding(AppTheme.Spacing.md)
         }
         .buttonStyle(.plain)
-        .overlay(alignment: .topLeading) {
-            if isAccountTooltipPresented {
-                accountTooltipOverlay
-            }
+        .popover(isPresented: $isAccountMenuPresented, arrowEdge: .bottom) {
+            AccountMenuContent(
+                onLogoutTapped: {
+                    isAccountMenuPresented = false
+                    isLogoutAlertPresented = true
+                },
+                onDeleteAccountTapped: {
+                    isAccountMenuPresented = false
+                    isDeleteAccountAlertPresented = true
+                }
+            )
         }
-    }
-
-    /// The account tooltip, anchored above `accountRow` — its bottom
-    /// pointer sits just above the row's top edge regardless of the
-    /// tooltip's own height, via the standard SwiftUI "flip an overlay
-    /// above its anchor" `alignmentGuide` trick (overriding the guide the
-    /// enclosing `.overlay(alignment: .topLeading)` aligns against to be
-    /// this content's own bottom edge instead of its top).
-    private var accountTooltipOverlay: some View {
-        AccountActionTooltip(
-            onLogoutTapped: {
-                isAccountTooltipPresented = false
-                isLogoutAlertPresented = true
-            },
-            onDeleteAccountTapped: {
-                isAccountTooltipPresented = false
-                isDeleteAccountAlertPresented = true
-            }
-        )
-        .alignmentGuide(.top) { dimensions in dimensions[.bottom] + AppTheme.Spacing.sm }
-        .padding(.leading, AppTheme.Spacing.md)
     }
 
     // MARK: - Account alerts
 
-    /// Second step after tapping "로그아웃" in the tooltip — reproduces
+    /// Second step after tapping "로그아웃" in the account menu — reproduces
     /// `HomeScreen`'s former `switchAccountButton` confirmation copy
     /// verbatim, just restyled as a `CenteredAlertCard` instead of a
     /// `.confirmationDialog`. Still branches on `isICloud` the same way
@@ -261,7 +262,7 @@ struct SidebarDrawerView: View {
         }
     }
 
-    /// Second step after tapping "탈퇴하기" in the tooltip — new, stronger
+    /// Second step after tapping "탈퇴하기" in the account menu — new, stronger
     /// warning copy covering permanent deletion and irreversibility
     /// (`04-account-tooltip-and-alerts`'s Decisions & Deviations).
     /// Confirming calls `accountActionCenter.deleteAccount`, which
