@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Shared row/section styling for screens that list folders and
-/// documents — `HomeView` (`iOS_PrivateSpace`) and `FolderContentsView`
+/// documents — `HomeScreen` (`iOS_PrivateSpace`) and `FolderContentsScreen`
 /// (`iOS_FolderContents`) both show the same "폴더"/"문서" section
 /// layout, just scoped to a different parent folder, so the row/section
 /// rendering lives here once instead of being duplicated per screen.

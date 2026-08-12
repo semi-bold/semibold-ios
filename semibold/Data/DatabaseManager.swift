@@ -53,7 +53,7 @@ final class DatabaseManager {
     /// Invalidates the cached `shared` instance so it is recomputed from
     /// the current Keychain session on the next access. Call this after
     /// saving or deleting a Keychain session (mode switch) and before
-    /// transitioning the UI to `HomeView`, so the new home screen opens
+    /// transitioning the UI to `HomeScreen`, so the new home screen opens
     /// the correct store.
     static func resetShared() {
         _sharedInitialized = false
@@ -186,7 +186,7 @@ final class DatabaseManager {
     ///
     /// Repositories resolve this once at construction time. Because
     /// `SemiboldApp` calls `resetShared()` before any mode-switch
-    /// transition re-shows `HomeView`, newly constructed repositories
+    /// transition re-shows `HomeScreen`, newly constructed repositories
     /// always see the correct container for the active session.
     static var sharedOrFallbackContext: NSManagedObjectContext {
         if let shared {

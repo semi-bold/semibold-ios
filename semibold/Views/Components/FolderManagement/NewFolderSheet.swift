@@ -4,7 +4,7 @@ import SwiftUI
 /// `Planning_2_FolderCreateFlow` (PLANNING §5.2).
 ///
 /// Presented after the user picks "New Folder" from the "+" menu on
-/// `HomeView`. Lets them type a name, shows an inline error if it's
+/// `HomeScreen`. Lets them type a name, shows an inline error if it's
 /// invalid, and creates the folder on confirm.
 struct NewFolderSheet: View {
     @State private var viewModel: NewFolderViewModel

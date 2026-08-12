@@ -14,7 +14,7 @@ enum RootLaunchState: Equatable {
     /// credential revocation. Show the onboarding screen so the person can
     /// sign in with Apple or choose local-only mode (NO-004 §2.1/§2.3).
     case showOnboarding
-    /// A valid session exists and storage is ready — show `HomeView`
+    /// A valid session exists and storage is ready — show `HomeScreen`
     /// directly. Covers both `.local` mode sessions and `.icloud` mode
     /// sessions where iCloud is available right now (NO-004 §3.1).
     case home

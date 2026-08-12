@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Full-screen fallback shown instead of `HomeView` when the local
+/// Full-screen fallback shown instead of `HomeScreen` when the local
 /// database couldn't be opened at launch (§15.2 "DB 열기 실패").
 ///
 /// semi:bold stores everything in one local Core Data persistent store
@@ -12,7 +12,7 @@ import SwiftUI
 ///
 /// No `Screen_*`/`Planning_N_*Flow` artboard defines this state (checked
 /// `wireframe.py`/`planning.py`/`atoms.py` — every screen assumes a working
-/// database), so this reuses `HomeView`'s background/typography tokens for
+/// database), so this reuses `HomeScreen`'s background/typography tokens for
 /// a centered message rather than a dedicated layout.
 struct DatabaseUnavailableView: View {
     var body: some View {

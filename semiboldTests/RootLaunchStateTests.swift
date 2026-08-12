@@ -4,7 +4,7 @@ import Testing
 @testable import semibold
 
 /// Verifies `RootLaunchState.resolve` branches the same way NO-004 §3.1's
-/// "전체 진입 플로우" flowchart does, before `HomeView`'s `NavigationStack`
+/// "전체 진입 플로우" flowchart does, before `HomeScreen`'s `NavigationStack`
 /// is ever entered:
 ///   - DB unavailable always wins, regardless of session / iCloud state.
 ///   - No Keychain session → `.showOnboarding`.
@@ -38,7 +38,7 @@ struct RootLaunchStateTests {
         #expect(state == .showOnboarding)
     }
 
-    @Test("Local-mode session goes straight to HomeView")
+    @Test("Local-mode session goes straight to HomeScreen")
     func localSessionGoesHome() {
         let state = RootLaunchState.resolve(
             isDatabaseAvailable: true,
@@ -49,7 +49,7 @@ struct RootLaunchStateTests {
         #expect(state == .home)
     }
 
-    @Test("iCloud-mode session with iCloud available goes straight to HomeView")
+    @Test("iCloud-mode session with iCloud available goes straight to HomeScreen")
     func icloudSessionWithICloudAvailableGoesHome() {
         let state = RootLaunchState.resolve(
             isDatabaseAvailable: true,
@@ -71,7 +71,7 @@ struct RootLaunchStateTests {
         #expect(state == .iCloudSetupRequired)
     }
 
-    @Test("Local-mode session goes to HomeView regardless of iCloud availability")
+    @Test("Local-mode session goes to HomeScreen regardless of iCloud availability")
     func localSessionGoesHomeEvenWhenICloudUnavailable() {
         let state = RootLaunchState.resolve(
             isDatabaseAvailable: true,

@@ -75,7 +75,7 @@ struct SemiboldApp: App {
                     }
                 }
             case .home:
-                HomeView(onResetToOnboarding: resetToOnboarding)
+                HomeScreen(onResetToOnboarding: resetToOnboarding)
                     .environment(commandCenter)
                     .environment(accountActionCenter)
                     .onAppear {
@@ -124,7 +124,7 @@ struct SemiboldApp: App {
     // MARK: - Reset to onboarding
 
     /// Signs the current session out and returns to `OnboardingView` —
-    /// shared by `HomeView`'s `onResetToOnboarding` init param and
+    /// shared by `HomeScreen`'s `onResetToOnboarding` init param and
     /// `AccountActionCenter.resetToOnboarding` (the drawer's account
     /// tooltip's "로그아웃" alert, `04-account-tooltip-and-alerts`), so
     /// both call the exact same path instead of drifting apart.

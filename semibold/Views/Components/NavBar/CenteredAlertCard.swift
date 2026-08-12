@@ -73,6 +73,14 @@ struct CenteredAlertCard: View {
             }
         }
         .frame(width: 280)
+        // Without this, the vertical divider Rectangle between the two
+        // buttons below (width-only frame, no height) requests "as much
+        // height as proposed" — and since this card sits several
+        // `.overlay` layers deep under a screen-filling drawer, that
+        // proposal is close to the full screen height, stretching the
+        // whole card. This pins the card to its actual content height
+        // instead of accepting that oversized proposal.
+        .fixedSize(horizontal: false, vertical: true)
         .background(AppTheme.Colors.Neutral.n800, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
     }
 }

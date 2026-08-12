@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The navigation drawer opened from the hamburger `MenuButton` in
-/// `HomeView`/`FolderContentsView`/`DetailView`'s NavBars
+/// `HomeScreen`/`FolderContentsScreen`/`DetailView`'s NavBars
 /// (`Planning_Nav_2_DrawerFlow`, FLOW-NAV-002).
 ///
 /// Two states, matching the flow's two artboards:
@@ -32,26 +32,36 @@ struct SidebarDrawerView: View {
 
     @State private var viewModel = SidebarDrawerViewModel()
 
+    /// Drives the search field's keyboard. Explicitly cleared whenever the
+    /// drawer closes (`onChange(of: isPresented)` below) — without this,
+    /// nothing ever told the keyboard to dismiss, so tapping the dim
+    /// background to close the drawer left the keyboard on screen with no
+    /// focused field behind it.
+    @FocusState private var isSearchFieldFocused: Bool
+
     /// The account flow's two possible outcomes (sign out / delete
     /// account) — see `AccountActionCenter`'s doc comment for why this
     /// is read from the environment rather than threaded through this
     /// view's own `init`.
     @Environment(AccountActionCenter.self) private var accountActionCenter
 
-    /// Whether the account row's tooltip menu ("로그아웃"/"탈퇴하기",
-    /// `iOS_SidebarDrawer_AccountMenu`) is showing — the account flow's
-    /// first step (`04-account-tooltip-and-alerts`,
-    /// `Planning_Nav_3_AccountFlow`/FLOW-NAV-003).
-    @State private var isAccountTooltipPresented = false
+    /// Whether the account row's menu ("로그아웃"/"탈퇴하기",
+    /// `iOS_SidebarDrawer_AccountSheet`/`iPadOS_SidebarDrawer_AccountMenu`)
+    /// is showing — the account flow's first step
+    /// (`04-account-tooltip-and-alerts`,
+    /// `Planning_Nav_3_AccountFlow`/FLOW-NAV-003). Presented via the
+    /// system's native `.popover`, not a custom overlay — see
+    /// `accountRow`'s doc comment.
+    @State private var isAccountMenuPresented = false
 
     /// Whether the logout confirmation popup
     /// (`iOS_SidebarDrawer_LogoutAlert`) is showing — the account flow's
-    /// second step after tapping "로그아웃" in the tooltip.
+    /// second step after tapping "로그아웃" in the account menu.
     @State private var isLogoutAlertPresented = false
 
     /// Whether the delete-account confirmation popup
     /// (`iOS_SidebarDrawer_DeleteAccountAlert`) is showing — the account
-    /// flow's second step after tapping "탈퇴하기" in the tooltip.
+    /// flow's second step after tapping "탈퇴하기" in the account menu.
     @State private var isDeleteAccountAlertPresented = false
 
     /// The drawer panel's fixed width — narrow enough that the dimmed
@@ -69,7 +79,8 @@ struct SidebarDrawerView: View {
         .onChange(of: isPresented) { _, presented in
             if !presented {
                 viewModel.reset()
-                isAccountTooltipPresented = false
+                isSearchFieldFocused = false
+                isAccountMenuPresented = false
                 isLogoutAlertPresented = false
                 isDeleteAccountAlertPresented = false
             }
@@ -121,6 +132,21 @@ struct SidebarDrawerView: View {
         .offset(x: isPresented ? 0 : -panelWidth)
         .allowsHitTesting(isPresented)
         .accessibilityHidden(!isPresented)
+        // Without this, the panel's own bottom edge shrinks to stay above
+        // the keyboard (SwiftUI's default keyboard-avoidance), pushing
+        // accountRow up above it — the intent is the opposite: the
+        // keyboard should simply cover the bottom of the drawer (account
+        // row included), not rearrange the drawer's layout around it.
+        .ignoresSafeArea(.keyboard, edges: .bottom)
+        // Tapping anywhere in the panel other than the search field itself
+        // (a result row, the account row, empty space) dismisses the
+        // keyboard too — `simultaneousGesture` so this fires alongside
+        // whatever the tapped row/button already does, not instead of it.
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                isSearchFieldFocused = false
+            }
+        )
     }
 
     private var searchBar: some View {
@@ -132,6 +158,7 @@ struct SidebarDrawerView: View {
                 .appTextStyle(AppTheme.Typography.body)
                 .foregroundStyle(AppTheme.Colors.Content.primary)
                 .submitLabel(.search)
+                .focused($isSearchFieldFocused)
                 .onChange(of: viewModel.keyword) {
                     viewModel.keywordDidChange()
                 }
@@ -181,12 +208,24 @@ struct SidebarDrawerView: View {
 
     /// Bottom "계정" row, shown in both states
     /// (`Planning_Nav_2_DrawerFlow`'s "설정" → "계정" swap, `tasks/NO-008.md`
-    /// §2.1). Tapping it opens `accountTooltipOverlay` above it — the
-    /// account flow's first step (`04-account-tooltip-and-alerts`,
+    /// §2.1). Tapping it opens `AccountMenuContent` via the system's
+    /// native `.popover` — the account flow's first step
+    /// (`04-account-tooltip-and-alerts`,
     /// `Planning_Nav_3_AccountFlow`/FLOW-NAV-003).
+    ///
+    /// `.popover` (not a hand-rolled overlay) is deliberate: its own
+    /// per-size-class default already does exactly what the two Figma
+    /// mockups show — a small anchored card with an arrow on iPad
+    /// (regular size class), automatically adapted into a bottom sheet on
+    /// iPhone (compact size class) — with the system correctly measuring
+    /// this row's real on-screen frame to position against, which a
+    /// hand-rolled `alignmentGuide` (the previous approach) never did.
+    /// `presentationCompactAdaptation` is intentionally NOT set here, so
+    /// the iPhone sheet fallback stays the platform default rather than
+    /// being forced back into a floating card.
     private var accountRow: some View {
         Button {
-            isAccountTooltipPresented.toggle()
+            isAccountMenuPresented.toggle()
         } label: {
             HStack(spacing: AppTheme.Spacing.md) {
                 Image(systemName: "person.circle")
@@ -202,38 +241,32 @@ struct SidebarDrawerView: View {
             .padding(AppTheme.Spacing.md)
         }
         .buttonStyle(.plain)
-        .overlay(alignment: .topLeading) {
-            if isAccountTooltipPresented {
-                accountTooltipOverlay
-            }
+        .popover(isPresented: $isAccountMenuPresented, arrowEdge: .bottom) {
+            AccountMenuContent(
+                onLogoutTapped: {
+                    isAccountMenuPresented = false
+                    isLogoutAlertPresented = true
+                },
+                onDeleteAccountTapped: {
+                    isAccountMenuPresented = false
+                    isDeleteAccountAlertPresented = true
+                }
+            )
+            // Pins the iPhone sheet fallback to a compact height matching
+            // the content instead of the system default `.large` (full
+            // screen) — without this, the sheet covered the whole screen
+            // with the content stranded in the middle instead of pinned
+            // to the bottom edge. No effect on iPad's true popover, which
+            // ignores presentationDetents entirely.
+            .presentationDetents([.height(AccountMenuContent.contentHeight)])
+            .presentationDragIndicator(.visible)
         }
-    }
-
-    /// The account tooltip, anchored above `accountRow` — its bottom
-    /// pointer sits just above the row's top edge regardless of the
-    /// tooltip's own height, via the standard SwiftUI "flip an overlay
-    /// above its anchor" `alignmentGuide` trick (overriding the guide the
-    /// enclosing `.overlay(alignment: .topLeading)` aligns against to be
-    /// this content's own bottom edge instead of its top).
-    private var accountTooltipOverlay: some View {
-        AccountActionTooltip(
-            onLogoutTapped: {
-                isAccountTooltipPresented = false
-                isLogoutAlertPresented = true
-            },
-            onDeleteAccountTapped: {
-                isAccountTooltipPresented = false
-                isDeleteAccountAlertPresented = true
-            }
-        )
-        .alignmentGuide(.top) { dimensions in dimensions[.bottom] + AppTheme.Spacing.sm }
-        .padding(.leading, AppTheme.Spacing.md)
     }
 
     // MARK: - Account alerts
 
-    /// Second step after tapping "로그아웃" in the tooltip — reproduces
-    /// `HomeView`'s former `switchAccountButton` confirmation copy
+    /// Second step after tapping "로그아웃" in the account menu — reproduces
+    /// `HomeScreen`'s former `switchAccountButton` confirmation copy
     /// verbatim, just restyled as a `CenteredAlertCard` instead of a
     /// `.confirmationDialog`. Still branches on `isICloud` the same way
     /// that dialog did: an iCloud-mode session shows the "로그아웃" copy,
@@ -261,7 +294,7 @@ struct SidebarDrawerView: View {
         }
     }
 
-    /// Second step after tapping "탈퇴하기" in the tooltip — new, stronger
+    /// Second step after tapping "탈퇴하기" in the account menu — new, stronger
     /// warning copy covering permanent deletion and irreversibility
     /// (`04-account-tooltip-and-alerts`'s Decisions & Deviations).
     /// Confirming calls `accountActionCenter.deleteAccount`, which
@@ -305,13 +338,13 @@ struct SidebarDrawerView: View {
 /// rather than fabricating new icons (`03-sidebar-drawer`'s Decisions &
 /// Deviations).
 ///
-/// Tapping either pushes onto the same `NavigationStack` `HomeView`'s own
+/// Tapping either pushes onto the same `NavigationStack` `HomeScreen`'s own
 /// `FolderRow`/`DocumentRow` push onto — this drawer is mounted as an
-/// `.overlay` on a view already inside that stack (`HomeView` itself, or a
-/// screen `HomeView` pushed), so a plain `NavigationLink(value:)` here
+/// `.overlay` on a view already inside that stack (`HomeScreen` itself, or a
+/// screen `HomeScreen` pushed), so a plain `NavigationLink(value:)` here
 /// resolves through the exact same `.navigationDestination(for:)` pair
-/// registered once at `HomeView`'s `NavigationStack` root — the same
-/// mechanism that already lets a nested `FolderContentsView` push further
+/// registered once at `HomeScreen`'s `NavigationStack` root — the same
+/// mechanism that already lets a nested `FolderContentsScreen` push further
 /// folders/documents through destinations it never registers itself.
 private struct SidebarSearchResultRow: View {
     let result: SidebarSearchResult

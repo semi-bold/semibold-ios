@@ -1,12 +1,12 @@
 import Foundation
 
-/// Drives the "new document" title-entry sheet opened from `HomeView`'s
-/// or `FolderContentsView`'s "+" menu (`Planning_3_DocumentCreateFlow`,
+/// Drives the "new document" title-entry sheet opened from `HomeScreen`'s
+/// or `FolderContentsScreen`'s "+" menu (`Planning_3_DocumentCreateFlow`,
 /// PLANNING §5.3).
 ///
 /// Walks through the flow's state diagram: the caller decides which
-/// folder the document belongs to via `folderId` (`nil` from `HomeView`
-/// lands it at the root; a real folder id from `FolderContentsView`
+/// folder the document belongs to via `folderId` (`nil` from `HomeScreen`
+/// lands it at the root; a real folder id from `FolderContentsScreen`
 /// scopes it to that folder), the user types an optional title, and a
 /// `documents` row is saved — using "Untitled" when the title is left
 /// blank, per PLANNING §6.2 ("제목이 없을 경우 Untitled 사용").
@@ -22,7 +22,7 @@ final class NewDocumentViewModel {
 
     /// The folder this document is created inside of. `nil` means the
     /// root of the Private space (PLANNING §5.3 step B: "현재 선택된 폴더
-    /// 있음?" — `HomeView` has no folder-selection concept yet, so this
+    /// 있음?" — `HomeScreen` has no folder-selection concept yet, so this
     /// always takes the "없음" branch and uses the root/default location).
     private let folderId: String?
 

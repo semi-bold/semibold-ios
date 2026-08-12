@@ -4,7 +4,7 @@ import SwiftUI
 /// `Planning_3_DocumentCreateFlow` (PLANNING §5.3).
 ///
 /// Presented after the user picks "New Document" from the "+" menu on
-/// `HomeView`. Lets them type a title — leaving it blank is fine, the
+/// `HomeScreen`. Lets them type a title — leaving it blank is fine, the
 /// document is saved as "Untitled" (PLANNING §6.2) — and creates the
 /// document on confirm.
 ///

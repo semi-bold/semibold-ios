@@ -25,7 +25,7 @@ struct ICloudSetupRequiredView: View {
     let pendingAppleUserID: String
 
     /// Called when iCloud becomes available after a "다시 확인" tap — the
-    /// parent should transition to `HomeView` after this fires.
+    /// parent should transition to `HomeScreen` after this fires.
     let onSuccess: () -> Void
 
     /// Whether the async "다시 확인" check is in flight.
