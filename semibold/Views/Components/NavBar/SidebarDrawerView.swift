@@ -132,6 +132,21 @@ struct SidebarDrawerView: View {
         .offset(x: isPresented ? 0 : -panelWidth)
         .allowsHitTesting(isPresented)
         .accessibilityHidden(!isPresented)
+        // Without this, the panel's own bottom edge shrinks to stay above
+        // the keyboard (SwiftUI's default keyboard-avoidance), pushing
+        // accountRow up above it — the intent is the opposite: the
+        // keyboard should simply cover the bottom of the drawer (account
+        // row included), not rearrange the drawer's layout around it.
+        .ignoresSafeArea(.keyboard, edges: .bottom)
+        // Tapping anywhere in the panel other than the search field itself
+        // (a result row, the account row, empty space) dismisses the
+        // keyboard too — `simultaneousGesture` so this fires alongside
+        // whatever the tapped row/button already does, not instead of it.
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                isSearchFieldFocused = false
+            }
+        )
     }
 
     private var searchBar: some View {

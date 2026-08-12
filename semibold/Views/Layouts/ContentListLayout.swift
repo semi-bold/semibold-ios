@@ -11,6 +11,7 @@ import SwiftUI
 /// built from its own view-model state, and `onAddTapped`/
 /// `isDrawerPresented` are plain callbacks/bindings, not app state this
 /// view owns.
+
 /// The floating add button's own footprint (56pt diameter, see
 /// `AddButton`'s `.floating` placement) plus its trailing/bottom padding
 /// below, plus a little extra clearance. A file-scope constant, not a
@@ -53,5 +54,11 @@ struct ContentListLayout<NavBarContent: View, Content: View>: View {
             SidebarDrawerView(isPresented: $isDrawerPresented)
         }
         .toolbar(.hidden)
+        // The drawer's own search field lives inside this same subtree
+        // (mounted via the .overlay above) — without this, this whole
+        // layout (FAB included) shrinks/shifts to stay clear of that
+        // keyboard the same way it would for a text field of its own.
+        // The FAB should just sit still and let the keyboard cover it.
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 }
