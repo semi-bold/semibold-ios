@@ -11,6 +11,13 @@ import SwiftUI
 /// built from its own view-model state, and `onAddTapped`/
 /// `isDrawerPresented` are plain callbacks/bindings, not app state this
 /// view owns.
+/// The floating add button's own footprint (56pt diameter, see
+/// `AddButton`'s `.floating` placement) plus its trailing/bottom padding
+/// below, plus a little extra clearance. A file-scope constant, not a
+/// member of `ContentListLayout`, since generic types can't hold static
+/// stored properties.
+private let fabReservedHeight: CGFloat = 56 + AppTheme.Spacing.md + AppTheme.Spacing.md
+
 struct ContentListLayout<NavBarContent: View, Content: View>: View {
     @ViewBuilder var navBar: () -> NavBarContent
     @ViewBuilder var content: () -> Content
@@ -26,6 +33,15 @@ struct ContentListLayout<NavBarContent: View, Content: View>: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            // Reserves empty space below the last row so nothing can ever
+            // scroll to sit behind the floating add button — without
+            // this, a row scrolled to the very bottom had its swipe
+            // actions (edit/delete) rendered right under the FAB, which
+            // sits on top of the list in a fixed screen position and
+            // covered them.
+            .safeAreaInset(edge: .bottom) {
+                Color.clear.frame(height: fabReservedHeight)
+            }
         }
         .background(AppTheme.Colors.Neutral.n900)
         .overlay(alignment: .bottomTrailing) {

@@ -32,6 +32,13 @@ struct SidebarDrawerView: View {
 
     @State private var viewModel = SidebarDrawerViewModel()
 
+    /// Drives the search field's keyboard. Explicitly cleared whenever the
+    /// drawer closes (`onChange(of: isPresented)` below) — without this,
+    /// nothing ever told the keyboard to dismiss, so tapping the dim
+    /// background to close the drawer left the keyboard on screen with no
+    /// focused field behind it.
+    @FocusState private var isSearchFieldFocused: Bool
+
     /// The account flow's two possible outcomes (sign out / delete
     /// account) — see `AccountActionCenter`'s doc comment for why this
     /// is read from the environment rather than threaded through this
@@ -72,6 +79,7 @@ struct SidebarDrawerView: View {
         .onChange(of: isPresented) { _, presented in
             if !presented {
                 viewModel.reset()
+                isSearchFieldFocused = false
                 isAccountMenuPresented = false
                 isLogoutAlertPresented = false
                 isDeleteAccountAlertPresented = false
@@ -135,6 +143,7 @@ struct SidebarDrawerView: View {
                 .appTextStyle(AppTheme.Typography.body)
                 .foregroundStyle(AppTheme.Colors.Content.primary)
                 .submitLabel(.search)
+                .focused($isSearchFieldFocused)
                 .onChange(of: viewModel.keyword) {
                     viewModel.keywordDidChange()
                 }
