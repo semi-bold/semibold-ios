@@ -97,7 +97,7 @@ extension DetailViewModel {
         case .divider:
             // `plainText` is the literal `"---"` (not empty) so tapping
             // the rendered rule to edit it (`BlockRow.dividerBody`'s tap
-            // gesture, `DetailView.swift`) has real Markdown source text
+            // gesture, `DetailScreen.swift`) has real Markdown source text
             // to show, matching Obsidian's "tap a rule to reveal/edit its
             // raw `---` line" behavior. `blockIdToDefocus` drops keyboard
             // focus right away so it shows as the rendered rule

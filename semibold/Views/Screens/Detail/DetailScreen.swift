@@ -16,7 +16,7 @@ import SwiftUI
 /// conversions and a reorder UI (`Planning_4_BlockCreateFlow` callouts
 /// ①③⑤) land in later acceptance criteria — every block is a plain
 /// paragraph for now.
-struct DetailView: View {
+struct DetailScreen: View {
     @State private var viewModel: DetailViewModel
     @FocusState private var focusedBlockId: String?
     @State private var cursorOffsetToApply: Int?
@@ -606,7 +606,7 @@ private struct BlockRow: View {
 
 #Preview {
     NavigationStack {
-        DetailView(document: Document(title: "오늘의 일기"))
+        DetailScreen(document: Document(title: "오늘의 일기"))
     }
     .environment(AccountActionCenter())
 }

@@ -2,14 +2,14 @@ import Foundation
 import CoreTransferable
 
 /// A `Transferable` wrapper around one document's content items, for
-/// `ShareLink`'s "파일 저장 또는 공유" (§10.3) export button in `DetailView`.
+/// `ShareLink`'s "파일 저장 또는 공유" (§10.3) export button in `DetailScreen`.
 ///
 /// Holding just the document's title and its already-loaded items/content
 /// (cheap — `DetailViewModel.items`/`.textContents`/`.marksByItemId` are
 /// already in memory) defers the actual `MarkdownExporter.render` +
 /// temporary-file write to `exporting(...)`'s closure, which `ShareLink`
 /// only calls once the user taps the share button and the system asks for
-/// the file. This keeps `DetailView.body` — which SwiftUI re-evaluates on
+/// the file. This keeps `DetailScreen.body` — which SwiftUI re-evaluates on
 /// every `@Observable` edit to `viewModel` — free of any rendering or disk
 /// I/O.
 struct MarkdownDocumentExport: Transferable {

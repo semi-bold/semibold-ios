@@ -77,7 +77,7 @@ final class HomeViewModel {
     /// Refreshes the list after a new document is created
     /// (`Planning_3_DocumentCreateFlow`, PLANNING §5.3: "documents row
     /// 생성"). The user can then tap into the new document to open
-    /// `DetailView`.
+    /// `DetailScreen`.
     func didCreateDocument() {
         load()
     }
