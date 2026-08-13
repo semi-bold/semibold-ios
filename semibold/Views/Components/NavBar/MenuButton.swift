@@ -3,7 +3,7 @@ import SwiftUI
 /// The hamburger entry point for the app's navigation drawer
 /// (`icon_menu` in `Planning_Nav_1_TopBarFlow`, FLOW-NAV-001), shown in
 /// the NavBar's trailing position on `HomeScreen`, `FolderContentsScreen`,
-/// and `DetailView` so all three apply the same tap target/icon
+/// and `DetailScreen` so all three apply the same tap target/icon
 /// treatment instead of diverging.
 ///
 /// Uses the custom `IconMenu` asset (a template-rendered SVG in

@@ -93,7 +93,7 @@ struct HomeScreen: View {
                 // callout ⑤). This restores document-row navigation that a
                 // since-merged debugging commit had stripped from `HomeScreen`
                 // — not new functionality.
-                DetailView(document: document)
+                DetailScreen(document: document)
             }
         }
         .onAppear {

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The navigation drawer opened from the hamburger `MenuButton` in
-/// `HomeScreen`/`FolderContentsScreen`/`DetailView`'s NavBars
+/// `HomeScreen`/`FolderContentsScreen`/`DetailScreen`'s NavBars
 /// (`Planning_Nav_2_DrawerFlow`, FLOW-NAV-002).
 ///
 /// Two states, matching the flow's two artboards:

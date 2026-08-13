@@ -1,6 +1,6 @@
 import Foundation
 
-/// Decides what `FolderContentsScreen`'s and `DetailView`'s nav bar back
+/// Decides what `FolderContentsScreen`'s and `DetailScreen`'s nav bar back
 /// buttons show — both screens follow the same icon-only rule.
 ///
 /// Pulled out of `FolderContentsViewModel` so this branching logic has a

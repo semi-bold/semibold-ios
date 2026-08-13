@@ -3,7 +3,7 @@ import SwiftUI
 /// The Slash Command bottom sheet (`tasks/NO-001.md` §12.2 "Slash Command는
 /// bottom sheet 가능", §13.1 "/: Slash Command 열기").
 ///
-/// Presented from `DetailView` when the user types a lone `/` into an empty
+/// Presented from `DetailScreen` when the user types a lone `/` into an empty
 /// paragraph block. Lists every block type the editor supports other than
 /// plain paragraph (the default every block starts as) — tapping one
 /// converts the current block to that type via
@@ -17,8 +17,8 @@ import SwiftUI
 /// tokens, presented at `.medium`/`.large` detents like a standard iOS
 /// action sheet.
 struct SlashCommandSheet: View {
-    /// Called when the user taps an option. `DetailView` converts the
-    /// current block and the sheet is dismissed by `DetailView` clearing
+    /// Called when the user taps an option. `DetailScreen` converts the
+    /// current block and the sheet is dismissed by `DetailScreen` clearing
     /// `slashCommandBlockId`.
     let onSelect: (SlashCommandOption) -> Void
 

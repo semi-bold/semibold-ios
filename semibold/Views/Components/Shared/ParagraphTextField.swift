@@ -49,7 +49,7 @@ struct ParagraphTextField: UIViewRepresentable {
 
     /// A one-shot character offset to move the caret to once this block
     /// becomes focused, e.g. the merge point when a Backspace-at-start
-    /// merges the block below into this one. `DetailView` clears this back
+    /// merges the block below into this one. `DetailScreen` clears this back
     /// to `nil` once it's been applied.
     @Binding var cursorOffsetToApply: Int?
 

@@ -16,7 +16,7 @@ import SwiftUI
 /// conversions and a reorder UI (`Planning_4_BlockCreateFlow` callouts
 /// ①③⑤) land in later acceptance criteria — every block is a plain
 /// paragraph for now.
-struct DetailView: View {
+struct DetailScreen: View {
     @State private var viewModel: DetailViewModel
     @FocusState private var focusedBlockId: String?
     @State private var cursorOffsetToApply: Int?
@@ -296,25 +296,7 @@ struct DetailView: View {
             // the gap *between* blocks, so this doesn't affect that.
             LazyVStack(spacing: 0) {
                 ForEach(viewModel.items) { item in
-                    BlockRow(
-                        item: item,
-                        content: viewModel.textContent(forItemId: item.id),
-                        numberedListNumber: viewModel.numberedListNumber(forItemId: item.id),
-                        focusedBlockId: $focusedBlockId,
-                        cursorOffsetToApply: $cursorOffsetToApply,
-                        onTextChange: { text in
-                            viewModel.updateBlockText(item.id, text: text)
-                        },
-                        onEnter: { text, cursorOffset in
-                            viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
-                        },
-                        onBackspaceAtStart: { text in
-                            viewModel.mergeOrDeleteBlock(item.id, currentText: text)
-                        },
-                        onToggleChecklist: {
-                            viewModel.toggleChecklistItem(blockId: item.id)
-                        }
-                    )
+                    blockRow(for: item, content: viewModel.textContent(forItemId: item.id))
                 }
             }
             .padding(.top, AppTheme.Spacing.md)
@@ -354,259 +336,128 @@ struct DetailView: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
-}
 
-/// A single editable block row, matching the wireframe's `Block_*` groups:
-/// a text input for the block's content with a divider below
-/// (`Block_Editing`'s cursor when focused — callout ②).
-///
-/// Bulleted/numbered list items show a `•`/`<n>.` marker before the
-/// editable text (§7.1/§7.3's `- item` / `1. item` syntax). Checklist
-/// items show a tappable checkbox in that same leading column — tapping it
-/// toggles the task's done/not-done state (§7.1). Blockquote blocks show a
-/// vertical rule in that same leading column and dim the quoted text,
-/// marking it as a quote (§7.1/§7.3's `> quote` syntax). Code blocks show
-/// their code in a monospaced font on a distinguishing surface background
-/// (§7.1/§7.3's ` ```lang ` syntax).
-///
-/// Backed by a `DocumentItem` (`item` — position/hierarchy) plus that
-/// item's `TextContent` (`content` — the actual text). `content.textKind`
-/// is compared against `TextItemKind`'s constants rather than a closed
-/// enum — see `DetailViewModel.swift`'s `TextItemKind` doc comment.
-private struct BlockRow: View {
-    let item: DocumentItem
-    let content: TextContent
-    /// This row's position among consecutive numbered-list-item siblings
-    /// (`DetailViewModel.numberedListNumber(forItemId:)`) — only meaningful
-    /// when `content.textKind == TextItemKind.numberedListItem`.
-    let numberedListNumber: Int
-    var focusedBlockId: FocusState<String?>.Binding
-    @Binding var cursorOffsetToApply: Int?
-    let onTextChange: (String) -> Void
-    let onEnter: (String, Int) -> Void
-    let onBackspaceAtStart: (String) -> Void
-    let onToggleChecklist: () -> Void
-
-    /// Reads straight from `content.plainText` (the view model's source of
-    /// truth) rather than mirroring it into a separate local `@State` —
-    /// keystrokes still flow out via `onTextChange`, so this binding's
-    /// setter is a no-op, and `ParagraphTextField.updateUIView` picks up
-    /// the authoritative value on every render.
-    ///
-    /// A local echo used to exist here, kept in sync via
-    /// `.onChange(of: content.plainText)`, but that only fires when the
-    /// value actually differs between renders — which silently broke the
-    /// Slash Command flow: typing `/` writes `"/"` into the `UITextView`
-    /// directly (see `ParagraphTextField.Coordinator.textViewDidChange`),
-    /// then `updateBlockText` clears the block straight back to the
-    /// empty string it already was (`"" → "/" → ""`, a net no-op from the
-    /// view model's perspective), so the `onChange` never fired and the
-    /// stray `/` stuck around in the text field even after picking a type
-    /// from the sheet. Deriving directly from `content.plainText` removes
-    /// the second copy of the truth instead of patching the sync.
-    private var text: Binding<String> {
-        Binding(get: { content.plainText }, set: { _ in })
-    }
-
-    init(
-        item: DocumentItem,
-        content: TextContent,
-        numberedListNumber: Int,
-        focusedBlockId: FocusState<String?>.Binding,
-        cursorOffsetToApply: Binding<Int?>,
-        onTextChange: @escaping (String) -> Void,
-        onEnter: @escaping (String, Int) -> Void,
-        onBackspaceAtStart: @escaping (String) -> Void,
-        onToggleChecklist: @escaping () -> Void
-    ) {
-        self.item = item
-        self.content = content
-        self.numberedListNumber = numberedListNumber
-        self.focusedBlockId = focusedBlockId
-        self._cursorOffsetToApply = cursorOffsetToApply
-        self.onTextChange = onTextChange
-        self.onEnter = onEnter
-        self.onBackspaceAtStart = onBackspaceAtStart
-        self.onToggleChecklist = onToggleChecklist
-    }
-
-    /// The typography this block's text is shown in — heading levels 1-3
-    /// map to `AppTheme.Typography.heading1`/`.heading2`/`.heading3`
-    /// (§7.1/§7.3's `# `/`## `/`### ` conversions); every other block type
-    /// uses `.body`.
-    private var textStyle: TextStyleToken {
-        guard content.textKind == TextItemKind.heading else { return AppTheme.Typography.body }
-        switch content.headingLevel {
-        case 1: return AppTheme.Typography.heading1
-        case 2: return AppTheme.Typography.heading2
-        default: return AppTheme.Typography.title
-        }
-    }
-
-    /// The marker shown before a list item's text — a bullet for a
-    /// bulleted list item, the item's number followed by a period for a
-    /// numbered list item (§7.1/§7.3's `- item` / `1. item` syntax). `nil`
-    /// for every other block type, which shows no marker. Checklist items
-    /// show a checkbox instead, and blockquote blocks show a vertical
-    /// rule, in the same leading column — see `body`.
-    private var listMarker: String? {
+    /// Routes a block to the per-kind factory matching `content.textKind`
+    /// — `TextItemKind`'s 8 recognized kinds each get their own
+    /// `Views/Components/Block/*BlockView.chrome(...)` call, all
+    /// returning `BlockRowChrome` directly (not a per-kind `View` struct)
+    /// so every case of this switch produces the same concrete type. That
+    /// uniformity is what lets a block's `content.textKind` change (e.g.
+    /// backspacing an empty list item back to a paragraph,
+    /// `DetailViewModel.exitEmptyListItem`) without SwiftUI tearing down
+    /// and rebuilding the `ParagraphTextField` underneath — see
+    /// `BlockRowChrome`'s doc comment. Anything not explicitly listed (a
+    /// fresh block, or a `content.textKind` this build doesn't recognize
+    /// — `TextItemKind.unknown`) falls back to `ParagraphBlockView`, the
+    /// same way the pre-split `BlockRow` rendered those with no marker
+    /// and `.body` typography.
+    private func blockRow(for item: DocumentItem, content: TextContent) -> BlockRowChrome {
         switch content.textKind {
-        case TextItemKind.bulletedListItem: return "•"
-        case TextItemKind.numberedListItem: return "\(numberedListNumber)."
-        default: return nil
+        case TextItemKind.heading:
+            HeadingBlockView.chrome(
+                item: item,
+                content: content,
+                focusedBlockId: $focusedBlockId,
+                cursorOffsetToApply: $cursorOffsetToApply,
+                onTextChange: { text in viewModel.updateBlockText(item.id, text: text) },
+                onEnter: { text, cursorOffset in
+                    viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
+                },
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
+            )
+        case TextItemKind.quote:
+            QuoteBlockView.chrome(
+                item: item,
+                content: content,
+                focusedBlockId: $focusedBlockId,
+                cursorOffsetToApply: $cursorOffsetToApply,
+                onTextChange: { text in viewModel.updateBlockText(item.id, text: text) },
+                onEnter: { text, cursorOffset in
+                    viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
+                },
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
+            )
+        case TextItemKind.checklist:
+            ChecklistBlockView.chrome(
+                item: item,
+                content: content,
+                focusedBlockId: $focusedBlockId,
+                cursorOffsetToApply: $cursorOffsetToApply,
+                onTextChange: { text in viewModel.updateBlockText(item.id, text: text) },
+                onEnter: { text, cursorOffset in
+                    viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
+                },
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
+                onToggleChecklist: { viewModel.toggleChecklistItem(blockId: item.id) }
+            )
+        case TextItemKind.bulletedListItem:
+            BulletedListBlockView.chrome(
+                item: item,
+                content: content,
+                focusedBlockId: $focusedBlockId,
+                cursorOffsetToApply: $cursorOffsetToApply,
+                onTextChange: { text in viewModel.updateBlockText(item.id, text: text) },
+                onEnter: { text, cursorOffset in
+                    viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
+                },
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
+            )
+        case TextItemKind.numberedListItem:
+            NumberedListBlockView.chrome(
+                item: item,
+                content: content,
+                numberedListNumber: viewModel.numberedListNumber(forItemId: item.id),
+                focusedBlockId: $focusedBlockId,
+                cursorOffsetToApply: $cursorOffsetToApply,
+                onTextChange: { text in viewModel.updateBlockText(item.id, text: text) },
+                onEnter: { text, cursorOffset in
+                    viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
+                },
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
+            )
+        case TextItemKind.codeBlock:
+            CodeBlockView.chrome(
+                item: item,
+                content: content,
+                focusedBlockId: $focusedBlockId,
+                cursorOffsetToApply: $cursorOffsetToApply,
+                onTextChange: { text in viewModel.updateBlockText(item.id, text: text) },
+                onEnter: { text, cursorOffset in
+                    viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
+                },
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
+            )
+        case TextItemKind.divider:
+            DividerBlockView.chrome(
+                item: item,
+                content: content,
+                focusedBlockId: $focusedBlockId,
+                cursorOffsetToApply: $cursorOffsetToApply,
+                onTextChange: { text in viewModel.updateBlockText(item.id, text: text) },
+                onEnter: { text, cursorOffset in
+                    viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
+                },
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
+            )
+        default:
+            ParagraphBlockView.chrome(
+                item: item,
+                content: content,
+                focusedBlockId: $focusedBlockId,
+                cursorOffsetToApply: $cursorOffsetToApply,
+                onTextChange: { text in viewModel.updateBlockText(item.id, text: text) },
+                onEnter: { text, cursorOffset in
+                    viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
+                },
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
+            )
         }
-    }
-
-    /// The color this block's text is shown in — blockquote text is
-    /// dimmed (`AppTheme.Colors.Content.secondary`) to read as a quote, distinct from
-    /// the surrounding paragraph text; every other block type uses the
-    /// primary text color.
-    private var textColor: Color {
-        content.textKind == TextItemKind.quote ? AppTheme.Colors.Content.secondary : AppTheme.Colors.Content.primary
-    }
-
-    /// Whether this row's text is shown in a monospaced font — `true` for
-    /// code blocks (§7.1/§7.3's ` ```lang ` syntax), so code reads
-    /// distinctly from prose.
-    private var isCodeBlock: Bool {
-        content.textKind == TextItemKind.codeBlock
-    }
-
-    /// Whether this block is a divider — rendered as a horizontal rule
-    /// with no editable text (the Slash Command "Divider" option, §12.2).
-    private var isDivider: Bool {
-        content.textKind == TextItemKind.divider
-    }
-
-    /// Whether this row is currently showing the rendered `---` rule
-    /// rather than its editable text — a divider that isn't focused.
-    private var showsDividerRule: Bool {
-        isDivider && focusedBlockId.wrappedValue != item.id
-    }
-
-    /// Always renders `editableBody` — critically, this means the
-    /// `ParagraphTextField` underneath a divider's rule is never
-    /// destroyed/recreated when focus moves in and out of it. An earlier
-    /// version swapped between two entirely different view trees (a bare
-    /// `Rectangle` vs. the text field) based on focus, which meant tapping
-    /// the rule had to simultaneously *insert* a brand-new
-    /// `ParagraphTextField` *and* focus it in the same update — a known
-    /// fragile SwiftUI/UIKit interop timing case (this custom
-    /// `UIViewRepresentable` has no explicit `becomeFirstResponder()` of
-    /// its own; it relies entirely on `.focused()` finding an
-    /// already-attached view) — which silently failed to ever bring up
-    /// the keyboard, making the rule untappable in practice. Keeping the
-    /// text field permanently in the tree and overlaying the rule visual
-    /// on top (`editableBody`) reuses the exact same always-present
-    /// mechanism every other block type already focuses reliably.
-    var body: some View {
-        editableBody
-    }
-
-    private var editableBody: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-            // A code block's fence language identifier (e.g. `swift`
-            // for ` ```swift `) isn't modeled on `TextContent` — see
-            // `DetailViewModel.updateBlockText`'s doc comment — so
-            // unlike the pre-NO-005 editor, no language caption shows
-            // above the code here.
-
-            // No spacing beyond the marker column's own `minWidth`
-            // below (unchanged) — the previous `AppTheme.Spacing.sm`
-            // (8pt) gap on top of that column left too much empty
-            // space between a marker (bullet/number/checkbox/quote
-            // bar) and its text.
-            HStack(alignment: .top, spacing: 0) {
-                if let listMarker {
-                    Text(listMarker)
-                        .appTextStyle(textStyle)
-                        .foregroundStyle(AppTheme.Colors.Content.primary)
-                        .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
-                } else if content.textKind == TextItemKind.checklist {
-                    let isChecked = content.isChecked ?? false
-                    Button(action: onToggleChecklist) {
-                        Image(systemName: isChecked ? "checkmark.square" : "square")
-                            .foregroundStyle(isChecked ? AppTheme.Colors.accent : AppTheme.Colors.Content.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
-                    .frame(height: textStyle.lineHeight, alignment: .center)
-                } else if content.textKind == TextItemKind.quote {
-                    Rectangle()
-                        .fill(AppTheme.Colors.Stroke.border)
-                        .frame(width: AppTheme.Spacing.xs)
-                        .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
-                }
-
-                ZStack(alignment: .leading) {
-                    // Always at full opacity (alpha 1), even while the
-                    // divider rule is drawn on top of it
-                    // (`showsDividerRule`) — a `UIViewRepresentable`-wrapped
-                    // `UITextView` whose SwiftUI `.opacity()` is 0 gets its
-                    // real `UIView.alpha` set to 0 too, and UIKit's own
-                    // `hitTest(_:with:)` refuses to hit-test any view with
-                    // `alpha < 0.01` *regardless* of SwiftUI's
-                    // `allowsHitTesting` — a rule `.allowsHitTesting()`
-                    // can't override, since it only affects SwiftUI's own
-                    // hit-testing pass, not UIKit's. Hiding this via
-                    // opacity (an earlier version of this fix) therefore
-                    // made it — and everything behind it — completely
-                    // untappable while a divider's rule was showing.
-                    //
-                    // Staying opaque keeps a tap anywhere on the row
-                    // reaching this real `UITextView` directly, focusing it
-                    // through the ordinary native UIKit path (touch →
-                    // `becomeFirstResponder()` → `.focused()` observes the
-                    // change) — the same reliable mechanism every other
-                    // block type already uses. The `"---"` text itself is
-                    // hidden by matching its color to the row's background
-                    // instead (`showsDividerRule ? background : textColor`
-                    // below), which only affects what's drawn, not the
-                    // view's alpha/hit-testability.
-                    ParagraphTextField(
-                        text: text,
-                        textStyle: textStyle,
-                        textColor: showsDividerRule ? AppTheme.Colors.Neutral.n900 : textColor,
-                        isMonospaced: isCodeBlock,
-                        onTextChange: onTextChange,
-                        onEnter: { cursorOffset in
-                            onEnter(content.plainText, cursorOffset)
-                        },
-                        onBackspaceAtStart: {
-                            onBackspaceAtStart(content.plainText)
-                        },
-                        cursorOffsetToApply: focusedBlockId.wrappedValue == item.id ? $cursorOffsetToApply : .constant(nil)
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .focused(focusedBlockId, equals: item.id)
-
-                    // A divider block's `"---"` text sits underneath this
-                    // rule (color-matched to the background, invisible)
-                    // whenever it isn't focused. Purely a visual overlay —
-                    // `allowsHitTesting(false)` lets every tap pass
-                    // straight through to the text field above, which
-                    // reveals the literal `"---"` for editing/deleting once
-                    // it's focused (see that field's comment above for why
-                    // taps aren't handled here instead).
-                    Rectangle()
-                        .fill(AppTheme.Colors.Stroke.border)
-                        .frame(height: 1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .opacity(showsDividerRule ? 1 : 0)
-                        .allowsHitTesting(false)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .padding(.horizontal, AppTheme.Spacing.md)
-        .padding(.vertical, showsDividerRule ? AppTheme.Spacing.lg : AppTheme.Spacing.sm)
-        .background(isCodeBlock ? AppTheme.Colors.Neutral.n700 : AppTheme.Colors.Neutral.n900)
     }
 }
 
 #Preview {
     NavigationStack {
-        DetailView(document: Document(title: "오늘의 일기"))
+        DetailScreen(document: Document(title: "오늘의 일기"))
     }
     .environment(AccountActionCenter())
 }
