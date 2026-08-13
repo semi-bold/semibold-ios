@@ -4,31 +4,33 @@ import SwiftUI
 /// in the leading column, and dimmed (`AppTheme.Colors.Content
 /// .secondary`) text so it reads as a quote, distinct from surrounding
 /// paragraph text.
-struct QuoteBlockView: View {
-    let item: DocumentItem
-    let content: TextContent
-    var focusedBlockId: FocusState<String?>.Binding
-    @Binding var cursorOffsetToApply: Int?
-    let onTextChange: (String) -> Void
-    let onEnter: (String, Int) -> Void
-    let onBackspaceAtStart: (String) -> Void
-
-    var body: some View {
+///
+/// A plain `enum` with a static factory rather than a `View` struct — see
+/// `BlockRowChrome`'s doc comment for why: every per-kind block returns
+/// `BlockRowChrome` directly so `DetailScreen.blockRow(for:content:)`'s
+/// switch produces one uniform concrete type across all `content.textKind`
+/// cases.
+enum QuoteBlockView {
+    static func chrome(
+        item: DocumentItem,
+        content: TextContent,
+        focusedBlockId: FocusState<String?>.Binding,
+        cursorOffsetToApply: Binding<Int?>,
+        onTextChange: @escaping (String) -> Void,
+        onEnter: @escaping (String, Int) -> Void,
+        onBackspaceAtStart: @escaping (String) -> Void
+    ) -> BlockRowChrome {
         BlockRowChrome(
             item: item,
             content: content,
             focusedBlockId: focusedBlockId,
-            cursorOffsetToApply: $cursorOffsetToApply,
+            cursorOffsetToApply: cursorOffsetToApply,
             textStyle: AppTheme.Typography.body,
             textColor: AppTheme.Colors.Content.secondary,
+            leadingContent: .quoteBar,
             onTextChange: onTextChange,
             onEnter: onEnter,
             onBackspaceAtStart: onBackspaceAtStart
-        ) {
-            Rectangle()
-                .fill(AppTheme.Colors.Stroke.border)
-                .frame(width: AppTheme.Spacing.xs)
-                .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
-        }
+        )
     }
 }

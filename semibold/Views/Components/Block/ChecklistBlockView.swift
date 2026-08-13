@@ -2,35 +2,33 @@ import SwiftUI
 
 /// A checklist block (§7.1's `- [ ] item` syntax) — a tappable checkbox
 /// in the leading column that toggles the task's done/not-done state.
-struct ChecklistBlockView: View {
-    let item: DocumentItem
-    let content: TextContent
-    var focusedBlockId: FocusState<String?>.Binding
-    @Binding var cursorOffsetToApply: Int?
-    let onTextChange: (String) -> Void
-    let onEnter: (String, Int) -> Void
-    let onBackspaceAtStart: (String) -> Void
-    let onToggleChecklist: () -> Void
-
-    var body: some View {
+///
+/// A plain `enum` with a static factory rather than a `View` struct — see
+/// `BlockRowChrome`'s doc comment for why: every per-kind block returns
+/// `BlockRowChrome` directly so `DetailScreen.blockRow(for:content:)`'s
+/// switch produces one uniform concrete type across all `content.textKind`
+/// cases.
+enum ChecklistBlockView {
+    static func chrome(
+        item: DocumentItem,
+        content: TextContent,
+        focusedBlockId: FocusState<String?>.Binding,
+        cursorOffsetToApply: Binding<Int?>,
+        onTextChange: @escaping (String) -> Void,
+        onEnter: @escaping (String, Int) -> Void,
+        onBackspaceAtStart: @escaping (String) -> Void,
+        onToggleChecklist: @escaping () -> Void
+    ) -> BlockRowChrome {
         BlockRowChrome(
             item: item,
             content: content,
             focusedBlockId: focusedBlockId,
-            cursorOffsetToApply: $cursorOffsetToApply,
+            cursorOffsetToApply: cursorOffsetToApply,
             textStyle: AppTheme.Typography.body,
+            leadingContent: .checkbox(isChecked: content.isChecked ?? false, action: onToggleChecklist),
             onTextChange: onTextChange,
             onEnter: onEnter,
             onBackspaceAtStart: onBackspaceAtStart
-        ) {
-            let isChecked = content.isChecked ?? false
-            Button(action: onToggleChecklist) {
-                Image(systemName: isChecked ? "checkmark.square" : "square")
-                    .foregroundStyle(isChecked ? AppTheme.Colors.accent : AppTheme.Colors.Content.secondary)
-            }
-            .buttonStyle(.plain)
-            .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
-            .frame(height: AppTheme.Typography.body.lineHeight, alignment: .center)
-        }
+        )
     }
 }

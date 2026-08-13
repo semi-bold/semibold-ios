@@ -1,39 +1,51 @@
 import SwiftUI
 
+/// What a block row's leading column (before its text) shows — a plain
+/// value rather than a `View`-typed closure, so every per-kind block
+/// (`ParagraphBlockView`, `HeadingBlockView`, `QuoteBlockView`,
+/// `ChecklistBlockView`, `BulletedListBlockView`, `NumberedListBlockView`,
+/// `CodeBlockView`) constructs the exact same `BlockRowChrome` concrete
+/// type, just with a different `leadingContent` value. That uniformity is
+/// what lets `DetailScreen.blockRow(for:content:)` switch between kinds
+/// for the same block id without SwiftUI tearing down and rebuilding the
+/// `ParagraphTextField` underneath — see `BlockRowChrome`'s doc comment.
+enum BlockLeadingContent {
+    case none
+    case marker(String)
+    case checkbox(isChecked: Bool, action: () -> Void)
+    case quoteBar
+}
+
 /// The scaffold every editable block row shares, regardless of
 /// `content.textKind` — the row's outer padding/background, the
 /// `ParagraphTextField` wiring (focus binding, cursor placement, and the
 /// Enter/Backspace/text-change callbacks `DetailViewModel` drives), and a
-/// `leadingColumn` slot for whatever a given kind puts before its text.
+/// `leadingContent` slot for whatever a given kind puts before its text.
 ///
 /// Each of the 8 per-kind views under `Views/Components/Block/`
 /// (`ParagraphBlockView`, `HeadingBlockView`, `QuoteBlockView`,
 /// `ChecklistBlockView`, `BulletedListBlockView`, `NumberedListBlockView`,
-/// `CodeBlockView`, `DividerBlockView`) plugs in only what actually
-/// varies for its kind — typography (`textStyle`), text color,
-/// monospacing, the code-block background, the row's vertical padding,
-/// the leading column's content, and an overlay drawn on top of the text
-/// field — via this view's plain parameters and its `leadingColumn`/
-/// `fieldOverlay` `@ViewBuilder` slots. This view itself never branches
-/// on `content.textKind`; routing which per-kind view a block uses is
-/// `DetailScreen.blockList`'s job.
-///
-/// A kind with no leading-column content (paragraph, heading, code
-/// block, divider) simply doesn't pass a `leadingColumn` closure — the
-/// default `EmptyView()` takes up no space in the row's leading `HStack`
-/// at all, matching how those kinds render today with no leading-column
-/// element in the tree whatsoever. A kind that does have leading content
-/// (list marker, checkbox, quote bar) is responsible for its own
-/// `frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)` sizing on
-/// whatever it passes in — that sizing only ever applied to those kinds
-/// to begin with, so this chrome doesn't force it onto every row.
-///
-/// `fieldOverlay` exists solely for `DividerBlockView`'s rendered `---`
-/// rule — see that view's doc comment for why it has to be drawn as a
-/// same-position overlay on top of the always-mounted text field rather
-/// than swapped in/out based on focus. Every other kind leaves it at the
-/// default `EmptyView()`.
-struct BlockRowChrome<LeadingColumn: View, FieldOverlay: View>: View {
+/// `CodeBlockView`, `DividerBlockView`) is a plain `enum` with a static
+/// `chrome(...)` factory that returns `BlockRowChrome` directly — not a
+/// `View` struct wrapping it. That matters: `BlockRowChrome` is a single
+/// concrete (non-generic) type, so every one of those 8 factories returns
+/// the *same* type. `DetailScreen.blockRow(for:content:)` switches on
+/// `content.textKind` and calls straight into whichever factory applies,
+/// so the `@ViewBuilder switch`'s leaf type is `BlockRowChrome` in every
+/// case. SwiftUI's diffing is structural, not value-based — when a block's
+/// `content.textKind` changes (e.g. backspacing an empty list item back to
+/// a paragraph, `DetailViewModel.exitEmptyListItem`), the switch takes a
+/// different case, but since every case still yields the same concrete
+/// `BlockRowChrome` type at that tree position, SwiftUI treats it as the
+/// same view re-rendered with new parameter values, not a different view
+/// replacing it. That preserves `ParagraphTextField`'s backing
+/// `UIViewRepresentable`/`UITextView` identity — and with it, keyboard
+/// focus — across the kind change. Routing through 7 distinct `View`
+/// struct types (the earlier design) broke exactly this: switching between
+/// distinct concrete types at the same tree position, even ones that
+/// looked interchangeable, is a different view to SwiftUI, so it tore the
+/// text field down and rebuilt it, silently dropping focus.
+struct BlockRowChrome: View {
     let item: DocumentItem
     let content: TextContent
     var focusedBlockId: FocusState<String?>.Binding
@@ -44,9 +56,9 @@ struct BlockRowChrome<LeadingColumn: View, FieldOverlay: View>: View {
     /// `.heading2`/`.title`; every other kind passes `.body`.
     let textStyle: TextStyleToken
     /// This kind's text color — `QuoteBlockView` passes `.secondary` to
-    /// dim its quoted text; `DividerBlockView` passes a color matching
-    /// the row's background while its rule is showing (see that view's
-    /// doc comment); every other kind uses the default `.primary`.
+    /// dim its quoted text; every other kind uses the default `.primary`.
+    /// Ignored for a divider row while its rule is showing — see
+    /// `resolvedTextColor`.
     var textColor: Color = AppTheme.Colors.Content.primary
     /// Whether this kind's text is monospaced — `true` only for
     /// `CodeBlockView`.
@@ -56,54 +68,18 @@ struct BlockRowChrome<LeadingColumn: View, FieldOverlay: View>: View {
     /// `CodeBlockView`. A plain flag rather than a `content.textKind`
     /// comparison, so this view stays kind-agnostic.
     var isCodeBlock: Bool = false
-    /// The row's vertical padding — every kind but `DividerBlockView`
-    /// uses the default `AppTheme.Spacing.sm`. `DividerBlockView` passes
-    /// a larger value while its rule is showing (`AppTheme.Spacing.lg`),
-    /// matching the extra breathing room a rendered horizontal rule needs
-    /// versus an ordinary line of text.
-    var verticalPadding: CGFloat = AppTheme.Spacing.sm
+    /// What this row's leading column shows before its text — a marker
+    /// (bullet/number), a checkbox, a quote bar, or nothing. See
+    /// `BlockLeadingContent`.
+    var leadingContent: BlockLeadingContent = .none
+    /// True only for `DividerBlockView` — see `showsDividerRule` and
+    /// `dividerRuleOverlay` for what this switches on. Every other kind
+    /// leaves this at the default `false`.
+    var isDividerRow: Bool = false
 
     let onTextChange: (String) -> Void
     let onEnter: (String, Int) -> Void
     let onBackspaceAtStart: (String) -> Void
-
-    @ViewBuilder var leadingColumn: () -> LeadingColumn
-    /// Drawn on top of the text field, aligned to its leading edge —
-    /// only `DividerBlockView` uses this (its rendered `---` rule); every
-    /// other kind leaves it at the default `EmptyView()`.
-    @ViewBuilder var fieldOverlay: () -> FieldOverlay
-
-    init(
-        item: DocumentItem,
-        content: TextContent,
-        focusedBlockId: FocusState<String?>.Binding,
-        cursorOffsetToApply: Binding<Int?>,
-        textStyle: TextStyleToken,
-        textColor: Color = AppTheme.Colors.Content.primary,
-        isMonospaced: Bool = false,
-        isCodeBlock: Bool = false,
-        verticalPadding: CGFloat = AppTheme.Spacing.sm,
-        onTextChange: @escaping (String) -> Void,
-        onEnter: @escaping (String, Int) -> Void,
-        onBackspaceAtStart: @escaping (String) -> Void,
-        @ViewBuilder leadingColumn: @escaping () -> LeadingColumn = { EmptyView() },
-        @ViewBuilder fieldOverlay: @escaping () -> FieldOverlay = { EmptyView() }
-    ) {
-        self.item = item
-        self.content = content
-        self.focusedBlockId = focusedBlockId
-        self._cursorOffsetToApply = cursorOffsetToApply
-        self.textStyle = textStyle
-        self.textColor = textColor
-        self.isMonospaced = isMonospaced
-        self.isCodeBlock = isCodeBlock
-        self.verticalPadding = verticalPadding
-        self.onTextChange = onTextChange
-        self.onEnter = onEnter
-        self.onBackspaceAtStart = onBackspaceAtStart
-        self.leadingColumn = leadingColumn
-        self.fieldOverlay = fieldOverlay
-    }
 
     /// Reads straight from `content.plainText` (the view model's source
     /// of truth) rather than mirroring it into a separate local `@State`
@@ -127,6 +103,30 @@ struct BlockRowChrome<LeadingColumn: View, FieldOverlay: View>: View {
         Binding(get: { content.plainText }, set: { _ in })
     }
 
+    /// Whether this row is currently showing the rendered `---` rule
+    /// rather than its editable text — true only for a divider row that
+    /// isn't focused. See `DividerBlockView`'s doc comment for why the
+    /// rule is drawn as an overlay on the always-mounted text field rather
+    /// than swapped in for it.
+    private var showsDividerRule: Bool {
+        isDividerRow && focusedBlockId.wrappedValue != item.id
+    }
+
+    /// A divider's `"---"` text is color-matched to the row's background
+    /// (invisible) while its rule is showing — see `dividerRuleOverlay`'s
+    /// doc comment for why it's hidden this way instead of via opacity.
+    private var resolvedTextColor: Color {
+        showsDividerRule ? AppTheme.Colors.Neutral.n900 : textColor
+    }
+
+    /// Every kind but a showing divider rule uses the default
+    /// `AppTheme.Spacing.sm`; a divider needs the extra breathing room a
+    /// rendered horizontal rule wants over an ordinary line of text.
+    private var resolvedVerticalPadding: CGFloat {
+        guard isDividerRow else { return AppTheme.Spacing.sm }
+        return showsDividerRule ? AppTheme.Spacing.lg : AppTheme.Spacing.sm
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
             // No spacing beyond the leading column's own `minWidth`
@@ -134,12 +134,12 @@ struct BlockRowChrome<LeadingColumn: View, FieldOverlay: View>: View {
             // much empty space between a marker (bullet/number/checkbox/
             // quote bar) and its text.
             HStack(alignment: .top, spacing: 0) {
-                leadingColumn()
+                leadingColumnView
 
                 ParagraphTextField(
                     text: text,
                     textStyle: textStyle,
-                    textColor: textColor,
+                    textColor: resolvedTextColor,
                     isMonospaced: isMonospaced,
                     onTextChange: onTextChange,
                     onEnter: { cursorOffset in
@@ -152,11 +152,61 @@ struct BlockRowChrome<LeadingColumn: View, FieldOverlay: View>: View {
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .focused(focusedBlockId, equals: item.id)
-                .overlay(alignment: .leading) { fieldOverlay() }
+                .overlay(alignment: .leading) { dividerRuleOverlay }
             }
         }
         .padding(.horizontal, AppTheme.Spacing.md)
-        .padding(.vertical, verticalPadding)
+        .padding(.vertical, resolvedVerticalPadding)
         .background(isCodeBlock ? AppTheme.Colors.Neutral.n700 : AppTheme.Colors.Neutral.n900)
+    }
+
+    @ViewBuilder
+    private var leadingColumnView: some View {
+        switch leadingContent {
+        case .none:
+            EmptyView()
+        case .marker(let marker):
+            Text(marker)
+                .appTextStyle(textStyle)
+                .foregroundStyle(AppTheme.Colors.Content.primary)
+                .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+        case .checkbox(let isChecked, let action):
+            Button(action: action) {
+                Image(systemName: isChecked ? "checkmark.square" : "square")
+                    .foregroundStyle(isChecked ? AppTheme.Colors.accent : AppTheme.Colors.Content.secondary)
+            }
+            .buttonStyle(.plain)
+            .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+            .frame(height: textStyle.lineHeight, alignment: .center)
+        case .quoteBar:
+            Rectangle()
+                .fill(AppTheme.Colors.Stroke.border)
+                .frame(width: AppTheme.Spacing.xs)
+                .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
+        }
+    }
+
+    /// A divider block's `"---"` text (hidden via `resolvedTextColor`,
+    /// not opacity — see that property's doc comment; the short version:
+    /// a `UIViewRepresentable`-wrapped `UITextView` at `opacity(0)` gets
+    /// its real `UIView.alpha` set to 0 too, and UIKit's own
+    /// `hitTest(_:with:)` refuses to hit-test any view with
+    /// `alpha < 0.01` regardless of SwiftUI's `allowsHitTesting`, making
+    /// it and everything behind it untappable) sits underneath this rule
+    /// whenever the row isn't focused. Purely a visual overlay —
+    /// `allowsHitTesting(false)` lets every tap pass straight through to
+    /// the always-mounted text field above, which is what makes tapping
+    /// the rendered rule reliably focus it (`tasks/NO-007.md` §0, commit
+    /// `9aba150`).
+    @ViewBuilder
+    private var dividerRuleOverlay: some View {
+        if isDividerRow {
+            Rectangle()
+                .fill(AppTheme.Colors.Stroke.border)
+                .frame(height: 1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .opacity(showsDividerRule ? 1 : 0)
+                .allowsHitTesting(false)
+        }
     }
 }

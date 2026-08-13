@@ -4,21 +4,27 @@ import SwiftUI
 /// for freshly created blocks and any `content.textKind` this build
 /// doesn't recognize (`DetailScreen.blockRow(for:content:)`'s fallback).
 /// No leading-column marker; `.body` typography; primary text color.
-struct ParagraphBlockView: View {
-    let item: DocumentItem
-    let content: TextContent
-    var focusedBlockId: FocusState<String?>.Binding
-    @Binding var cursorOffsetToApply: Int?
-    let onTextChange: (String) -> Void
-    let onEnter: (String, Int) -> Void
-    let onBackspaceAtStart: (String) -> Void
-
-    var body: some View {
+///
+/// A plain `enum` with a static factory rather than a `View` struct — see
+/// `BlockRowChrome`'s doc comment for why: every per-kind block returns
+/// `BlockRowChrome` directly so `DetailScreen.blockRow(for:content:)`'s
+/// switch produces one uniform concrete type across all `content.textKind`
+/// cases.
+enum ParagraphBlockView {
+    static func chrome(
+        item: DocumentItem,
+        content: TextContent,
+        focusedBlockId: FocusState<String?>.Binding,
+        cursorOffsetToApply: Binding<Int?>,
+        onTextChange: @escaping (String) -> Void,
+        onEnter: @escaping (String, Int) -> Void,
+        onBackspaceAtStart: @escaping (String) -> Void
+    ) -> BlockRowChrome {
         BlockRowChrome(
             item: item,
             content: content,
             focusedBlockId: focusedBlockId,
-            cursorOffsetToApply: $cursorOffsetToApply,
+            cursorOffsetToApply: cursorOffsetToApply,
             textStyle: AppTheme.Typography.body,
             onTextChange: onTextChange,
             onEnter: onEnter,

@@ -337,19 +337,24 @@ struct DetailScreen: View {
             .accessibilityHidden(true)
     }
 
-    /// Routes a block to the per-kind view matching `content.textKind` —
-    /// `TextItemKind`'s 8 recognized kinds each get their own
-    /// `Views/Components/Block/*BlockView` (all built on the shared
-    /// `BlockRowChrome`); anything else (a fresh block, or a
-    /// `content.textKind` this build doesn't recognize —
-    /// `TextItemKind.unknown`) falls back to `ParagraphBlockView`, the
+    /// Routes a block to the per-kind factory matching `content.textKind`
+    /// — `TextItemKind`'s 8 recognized kinds each get their own
+    /// `Views/Components/Block/*BlockView.chrome(...)` call, all
+    /// returning `BlockRowChrome` directly (not a per-kind `View` struct)
+    /// so every case of this switch produces the same concrete type. That
+    /// uniformity is what lets a block's `content.textKind` change (e.g.
+    /// backspacing an empty list item back to a paragraph,
+    /// `DetailViewModel.exitEmptyListItem`) without SwiftUI tearing down
+    /// and rebuilding the `ParagraphTextField` underneath — see
+    /// `BlockRowChrome`'s doc comment. Anything not explicitly listed (a
+    /// fresh block, or a `content.textKind` this build doesn't recognize
+    /// — `TextItemKind.unknown`) falls back to `ParagraphBlockView`, the
     /// same way the pre-split `BlockRow` rendered those with no marker
     /// and `.body` typography.
-    @ViewBuilder
-    private func blockRow(for item: DocumentItem, content: TextContent) -> some View {
+    private func blockRow(for item: DocumentItem, content: TextContent) -> BlockRowChrome {
         switch content.textKind {
         case TextItemKind.heading:
-            HeadingBlockView(
+            HeadingBlockView.chrome(
                 item: item,
                 content: content,
                 focusedBlockId: $focusedBlockId,
@@ -361,7 +366,7 @@ struct DetailScreen: View {
                 onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         case TextItemKind.quote:
-            QuoteBlockView(
+            QuoteBlockView.chrome(
                 item: item,
                 content: content,
                 focusedBlockId: $focusedBlockId,
@@ -373,7 +378,7 @@ struct DetailScreen: View {
                 onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         case TextItemKind.checklist:
-            ChecklistBlockView(
+            ChecklistBlockView.chrome(
                 item: item,
                 content: content,
                 focusedBlockId: $focusedBlockId,
@@ -386,7 +391,7 @@ struct DetailScreen: View {
                 onToggleChecklist: { viewModel.toggleChecklistItem(blockId: item.id) }
             )
         case TextItemKind.bulletedListItem:
-            BulletedListBlockView(
+            BulletedListBlockView.chrome(
                 item: item,
                 content: content,
                 focusedBlockId: $focusedBlockId,
@@ -398,7 +403,7 @@ struct DetailScreen: View {
                 onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         case TextItemKind.numberedListItem:
-            NumberedListBlockView(
+            NumberedListBlockView.chrome(
                 item: item,
                 content: content,
                 numberedListNumber: viewModel.numberedListNumber(forItemId: item.id),
@@ -411,7 +416,7 @@ struct DetailScreen: View {
                 onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         case TextItemKind.codeBlock:
-            CodeBlockView(
+            CodeBlockView.chrome(
                 item: item,
                 content: content,
                 focusedBlockId: $focusedBlockId,
@@ -423,7 +428,7 @@ struct DetailScreen: View {
                 onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         case TextItemKind.divider:
-            DividerBlockView(
+            DividerBlockView.chrome(
                 item: item,
                 content: content,
                 focusedBlockId: $focusedBlockId,
@@ -435,7 +440,7 @@ struct DetailScreen: View {
                 onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         default:
-            ParagraphBlockView(
+            ParagraphBlockView.chrome(
                 item: item,
                 content: content,
                 focusedBlockId: $focusedBlockId,

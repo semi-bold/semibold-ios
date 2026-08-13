@@ -5,33 +5,35 @@ import SwiftUI
 /// (`numberedListNumber`, from `DetailViewModel
 /// .numberedListNumber(forItemId:)`), followed by a period, in the
 /// leading column before the item's text.
-struct NumberedListBlockView: View {
-    let item: DocumentItem
-    let content: TextContent
-    /// This row's position among consecutive numbered-list-item siblings
-    /// — see `DetailViewModel.numberedListNumber(forItemId:)`.
-    let numberedListNumber: Int
-    var focusedBlockId: FocusState<String?>.Binding
-    @Binding var cursorOffsetToApply: Int?
-    let onTextChange: (String) -> Void
-    let onEnter: (String, Int) -> Void
-    let onBackspaceAtStart: (String) -> Void
-
-    var body: some View {
+///
+/// A plain `enum` with a static factory rather than a `View` struct — see
+/// `BlockRowChrome`'s doc comment for why: every per-kind block returns
+/// `BlockRowChrome` directly so `DetailScreen.blockRow(for:content:)`'s
+/// switch produces one uniform concrete type across all `content.textKind`
+/// cases.
+enum NumberedListBlockView {
+    static func chrome(
+        item: DocumentItem,
+        content: TextContent,
+        /// This row's position among consecutive numbered-list-item
+        /// siblings — see `DetailViewModel.numberedListNumber(forItemId:)`.
+        numberedListNumber: Int,
+        focusedBlockId: FocusState<String?>.Binding,
+        cursorOffsetToApply: Binding<Int?>,
+        onTextChange: @escaping (String) -> Void,
+        onEnter: @escaping (String, Int) -> Void,
+        onBackspaceAtStart: @escaping (String) -> Void
+    ) -> BlockRowChrome {
         BlockRowChrome(
             item: item,
             content: content,
             focusedBlockId: focusedBlockId,
-            cursorOffsetToApply: $cursorOffsetToApply,
+            cursorOffsetToApply: cursorOffsetToApply,
             textStyle: AppTheme.Typography.body,
+            leadingContent: .marker("\(numberedListNumber)."),
             onTextChange: onTextChange,
             onEnter: onEnter,
             onBackspaceAtStart: onBackspaceAtStart
-        ) {
-            Text("\(numberedListNumber).")
-                .appTextStyle(AppTheme.Typography.body)
-                .foregroundStyle(AppTheme.Colors.Content.primary)
-                .frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)
-        }
+        )
     }
 }
