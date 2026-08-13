@@ -193,8 +193,8 @@ struct SlashCommandConversionTests {
         let content = viewModel.textContent(forItemId: blockId)
         #expect(content.textKind == TextItemKind.divider)
         // Literal "---", not empty — tapping the rendered rule to edit it
-        // needs real Markdown source text to show (`BlockRow.dividerBody`'s
-        // tap gesture, `DetailScreen.swift`).
+        // needs real Markdown source text to show (`DividerBlockRow.body`'s
+        // `ParagraphTextField`, `DetailScreen.swift`).
         #expect(content.plainText == "---")
 
         let stored = try #require(try textItemRepository.find(itemId: blockId))

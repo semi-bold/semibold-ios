@@ -143,7 +143,7 @@ final class DetailViewModel {
     /// to keep typing: it should immediately show as the rendered rule
     /// with the keyboard dismissed, matching Obsidian's "tap a `---` rule
     /// to reveal its editable source, tap away to render it again"
-    /// behavior (`BlockRow.body`/`dividerBody` in `DetailScreen.swift`).
+    /// behavior (`DividerBlockRow.body` in `DetailScreen.swift`).
     /// The view observes this and clears its local focus state to match,
     /// then calls `defocusHandled()`. Not `private(set)` like
     /// `focusedBlockId` — Swift's `private` is file-scoped, and
