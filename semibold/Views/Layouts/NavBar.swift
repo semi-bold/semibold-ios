@@ -2,13 +2,13 @@ import SwiftUI
 
 /// The layout-composition layer for every screen's top bar — the shared
 /// chrome (fixed 52pt content row, horizontal padding, 1px divider, n800
-/// background) that `HomeScreen`/`FolderContentsScreen`/`DetailView` used to
+/// background) that `HomeScreen`/`FolderContentsScreen`/`DetailScreen` used to
 /// each hand-roll separately with near-identical `VStack`/`HStack` code.
 ///
 /// Screens plug in only what actually differs between them via three
 /// slots — `leading` (back button or wordmark), `center` (an optional
 /// title overlay, e.g. a folder's name), and `trailingExtra` (any
-/// trailing content that sits before the menu button, e.g. `DetailView`'s
+/// trailing content that sits before the menu button, e.g. `DetailScreen`'s
 /// export button) — while the trailing-most `MenuButton` (opens
 /// `SidebarDrawerView`) is always present, since every screen's NavBar
 /// has one (`Planning_Nav_1_TopBarFlow`, FLOW-NAV-001).

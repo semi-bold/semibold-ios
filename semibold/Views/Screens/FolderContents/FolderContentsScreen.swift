@@ -15,7 +15,7 @@ import SwiftUI
 /// ④) — wired below via `NavigationLink(value:)`, resolved by the
 /// `.navigationDestination(for: Folder.self)` registered once at the
 /// `NavigationStack` root in `HomeScreen`. Tapping a document row pushes
-/// `DetailView` (callout ⑤) — also wired via `NavigationLink(value:)`,
+/// `DetailScreen` (callout ⑤) — also wired via `NavigationLink(value:)`,
 /// resolved by the `.navigationDestination(for: Document.self)`
 /// registered alongside it at that same stack root.
 struct FolderContentsScreen: View {

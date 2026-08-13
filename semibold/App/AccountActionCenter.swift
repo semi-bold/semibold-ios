@@ -5,9 +5,9 @@ import Foundation
 ///
 /// The account row lives in `SidebarDrawerView`
 /// (`Views/Components/NavBar/SidebarDrawerView.swift`), which `HomeScreen`,
-/// `FolderContentsScreen`, and `DetailView` all mount as a screen-covering
+/// `FolderContentsScreen`, and `DetailScreen` all mount as a screen-covering
 /// overlay — but only `HomeScreen` is constructed with a direct
-/// "return to onboarding" closure, and `FolderContentsScreen`/`DetailView`
+/// "return to onboarding" closure, and `FolderContentsScreen`/`DetailScreen`
 /// are pushed via `.navigationDestination(for:)` closures registered once
 /// at `HomeScreen`'s `NavigationStack` root, so threading that closure
 /// through both of their `init`s would be invasive. This mirrors
@@ -20,7 +20,7 @@ import Foundation
 /// `HomeScreen(...)` call site, and read from `SidebarDrawerView` — the one
 /// place the account row lives — via `@Environment(AccountActionCenter.self)`.
 /// Environment values propagate to every screen pushed inside that same
-/// `NavigationStack`, so `FolderContentsScreen`/`DetailView` pick this up
+/// `NavigationStack`, so `FolderContentsScreen`/`DetailScreen` pick this up
 /// for free.
 ///
 /// Because `resetToOnboarding` needs to capture `SemiboldApp`'s own

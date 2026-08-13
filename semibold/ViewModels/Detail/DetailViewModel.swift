@@ -23,7 +23,7 @@ enum TextItemKind {
     static let unknown = "unknown"
 }
 
-/// Drives `DetailView` — the document editor screen.
+/// Drives `DetailScreen` — the document editor screen.
 ///
 /// Loads a document's content items from the local database so the editor
 /// always reflects what's actually been saved, and implements
@@ -49,7 +49,7 @@ final class DetailViewModel {
     /// The document being viewed/edited.
     private(set) var document: Document
 
-    /// The back-button label `DetailView`'s nav bar shows — icon-only, the
+    /// The back-button label `DetailScreen`'s nav bar shows — icon-only, the
     /// same house-for-root/chevron-for-nested-folder rule as
     /// `FolderContentsScreen`'s back button (`Planning_6_FolderNavigationFlow`
     /// callout ①, extended to the editor screen so both screens handle an
@@ -143,7 +143,7 @@ final class DetailViewModel {
     /// to keep typing: it should immediately show as the rendered rule
     /// with the keyboard dismissed, matching Obsidian's "tap a `---` rule
     /// to reveal its editable source, tap away to render it again"
-    /// behavior (`BlockRow.body`/`dividerBody` in `DetailView.swift`).
+    /// behavior (`BlockRow.body`/`dividerBody` in `DetailScreen.swift`).
     /// The view observes this and clears its local focus state to match,
     /// then calls `defocusHandled()`. Not `private(set)` like
     /// `focusedBlockId` — Swift's `private` is file-scoped, and
@@ -155,11 +155,11 @@ final class DetailViewModel {
     /// shown (§12.2 "Slash Command는 bottom sheet 가능", §13.1 "/: Slash
     /// Command 열기"), or `nil` if no sheet should be shown. Set by
     /// `updateBlockText` when the user types a lone `/` into an empty
-    /// paragraph block; `DetailView` observes this to present the sheet.
+    /// paragraph block; `DetailScreen` observes this to present the sheet.
     private(set) var slashCommandBlockId: String?
 
     /// Set when a block save or delete fails to persist (§15.2 "저장
-    /// 실패"/"삭제 실패"), so `DetailView` can show the corresponding
+    /// 실패"/"삭제 실패"), so `DetailScreen` can show the corresponding
     /// message. `nil` once the message has been shown/dismissed, or after
     /// the next successful save/delete.
     var errorMessage: String?
