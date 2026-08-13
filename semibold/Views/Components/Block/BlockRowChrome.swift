@@ -6,30 +6,34 @@ import SwiftUI
 /// Enter/Backspace/text-change callbacks `DetailViewModel` drives), and a
 /// `leadingColumn` slot for whatever a given kind puts before its text.
 ///
-/// Each of the 7 per-kind views under `Views/Components/Block/`
+/// Each of the 8 per-kind views under `Views/Components/Block/`
 /// (`ParagraphBlockView`, `HeadingBlockView`, `QuoteBlockView`,
 /// `ChecklistBlockView`, `BulletedListBlockView`, `NumberedListBlockView`,
-/// `CodeBlockView`) plugs in only what actually varies for its kind —
-/// typography (`textStyle`), text color, monospacing, the code-block
-/// background, and the leading column's content — via this view's plain
-/// parameters and its `leadingColumn` `@ViewBuilder` slot. This view
-/// itself never branches on `content.textKind`; routing which per-kind
-/// view a block uses is `DetailScreen.blockList`'s job.
-///
-/// `divider` isn't one of the 7 kinds yet (`03-divider-block-split`) —
-/// it still renders through its own dedicated `DividerBlockRow` in
-/// `DetailScreen.swift`, which doesn't use this chrome.
+/// `CodeBlockView`, `DividerBlockView`) plugs in only what actually
+/// varies for its kind — typography (`textStyle`), text color,
+/// monospacing, the code-block background, the row's vertical padding,
+/// the leading column's content, and an overlay drawn on top of the text
+/// field — via this view's plain parameters and its `leadingColumn`/
+/// `fieldOverlay` `@ViewBuilder` slots. This view itself never branches
+/// on `content.textKind`; routing which per-kind view a block uses is
+/// `DetailScreen.blockList`'s job.
 ///
 /// A kind with no leading-column content (paragraph, heading, code
-/// block) simply doesn't pass a `leadingColumn` closure — the default
-/// `EmptyView()` takes up no space in the row's leading `HStack` at all,
-/// matching how those kinds render today with no leading-column element
-/// in the tree whatsoever. A kind that does have leading content (list
-/// marker, checkbox, quote bar) is responsible for its own
+/// block, divider) simply doesn't pass a `leadingColumn` closure — the
+/// default `EmptyView()` takes up no space in the row's leading `HStack`
+/// at all, matching how those kinds render today with no leading-column
+/// element in the tree whatsoever. A kind that does have leading content
+/// (list marker, checkbox, quote bar) is responsible for its own
 /// `frame(minWidth: AppTheme.Spacing.lg, alignment: .leading)` sizing on
 /// whatever it passes in — that sizing only ever applied to those kinds
 /// to begin with, so this chrome doesn't force it onto every row.
-struct BlockRowChrome<LeadingColumn: View>: View {
+///
+/// `fieldOverlay` exists solely for `DividerBlockView`'s rendered `---`
+/// rule — see that view's doc comment for why it has to be drawn as a
+/// same-position overlay on top of the always-mounted text field rather
+/// than swapped in/out based on focus. Every other kind leaves it at the
+/// default `EmptyView()`.
+struct BlockRowChrome<LeadingColumn: View, FieldOverlay: View>: View {
     let item: DocumentItem
     let content: TextContent
     var focusedBlockId: FocusState<String?>.Binding
@@ -40,7 +44,9 @@ struct BlockRowChrome<LeadingColumn: View>: View {
     /// `.heading2`/`.title`; every other kind passes `.body`.
     let textStyle: TextStyleToken
     /// This kind's text color — `QuoteBlockView` passes `.secondary` to
-    /// dim its quoted text; every other kind uses the default `.primary`.
+    /// dim its quoted text; `DividerBlockView` passes a color matching
+    /// the row's background while its rule is showing (see that view's
+    /// doc comment); every other kind uses the default `.primary`.
     var textColor: Color = AppTheme.Colors.Content.primary
     /// Whether this kind's text is monospaced — `true` only for
     /// `CodeBlockView`.
@@ -50,12 +56,22 @@ struct BlockRowChrome<LeadingColumn: View>: View {
     /// `CodeBlockView`. A plain flag rather than a `content.textKind`
     /// comparison, so this view stays kind-agnostic.
     var isCodeBlock: Bool = false
+    /// The row's vertical padding — every kind but `DividerBlockView`
+    /// uses the default `AppTheme.Spacing.sm`. `DividerBlockView` passes
+    /// a larger value while its rule is showing (`AppTheme.Spacing.lg`),
+    /// matching the extra breathing room a rendered horizontal rule needs
+    /// versus an ordinary line of text.
+    var verticalPadding: CGFloat = AppTheme.Spacing.sm
 
     let onTextChange: (String) -> Void
     let onEnter: (String, Int) -> Void
     let onBackspaceAtStart: (String) -> Void
 
     @ViewBuilder var leadingColumn: () -> LeadingColumn
+    /// Drawn on top of the text field, aligned to its leading edge —
+    /// only `DividerBlockView` uses this (its rendered `---` rule); every
+    /// other kind leaves it at the default `EmptyView()`.
+    @ViewBuilder var fieldOverlay: () -> FieldOverlay
 
     init(
         item: DocumentItem,
@@ -66,10 +82,12 @@ struct BlockRowChrome<LeadingColumn: View>: View {
         textColor: Color = AppTheme.Colors.Content.primary,
         isMonospaced: Bool = false,
         isCodeBlock: Bool = false,
+        verticalPadding: CGFloat = AppTheme.Spacing.sm,
         onTextChange: @escaping (String) -> Void,
         onEnter: @escaping (String, Int) -> Void,
         onBackspaceAtStart: @escaping (String) -> Void,
-        @ViewBuilder leadingColumn: @escaping () -> LeadingColumn = { EmptyView() }
+        @ViewBuilder leadingColumn: @escaping () -> LeadingColumn = { EmptyView() },
+        @ViewBuilder fieldOverlay: @escaping () -> FieldOverlay = { EmptyView() }
     ) {
         self.item = item
         self.content = content
@@ -79,10 +97,12 @@ struct BlockRowChrome<LeadingColumn: View>: View {
         self.textColor = textColor
         self.isMonospaced = isMonospaced
         self.isCodeBlock = isCodeBlock
+        self.verticalPadding = verticalPadding
         self.onTextChange = onTextChange
         self.onEnter = onEnter
         self.onBackspaceAtStart = onBackspaceAtStart
         self.leadingColumn = leadingColumn
+        self.fieldOverlay = fieldOverlay
     }
 
     /// Reads straight from `content.plainText` (the view model's source
@@ -132,10 +152,11 @@ struct BlockRowChrome<LeadingColumn: View>: View {
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .focused(focusedBlockId, equals: item.id)
+                .overlay(alignment: .leading) { fieldOverlay() }
             }
         }
         .padding(.horizontal, AppTheme.Spacing.md)
-        .padding(.vertical, AppTheme.Spacing.sm)
+        .padding(.vertical, verticalPadding)
         .background(isCodeBlock ? AppTheme.Colors.Neutral.n700 : AppTheme.Colors.Neutral.n900)
     }
 }

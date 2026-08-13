@@ -96,9 +96,9 @@ extension DetailViewModel {
             textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.codeBlock, plainText: "")
         case .divider:
             // `plainText` is the literal `"---"` (not empty) so tapping
-            // the rendered rule to edit it (`DividerBlockRow.body`'s
-            // `ParagraphTextField`, `DetailScreen.swift`) has real
-            // Markdown source text to show, matching Obsidian's "tap a
+            // the rendered rule to edit it (`DividerBlockView.body`'s
+            // `ParagraphTextField`, `Views/Components/Block/DividerBlockView.swift`)
+            // has real Markdown source text to show, matching Obsidian's "tap a
             // rule to reveal/edit its raw `---` line" behavior.
             // `blockIdToDefocus` drops keyboard focus right away so it
             // shows as the rendered rule immediately instead of staying
