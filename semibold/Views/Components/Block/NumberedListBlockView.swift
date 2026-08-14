@@ -18,6 +18,10 @@ enum NumberedListBlockView {
         /// This row's position among consecutive numbered-list-item
         /// siblings — see `DetailViewModel.numberedListNumber(forItemId:)`.
         numberedListNumber: Int,
+        /// This item's nesting depth (0 for top-level) — see
+        /// `DetailViewModel.depth(forItemId:)`. Forwarded straight to
+        /// `BlockRowChrome`, which renders the per-level indent.
+        depth: Int,
         focusedBlockId: FocusState<String?>.Binding,
         cursorOffsetToApply: Binding<Int?>,
         onTextChange: @escaping (String) -> Void,
@@ -31,6 +35,7 @@ enum NumberedListBlockView {
             cursorOffsetToApply: cursorOffsetToApply,
             textStyle: AppTheme.Typography.body,
             leadingContent: .marker("\(numberedListNumber)."),
+            depth: depth,
             onTextChange: onTextChange,
             onEnter: onEnter,
             onBackspaceAtStart: onBackspaceAtStart
