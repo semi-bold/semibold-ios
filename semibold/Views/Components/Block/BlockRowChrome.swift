@@ -108,13 +108,18 @@ struct BlockRowChrome: View {
     /// Decisions). Only the three list-kind factories ever pass `false`
     /// here (computed by `DetailScreen.blockRow(for:content:)` from
     /// `item.parentItemId != nil`); every other kind leaves this at the
-    /// default `true`, which is moot since their `onOutdent` — and so the
-    /// toolbar itself — is `nil`.
+    /// default `true`, which is moot since their `onOutdent` is `nil` —
+    /// `IndentableTextView.updateToolbarItems()` never even puts an
+    /// outdent button in the toolbar for those rows, so this value is
+    /// never read for them.
     var canOutdent: Bool = true
 
-    /// Called when the on-screen toolbar's dismiss button is tapped — see
-    /// `onIndent`. Only the three list-kind factories ever pass a
-    /// non-`nil` closure here.
+    /// Called when the on-screen toolbar's dismiss button is tapped.
+    /// Unlike `onIndent`/`onOutdent`, every block kind's factory passes a
+    /// non-`nil` closure here — a keyboard-dismiss affordance isn't a
+    /// list-specific concept, so every row gets at least a dismiss-only
+    /// toolbar (`IndentableTextView.inputAccessoryView` gates on this
+    /// property, not `onIndent`).
     var onDismissKeyboard: (() -> Void)? = nil
 
     /// Reads straight from `content.plainText` (the view model's source
