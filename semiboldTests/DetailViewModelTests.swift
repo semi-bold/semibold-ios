@@ -357,6 +357,31 @@ struct DetailViewModelTests {
         #expect(viewModel.blockIdToDefocus == blockId)
     }
 
+    // MARK: - `dismissKeyboard(forBlockId:)` (`05-onscreen-keyboard-indent-toolbar`)
+
+    @Test("dismissKeyboard(forBlockId:) sets blockIdToDefocus to the given block, the same signal the divider flow uses")
+    func dismissKeyboardSetsBlockIdToDefocus() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        let blockId = try #require(viewModel.items.first?.id)
+
+        #expect(viewModel.blockIdToDefocus == nil)
+
+        viewModel.dismissKeyboard(forBlockId: blockId)
+
+        #expect(viewModel.blockIdToDefocus == blockId)
+
+        // `defocusHandled()` (already called by `DetailScreen`'s
+        // `.onChange(of: viewModel.blockIdToDefocus)` handler) clears it
+        // back to `nil`, the same way it does for the divider-defocus flow.
+        viewModel.defocusHandled()
+        #expect(viewModel.blockIdToDefocus == nil)
+    }
+
     @Test("Editing a divider's literal '---' text keeps it a divider")
     func editingDividerTextUnchangedStaysDivider() throws {
         let store = try makeStore()

@@ -101,6 +101,22 @@ struct BlockRowChrome: View {
     /// Called on a hardware Shift+Tab press — see `onIndent`.
     var onOutdent: (() -> Void)? = nil
 
+    /// Whether the on-screen toolbar's outdent button is enabled for this
+    /// row — `false` when the item has no parent (already top-level), so
+    /// the toolbar shows outdent dimmed at ~35% opacity instead of a
+    /// silently-inert tap (`05-onscreen-keyboard-indent-toolbar` brief's
+    /// Decisions). Only the three list-kind factories ever pass `false`
+    /// here (computed by `DetailScreen.blockRow(for:content:)` from
+    /// `item.parentItemId != nil`); every other kind leaves this at the
+    /// default `true`, which is moot since their `onOutdent` — and so the
+    /// toolbar itself — is `nil`.
+    var canOutdent: Bool = true
+
+    /// Called when the on-screen toolbar's dismiss button is tapped — see
+    /// `onIndent`. Only the three list-kind factories ever pass a
+    /// non-`nil` closure here.
+    var onDismissKeyboard: (() -> Void)? = nil
+
     /// Reads straight from `content.plainText` (the view model's source
     /// of truth) rather than mirroring it into a separate local `@State`
     /// — keystrokes still flow out via `onTextChange`, so this binding's
@@ -182,6 +198,8 @@ struct BlockRowChrome: View {
                     },
                     onIndent: onIndent,
                     onOutdent: onOutdent,
+                    canOutdent: canOutdent,
+                    onDismissKeyboard: onDismissKeyboard,
                     cursorOffsetToApply: focusedBlockId.wrappedValue == item.id ? $cursorOffsetToApply : .constant(nil)
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)

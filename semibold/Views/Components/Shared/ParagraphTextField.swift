@@ -59,6 +59,26 @@ struct ParagraphTextField: UIViewRepresentable {
     /// grandparent. `nil` for every non-list block, same as `onIndent`.
     var onOutdent: (() -> Void)? = nil
 
+    /// Whether the on-screen keyboard toolbar's outdent button should be
+    /// enabled — `false` when the focused list item has no parent
+    /// (already top-level), in which case the button shows at ~35%
+    /// opacity and doesn't call `onOutdent`
+    /// (`05-onscreen-keyboard-indent-toolbar` brief's Decisions — mirrors
+    /// `outdentBlock`'s own no-op guard, but surfaced as a visibly-inert
+    /// control rather than a silent no-op tap). Ignored when `onOutdent`
+    /// is `nil` (no toolbar to show it in). Defaults to `true` so existing
+    /// call sites don't need to change.
+    var canOutdent: Bool = true
+
+    /// Called when the on-screen keyboard toolbar's dismiss button is
+    /// tapped (`05-onscreen-keyboard-indent-toolbar` brief) — routes back
+    /// to `DetailViewModel`'s existing `blockIdToDefocus` focus-clearing
+    /// signal rather than a direct UIKit `resignFirstResponder`/
+    /// `endEditing` call, keeping `@FocusState` the single source of
+    /// truth for focus. `nil` for every non-list block, same as
+    /// `onIndent`/`onOutdent`.
+    var onDismissKeyboard: (() -> Void)? = nil
+
     /// A one-shot character offset to move the caret to once this block
     /// becomes focused, e.g. the merge point when a Backspace-at-start
     /// merges the block below into this one. `DetailScreen` clears this back
@@ -87,6 +107,8 @@ struct ParagraphTextField: UIViewRepresentable {
         textView.text = text
         textView.onIndent = onIndent
         textView.onOutdent = onOutdent
+        textView.canOutdent = canOutdent
+        textView.onDismissKeyboard = onDismissKeyboard
         return textView
     }
 
@@ -110,6 +132,8 @@ struct ParagraphTextField: UIViewRepresentable {
         if let indentableTextView = uiView as? IndentableTextView {
             indentableTextView.onIndent = onIndent
             indentableTextView.onOutdent = onOutdent
+            indentableTextView.canOutdent = canOutdent
+            indentableTextView.onDismissKeyboard = onDismissKeyboard
         }
 
         if uiView.text != text {
@@ -196,7 +220,10 @@ struct ParagraphTextField: UIViewRepresentable {
 
 /// A `UITextView` subclass that turns a hardware Tab/Shift+Tab press into
 /// `onIndent`/`onOutdent`, rather than the character `UITextViewDelegate
-/// .shouldChangeTextIn` sees on every other keypress.
+/// .shouldChangeTextIn` sees on every other keypress, and shows a matching
+/// on-screen keyboard toolbar (indent/outdent/dismiss) for the on-screen
+/// keyboard, which has no physical Tab key at all
+/// (`05-onscreen-keyboard-indent-toolbar` brief, `tasks/NO-009.md` §3.3).
 ///
 /// `shouldChangeTextIn` (used for Enter/Backspace above) only fires when a
 /// keypress actually changes the text — Shift+Tab typically inserts no
@@ -211,10 +238,67 @@ struct ParagraphTextField: UIViewRepresentable {
 /// matching `onIndent`/`onOutdent` closure is non-`nil` — when both are
 /// `nil` (every non-list block), this returns `nil` and Tab falls through
 /// to `UITextView`'s own default handling (inserting a tab character),
-/// unchanged from before this type existed.
+/// unchanged from before this type existed. `inputAccessoryView` reuses
+/// that exact same "`onIndent` non-`nil`" gate (see its doc comment below)
+/// so the on-screen toolbar and the hardware key commands agree on what
+/// counts as "a list-kind block" without a second detection mechanism.
 final class IndentableTextView: UITextView {
-    var onIndent: (() -> Void)?
+    var onIndent: (() -> Void)? {
+        didSet { reloadInputViewsIfFirstResponder() }
+    }
     var onOutdent: (() -> Void)?
+
+    /// Whether the on-screen toolbar's outdent button is enabled — see
+    /// `ParagraphTextField.canOutdent`'s doc comment. Defaults to `true` so
+    /// a block that never sets this explicitly (every non-list block, and
+    /// list items before `updateUIView`'s first pass) doesn't start out
+    /// dimmed.
+    var canOutdent: Bool = true {
+        didSet { updateOutdentButtonState() }
+    }
+
+    /// Called when the on-screen toolbar's dismiss button is tapped — see
+    /// `ParagraphTextField.onDismissKeyboard`'s doc comment.
+    var onDismissKeyboard: (() -> Void)?
+
+    /// The on-screen keyboard toolbar (`KeyboardToolbar_States` state
+    /// B/C, `05-onscreen-keyboard-indent-toolbar` brief) — three SF
+    /// Symbol buttons (indent, outdent, keyboard-dismiss) on a dark
+    /// surface matching the rest of this app's theme, rather than
+    /// `UIToolbar`'s default light-appearance items. Built lazily since
+    /// most `IndentableTextView`s (every non-list block) never show it.
+    lazy var accessoryToolbar: UIToolbar = {
+        let toolbar = UIToolbar(frame: CGRect(x: 0, y: 0, width: 0, height: 44))
+        toolbar.autoresizingMask = [.flexibleWidth]
+        toolbar.isTranslucent = false
+        toolbar.barTintColor = UIColor(AppTheme.Colors.Neutral.n800)
+        toolbar.items = [
+            UIBarButtonItem(customView: indentButton),
+            UIBarButtonItem(customView: outdentButton),
+            UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
+            UIBarButtonItem(customView: dismissButton)
+        ]
+        toolbar.sizeToFit()
+        return toolbar
+    }()
+
+    lazy var indentButton = Self.makeToolbarButton(
+        systemName: "increase.indent", target: self, action: #selector(handleIndentButtonTap)
+    )
+    lazy var outdentButton = Self.makeToolbarButton(
+        systemName: "decrease.indent", target: self, action: #selector(handleOutdentButtonTap)
+    )
+    lazy var dismissButton = Self.makeToolbarButton(
+        systemName: "keyboard", target: self, action: #selector(handleDismissButtonTap)
+    )
+
+    private static func makeToolbarButton(systemName: String, target: Any, action: Selector) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(systemName: systemName), for: .normal)
+        button.tintColor = UIColor(AppTheme.Colors.Content.secondary)
+        button.addTarget(target, action: action, for: .touchUpInside)
+        return button
+    }
 
     override var keyCommands: [UIKeyCommand]? {
         var commands: [UIKeyCommand] = []
@@ -231,6 +315,25 @@ final class IndentableTextView: UITextView {
         return commands.isEmpty ? nil : commands
     }
 
+    /// Shows `accessoryToolbar` above the on-screen keyboard only while
+    /// `onIndent` is non-`nil` — the exact same gate `keyCommands` above
+    /// uses, so both the hardware-Tab path and the on-screen-toolbar path
+    /// agree on "is this a list-kind block" (`05
+    /// -onscreen-keyboard-indent-toolbar` brief's Decisions: don't invent
+    /// a second detection mechanism). `nil` for every non-list block
+    /// leaves `inputAccessoryView` at `UITextView`'s own default (no
+    /// accessory view), unchanged from before this override existed.
+    ///
+    /// `UITextView.inputAccessoryView` is read-write (`{ get set }`) on
+    /// `UIResponder`, so overriding it needs a `set` too, even though
+    /// nothing outside this type ever assigns it — this view's
+    /// accessory view is entirely derived from `onIndent`, not settable
+    /// from outside.
+    override var inputAccessoryView: UIView? {
+        get { onIndent != nil ? accessoryToolbar : nil }
+        set { /* Derived from `onIndent` — intentionally ignored. */ }
+    }
+
     /// The `UIKeyCommand` target-action for a plain Tab press — a thin
     /// `@objc` forwarder to `onIndent` so tests can also call it directly,
     /// the same way a real Tab press would, without needing to simulate an
@@ -243,6 +346,50 @@ final class IndentableTextView: UITextView {
     /// `handleIndentKeyCommand`.
     @objc func handleOutdentKeyCommand() {
         onOutdent?()
+    }
+
+    /// The on-screen toolbar's indent button tap — always calls `onIndent`
+    /// unconditionally, matching indent's own lack of a "can't act" state
+    /// (unlike outdent, indent has nothing to disable: any list item can
+    /// nest under its previous sibling).
+    @objc func handleIndentButtonTap() {
+        onIndent?()
+    }
+
+    /// The on-screen toolbar's outdent button tap — only calls `onOutdent`
+    /// while `canOutdent` is `true`, so a top-level item's dimmed outdent
+    /// button stays inert even if it somehow still receives a tap (belt
+    /// and suspenders alongside `updateOutdentButtonState()` disabling the
+    /// button itself).
+    @objc func handleOutdentButtonTap() {
+        guard canOutdent else { return }
+        onOutdent?()
+    }
+
+    /// The on-screen toolbar's keyboard-dismiss button tap.
+    @objc func handleDismissButtonTap() {
+        onDismissKeyboard?()
+    }
+
+    /// Keeps `outdentButton`'s enabled state and ~35% dimmed opacity in
+    /// sync with `canOutdent` (`05-onscreen-keyboard-indent-toolbar`
+    /// brief's Decisions: 35% opacity, not full hiding, so the toolbar's
+    /// layout stays stable). Runs on every `canOutdent` change, including
+    /// the first one that gives `outdentButton` its initial state.
+    private func updateOutdentButtonState() {
+        outdentButton.isEnabled = canOutdent
+        outdentButton.alpha = canOutdent ? 1.0 : 0.35
+    }
+
+    /// `onIndent` changing while this text view already has keyboard
+    /// focus (e.g. `DetailViewModel.exitEmptyListItem` converting a
+    /// focused empty list item back to a paragraph) needs to actually
+    /// hide/show `inputAccessoryView` right away rather than waiting for
+    /// the next focus change — `reloadInputViews()` is what makes UIKit
+    /// re-query `inputAccessoryView` while already first responder.
+    private func reloadInputViewsIfFirstResponder() {
+        guard isFirstResponder else { return }
+        reloadInputViews()
     }
 }
 
