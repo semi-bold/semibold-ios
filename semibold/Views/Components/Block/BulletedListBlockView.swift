@@ -20,7 +20,14 @@ enum BulletedListBlockView {
         cursorOffsetToApply: Binding<Int?>,
         onTextChange: @escaping (String) -> Void,
         onEnter: @escaping (String, Int) -> Void,
-        onBackspaceAtStart: @escaping (String) -> Void
+        onBackspaceAtStart: @escaping (String) -> Void,
+        /// A hardware Tab press on this item — `DetailScreen.blockRow(for:
+        /// content:)` supplies `{ viewModel.indentBlock(item.id) }` for
+        /// this kind. `nil` (the default) leaves Tab's plain `UITextView`
+        /// behavior unchanged (`tasks/NO-009.md` §2.1/§3.3).
+        onIndent: (() -> Void)? = nil,
+        /// A hardware Shift+Tab press on this item — see `onIndent`.
+        onOutdent: (() -> Void)? = nil
     ) -> BlockRowChrome {
         BlockRowChrome(
             item: item,
@@ -32,7 +39,9 @@ enum BulletedListBlockView {
             depth: depth,
             onTextChange: onTextChange,
             onEnter: onEnter,
-            onBackspaceAtStart: onBackspaceAtStart
+            onBackspaceAtStart: onBackspaceAtStart,
+            onIndent: onIndent,
+            onOutdent: onOutdent
         )
     }
 }

@@ -389,7 +389,9 @@ struct DetailScreen: View {
                     viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                 },
                 onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
-                onToggleChecklist: { viewModel.toggleChecklistItem(blockId: item.id) }
+                onToggleChecklist: { viewModel.toggleChecklistItem(blockId: item.id) },
+                onIndent: { viewModel.indentBlock(item.id) },
+                onOutdent: { viewModel.outdentBlock(item.id) }
             )
         case TextItemKind.bulletedListItem:
             BulletedListBlockView.chrome(
@@ -402,7 +404,9 @@ struct DetailScreen: View {
                 onEnter: { text, cursorOffset in
                     viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                 },
-                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
+                onIndent: { viewModel.indentBlock(item.id) },
+                onOutdent: { viewModel.outdentBlock(item.id) }
             )
         case TextItemKind.numberedListItem:
             NumberedListBlockView.chrome(
@@ -416,7 +420,9 @@ struct DetailScreen: View {
                 onEnter: { text, cursorOffset in
                     viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                 },
-                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
+                onIndent: { viewModel.indentBlock(item.id) },
+                onOutdent: { viewModel.outdentBlock(item.id) }
             )
         case TextItemKind.codeBlock:
             CodeBlockView.chrome(

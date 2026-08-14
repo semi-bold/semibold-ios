@@ -91,6 +91,16 @@ struct BlockRowChrome: View {
     let onEnter: (String, Int) -> Void
     let onBackspaceAtStart: (String) -> Void
 
+    /// Called on a hardware Tab press (`tasks/NO-009.md` §2.1/§3.3) — only
+    /// the three list-kind factories (`BulletedListBlockView`/
+    /// `NumberedListBlockView`/`ChecklistBlockView`) ever pass a non-`nil`
+    /// closure here; every other kind leaves this at the default `nil`, so
+    /// Tab keeps its plain `UITextView` default behavior on those rows.
+    var onIndent: (() -> Void)? = nil
+
+    /// Called on a hardware Shift+Tab press — see `onIndent`.
+    var onOutdent: (() -> Void)? = nil
+
     /// Reads straight from `content.plainText` (the view model's source
     /// of truth) rather than mirroring it into a separate local `@State`
     /// — keystrokes still flow out via `onTextChange`, so this binding's
@@ -170,6 +180,8 @@ struct BlockRowChrome: View {
                     onBackspaceAtStart: {
                         onBackspaceAtStart(content.plainText)
                     },
+                    onIndent: onIndent,
+                    onOutdent: onOutdent,
                     cursorOffsetToApply: focusedBlockId.wrappedValue == item.id ? $cursorOffsetToApply : .constant(nil)
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
