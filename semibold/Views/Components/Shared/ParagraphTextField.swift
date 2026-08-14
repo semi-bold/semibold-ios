@@ -47,6 +47,18 @@ struct ParagraphTextField: UIViewRepresentable {
     /// block: 이전 블록과 병합 또는 현재 블록 삭제").
     var onBackspaceAtStart: () -> Void
 
+    /// Called on a hardware Tab press (`tasks/NO-009.md` §2.1/§3.3), so a
+    /// focused list item can nest one level under its previous sibling.
+    /// `nil` for every non-list block — see `IndentableTextView.keyCommands`
+    /// for why leaving this `nil` also leaves Tab's default behavior
+    /// (inserting a tab character) untouched.
+    var onIndent: (() -> Void)? = nil
+
+    /// Called on a hardware Shift+Tab press (`tasks/NO-009.md` §2.1/§3.3),
+    /// so a focused nested list item can be promoted back under its
+    /// grandparent. `nil` for every non-list block, same as `onIndent`.
+    var onOutdent: (() -> Void)? = nil
+
     /// A one-shot character offset to move the caret to once this block
     /// becomes focused, e.g. the merge point when a Backspace-at-start
     /// merges the block below into this one. `DetailScreen` clears this back
@@ -64,7 +76,7 @@ struct ParagraphTextField: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView()
+        let textView = IndentableTextView()
         textView.delegate = context.coordinator
         textView.font = font
         textView.backgroundColor = .clear
@@ -73,6 +85,8 @@ struct ParagraphTextField: UIViewRepresentable {
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
         textView.text = text
+        textView.onIndent = onIndent
+        textView.onOutdent = onOutdent
         return textView
     }
 
@@ -87,6 +101,16 @@ struct ParagraphTextField: UIViewRepresentable {
         // .plainText` from that first (often-empty) render would silently
         // stand in for the text actually on screen.
         context.coordinator.parent = self
+
+        // Same rationale as `context.coordinator.parent` above — refresh
+        // these on every update so a hardware Tab/Shift+Tab press always
+        // calls this render's `onIndent`/`onOutdent` (closing over the
+        // right block id) rather than whatever closure happened to be
+        // current the first time this row appeared.
+        if let indentableTextView = uiView as? IndentableTextView {
+            indentableTextView.onIndent = onIndent
+            indentableTextView.onOutdent = onOutdent
+        }
 
         if uiView.text != text {
             uiView.text = text
@@ -167,6 +191,58 @@ struct ParagraphTextField: UIViewRepresentable {
             parent.text = textView.text
             parent.onTextChange(textView.text)
         }
+    }
+}
+
+/// A `UITextView` subclass that turns a hardware Tab/Shift+Tab press into
+/// `onIndent`/`onOutdent`, rather than the character `UITextViewDelegate
+/// .shouldChangeTextIn` sees on every other keypress.
+///
+/// `shouldChangeTextIn` (used for Enter/Backspace above) only fires when a
+/// keypress actually changes the text — Shift+Tab typically inserts no
+/// character at all, so it never reaches that delegate method
+/// (`tasks/NO-009.md` §3.3). `UIKeyCommand`s registered via this
+/// `UIResponder` override, by contrast, are consulted directly against a
+/// hardware key event before any text insertion happens, so they can catch
+/// Tab and Shift+Tab regardless of whether either would otherwise insert a
+/// character.
+///
+/// `keyCommands` only advertises the Tab/Shift+Tab commands while the
+/// matching `onIndent`/`onOutdent` closure is non-`nil` — when both are
+/// `nil` (every non-list block), this returns `nil` and Tab falls through
+/// to `UITextView`'s own default handling (inserting a tab character),
+/// unchanged from before this type existed.
+final class IndentableTextView: UITextView {
+    var onIndent: (() -> Void)?
+    var onOutdent: (() -> Void)?
+
+    override var keyCommands: [UIKeyCommand]? {
+        var commands: [UIKeyCommand] = []
+        if onIndent != nil {
+            commands.append(
+                UIKeyCommand(input: "\t", modifierFlags: [], action: #selector(handleIndentKeyCommand))
+            )
+        }
+        if onOutdent != nil {
+            commands.append(
+                UIKeyCommand(input: "\t", modifierFlags: .shift, action: #selector(handleOutdentKeyCommand))
+            )
+        }
+        return commands.isEmpty ? nil : commands
+    }
+
+    /// The `UIKeyCommand` target-action for a plain Tab press — a thin
+    /// `@objc` forwarder to `onIndent` so tests can also call it directly,
+    /// the same way a real Tab press would, without needing to simulate an
+    /// actual hardware key event.
+    @objc func handleIndentKeyCommand() {
+        onIndent?()
+    }
+
+    /// The `UIKeyCommand` target-action for a Shift+Tab press — see
+    /// `handleIndentKeyCommand`.
+    @objc func handleOutdentKeyCommand() {
+        onOutdent?()
     }
 }
 
