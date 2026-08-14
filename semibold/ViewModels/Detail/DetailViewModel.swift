@@ -40,9 +40,12 @@ enum TextItemKind {
 /// paragraph/heading/list item/etc. row. Internally it's backed by a
 /// `DocumentItem` (position/hierarchy — `items`) plus that item's
 /// `TextContent` (the actual text — `textContents`), per
-/// `STORAGE_ARCHITECTURE.md` §5.5's "구조와 콘텐츠 분리" assembly. Only
-/// top-level items (`parentItemId == nil`) are loaded/edited here —
-/// nesting is out of this editor's scope.
+/// `STORAGE_ARCHITECTURE.md` §5.5's "구조와 콘텐츠 분리" assembly. Every live
+/// item is loaded/edited here, at any nesting depth, flattened into
+/// display order (`DocumentItemRepository.allItems(documentId:)`) — but
+/// only list-kind items can actually become nested in the first place
+/// (`tasks/NO-009.md` §2.1); indenting/outdenting itself is a later
+/// editor feature.
 @Observable
 @MainActor
 final class DetailViewModel {
@@ -59,9 +62,9 @@ final class DetailViewModel {
     /// filed inside a folder.
     private(set) var backButtonLabel = FolderBackButtonLabel.root
 
-    /// The document's top-level content items, in display order, excluding
-    /// soft-deleted ones — the structural half of each "block"
-    /// (`STORAGE_ARCHITECTURE.md` §5.5 steps 1/5).
+    /// The document's content items at every nesting depth, flattened into
+    /// display order, excluding soft-deleted ones — the structural half of
+    /// each "block" (`STORAGE_ARCHITECTURE.md` §5.5 steps 1/5).
     ///
     /// The setter isn't `private` (unlike most other `private(set)`
     /// properties here) because `DetailViewModel+KeyboardShortcuts.swift`
@@ -208,11 +211,12 @@ final class DetailViewModel {
         self.autosaveDebounceInterval = autosaveDebounceInterval
     }
 
-    /// Reloads this document's top-level content items and resolves the
-    /// back-button label for the folder it's filed in. If the document has
-    /// no items yet (a brand-new document), creates a single empty
-    /// paragraph item so there's always something to type into
-    /// (PLANNING §6.2 "기본 paragraph block 1개 생성", §5.4 step A).
+    /// Reloads this document's content items (every nesting depth,
+    /// flattened into display order) and resolves the back-button label
+    /// for the folder it's filed in. If the document has no items yet (a
+    /// brand-new document), creates a single empty paragraph item so
+    /// there's always something to type into (PLANNING §6.2 "기본
+    /// paragraph block 1개 생성", §5.4 step A).
     ///
     /// Assembly follows `STORAGE_ARCHITECTURE.md` §5.5: fetch this
     /// document's items, classify their ids by `contentType`, batch-fetch
@@ -220,7 +224,7 @@ final class DetailViewModel {
     /// querying once per item, then hand the result to the view.
     func load() {
         do {
-            var loadedItems = try documentItemRepository.children(documentId: document.id, parentItemId: nil)
+            var loadedItems = try documentItemRepository.allItems(documentId: document.id)
             if loadedItems.isEmpty {
                 let created = try createFirstItem()
                 loadedItems = [created]

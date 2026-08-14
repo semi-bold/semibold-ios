@@ -63,6 +63,47 @@ struct DocumentItemRepository {
         return try context.fetch(request).map(DocumentItem.init(entity:))
     }
 
+    /// Fetches **every** live (non-soft-deleted) item in `documentId`, at
+    /// any depth, flattened into display order: top-level items in
+    /// `orderKey` order, each immediately followed by its own children in
+    /// `orderKey` order, recursively (depth-first) — the same order
+    /// `DetailScreen.blockList`'s `ForEach` renders top-to-bottom with no
+    /// separate tree-walk step. Unlike `children(documentId:
+    /// parentItemId:)`, which returns one level at a time, this returns
+    /// the whole tree at once for callers (`DetailViewModel.load()`) that
+    /// keep the document's content as a single flat array.
+    ///
+    /// Issues one query for the whole document (sorted by `orderKey`) and
+    /// assembles the flat parent→children order in memory, rather than one
+    /// query per depth level — a personal document's item count is small
+    /// enough that this is simpler and fast enough, matching this file's
+    /// existing single-query-per-call style.
+    func allItems(documentId: String) throws -> [DocumentItem] {
+        let request = DocumentItemEntity.fetchRequest()
+        let documentPredicate = NSPredicate(format: "documentId == %@", documentId)
+        let deletedPredicate = NSPredicate(format: "deletedAt == nil")
+        request.predicate = NSCompoundPredicate(
+            andPredicateWithSubpredicates: [documentPredicate, deletedPredicate]
+        )
+        request.sortDescriptors = [NSSortDescriptor(key: "orderKey", ascending: true)]
+        let allLiveItems = try context.fetch(request).map(DocumentItem.init(entity:))
+
+        var childrenByParentId: [String?: [DocumentItem]] = [:]
+        for item in allLiveItems {
+            childrenByParentId[item.parentItemId, default: []].append(item)
+        }
+
+        var flattened: [DocumentItem] = []
+        func appendSubtree(parentItemId: String?) {
+            for item in childrenByParentId[parentItemId] ?? [] {
+                flattened.append(item)
+                appendSubtree(parentItemId: item.id)
+            }
+        }
+        appendSubtree(parentItemId: nil)
+        return flattened
+    }
+
     /// Saves changes to an existing item, refreshing `updatedAt`. Pass
     /// `save: false` to fold this into a caller's `context.withTransaction
     /// { ... }` alongside other repository mutations instead of
