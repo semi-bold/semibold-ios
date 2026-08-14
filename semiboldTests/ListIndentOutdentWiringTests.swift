@@ -174,6 +174,130 @@ struct ListIndentOutdentWiringTests {
 
         #expect(chrome.onIndent == nil)
         #expect(chrome.onOutdent == nil)
+        #expect(chrome.onDismissKeyboard == nil)
+    }
+
+    // MARK: - `canOutdent`/`onDismissKeyboard` (`05-onscreen-keyboard-indent-toolbar`)
+
+    @Test("BulletedListBlockView.chrome(...) forwards canOutdent and onDismissKeyboard to the returned BlockRowChrome")
+    func bulletedListChromeForwardsCanOutdentAndOnDismissKeyboard() {
+        var dismissCalls = 0
+        let holder = FocusStateHolder()
+        var cursorOffsetToApply: Int?
+
+        let chrome = BulletedListBlockView.chrome(
+            item: DocumentItem(documentId: "doc", contentType: "text", orderKey: "a"),
+            content: TextContent(itemId: "item", textKind: TextItemKind.bulletedListItem, plainText: "Item"),
+            depth: 1,
+            focusedBlockId: holder.$focusedBlockId,
+            cursorOffsetToApply: Binding(get: { cursorOffsetToApply }, set: { cursorOffsetToApply = $0 }),
+            onTextChange: { _ in },
+            onEnter: { _, _ in },
+            onBackspaceAtStart: { _ in },
+            onIndent: {},
+            onOutdent: {},
+            canOutdent: false,
+            onDismissKeyboard: { dismissCalls += 1 }
+        )
+
+        #expect(chrome.canOutdent == false)
+        chrome.onDismissKeyboard?()
+        #expect(dismissCalls == 1)
+    }
+
+    @Test("NumberedListBlockView.chrome(...) forwards canOutdent and onDismissKeyboard to the returned BlockRowChrome")
+    func numberedListChromeForwardsCanOutdentAndOnDismissKeyboard() {
+        var dismissCalls = 0
+        let holder = FocusStateHolder()
+        var cursorOffsetToApply: Int?
+
+        let chrome = NumberedListBlockView.chrome(
+            item: DocumentItem(documentId: "doc", contentType: "text", orderKey: "a"),
+            content: TextContent(itemId: "item", textKind: TextItemKind.numberedListItem, plainText: "Item"),
+            numberedListNumber: 1,
+            depth: 1,
+            focusedBlockId: holder.$focusedBlockId,
+            cursorOffsetToApply: Binding(get: { cursorOffsetToApply }, set: { cursorOffsetToApply = $0 }),
+            onTextChange: { _ in },
+            onEnter: { _, _ in },
+            onBackspaceAtStart: { _ in },
+            onIndent: {},
+            onOutdent: {},
+            canOutdent: false,
+            onDismissKeyboard: { dismissCalls += 1 }
+        )
+
+        #expect(chrome.canOutdent == false)
+        chrome.onDismissKeyboard?()
+        #expect(dismissCalls == 1)
+    }
+
+    @Test("ChecklistBlockView.chrome(...) forwards canOutdent and onDismissKeyboard to the returned BlockRowChrome")
+    func checklistChromeForwardsCanOutdentAndOnDismissKeyboard() {
+        var dismissCalls = 0
+        let holder = FocusStateHolder()
+        var cursorOffsetToApply: Int?
+
+        let chrome = ChecklistBlockView.chrome(
+            item: DocumentItem(documentId: "doc", contentType: "text", orderKey: "a"),
+            content: TextContent(itemId: "item", textKind: TextItemKind.checklist, plainText: "Item"),
+            depth: 1,
+            focusedBlockId: holder.$focusedBlockId,
+            cursorOffsetToApply: Binding(get: { cursorOffsetToApply }, set: { cursorOffsetToApply = $0 }),
+            onTextChange: { _ in },
+            onEnter: { _, _ in },
+            onBackspaceAtStart: { _ in },
+            onToggleChecklist: {},
+            onIndent: {},
+            onOutdent: {},
+            canOutdent: false,
+            onDismissKeyboard: { dismissCalls += 1 }
+        )
+
+        #expect(chrome.canOutdent == false)
+        chrome.onDismissKeyboard?()
+        #expect(dismissCalls == 1)
+    }
+
+    @Test("DetailScreen's canOutdent expression (item.parentItemId != nil) is false for a top-level item")
+    func detailScreenStyleCanOutdentExpressionIsFalseForTopLevelItem() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let documentItemRepository = DocumentItemRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let topLevelItem = try createItem(
+            documentId: document.id, orderKey: OrderKey.between(nil, nil), textKind: TextItemKind.bulletedListItem,
+            text: "Top level", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+
+        // Exactly `DetailScreen.blockRow(for:content:)`'s own expression
+        // for the bulleted-list case.
+        let item = topLevelItem
+        #expect((item.parentItemId != nil) == false)
+    }
+
+    @Test("DetailScreen's canOutdent expression (item.parentItemId != nil) is true for a nested item")
+    func detailScreenStyleCanOutdentExpressionIsTrueForNestedItem() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let documentItemRepository = DocumentItemRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let parentItem = try createItem(
+            documentId: document.id, orderKey: OrderKey.between(nil, nil), textKind: TextItemKind.bulletedListItem,
+            text: "Parent", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+        let nestedItem = try createItem(
+            documentId: document.id, parentItemId: parentItem.id, orderKey: OrderKey.between(nil, nil),
+            textKind: TextItemKind.bulletedListItem,
+            text: "Nested", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+
+        let item = nestedItem
+        #expect((item.parentItemId != nil) == true)
     }
 
     // MARK: - `DetailScreen.blockRow(for:content:)`'s closure literals, reproduced

@@ -715,6 +715,18 @@ final class DetailViewModel {
         blockIdToDefocus = nil
     }
 
+    /// Clears keyboard focus from `blockId` — the on-screen keyboard
+    /// toolbar's dismiss button calls this for the list item it belongs to
+    /// (`05-onscreen-keyboard-indent-toolbar` brief). Reuses the exact
+    /// same `blockIdToDefocus` signal `updateBlockText`'s
+    /// divider-conversion branch already sets, so `DetailScreen`'s
+    /// existing `.onChange(of: viewModel.blockIdToDefocus)` handler clears
+    /// `@FocusState` the same way — one focus-clearing path, not a second
+    /// one bolted on just for this button.
+    func dismissKeyboard(forBlockId blockId: String) {
+        blockIdToDefocus = blockId
+    }
+
     /// Closes the Slash Command bottom sheet without converting the block —
     /// either the user picked an option (handled by
     /// `convertBlock(_:toSlashCommandOption:)`, which also calls this) or

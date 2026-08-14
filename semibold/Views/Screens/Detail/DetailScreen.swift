@@ -391,7 +391,9 @@ struct DetailScreen: View {
                 onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
                 onToggleChecklist: { viewModel.toggleChecklistItem(blockId: item.id) },
                 onIndent: { viewModel.indentBlock(item.id) },
-                onOutdent: { viewModel.outdentBlock(item.id) }
+                onOutdent: { viewModel.outdentBlock(item.id) },
+                canOutdent: item.parentItemId != nil,
+                onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: item.id) }
             )
         case TextItemKind.bulletedListItem:
             BulletedListBlockView.chrome(
@@ -406,7 +408,9 @@ struct DetailScreen: View {
                 },
                 onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
                 onIndent: { viewModel.indentBlock(item.id) },
-                onOutdent: { viewModel.outdentBlock(item.id) }
+                onOutdent: { viewModel.outdentBlock(item.id) },
+                canOutdent: item.parentItemId != nil,
+                onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: item.id) }
             )
         case TextItemKind.numberedListItem:
             NumberedListBlockView.chrome(
@@ -422,7 +426,9 @@ struct DetailScreen: View {
                 },
                 onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
                 onIndent: { viewModel.indentBlock(item.id) },
-                onOutdent: { viewModel.outdentBlock(item.id) }
+                onOutdent: { viewModel.outdentBlock(item.id) },
+                canOutdent: item.parentItemId != nil,
+                onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: item.id) }
             )
         case TextItemKind.codeBlock:
             CodeBlockView.chrome(
