@@ -392,6 +392,12 @@ final class DetailViewModel {
             cancelPendingSave(blockId)
             persistBlock(blockId)
             slashCommandBlockId = blockId
+            // Drop keyboard focus the same way the divider-conversion
+            // branch below does (`blockIdToDefocus`) — without this, the
+            // block's `UITextView` stays first responder underneath the
+            // sheet, so the on-screen keyboard stays up and visually
+            // overlaps/hides the bottom of the "Turn into" list.
+            blockIdToDefocus = blockId
             return
         }
 

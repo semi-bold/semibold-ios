@@ -23,7 +23,8 @@ enum CodeBlockView {
         cursorOffsetToApply: Binding<Int?>,
         onTextChange: @escaping (String) -> Void,
         onEnter: @escaping (String, Int) -> Void,
-        onBackspaceAtStart: @escaping (String) -> Void
+        onBackspaceAtStart: @escaping (String) -> Void,
+        onDismissKeyboard: (() -> Void)? = nil
     ) -> BlockRowChrome {
         BlockRowChrome(
             item: item,
@@ -35,7 +36,8 @@ enum CodeBlockView {
             isCodeBlock: true,
             onTextChange: onTextChange,
             onEnter: onEnter,
-            onBackspaceAtStart: onBackspaceAtStart
+            onBackspaceAtStart: onBackspaceAtStart,
+            onDismissKeyboard: onDismissKeyboard
         )
     }
 }
