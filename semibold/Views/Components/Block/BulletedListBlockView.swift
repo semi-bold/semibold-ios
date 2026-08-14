@@ -12,6 +12,10 @@ enum BulletedListBlockView {
     static func chrome(
         item: DocumentItem,
         content: TextContent,
+        /// This item's nesting depth (0 for top-level) — see
+        /// `DetailViewModel.depth(forItemId:)`. Forwarded straight to
+        /// `BlockRowChrome`, which renders the per-level indent.
+        depth: Int,
         focusedBlockId: FocusState<String?>.Binding,
         cursorOffsetToApply: Binding<Int?>,
         onTextChange: @escaping (String) -> Void,
@@ -25,6 +29,7 @@ enum BulletedListBlockView {
             cursorOffsetToApply: cursorOffsetToApply,
             textStyle: AppTheme.Typography.body,
             leadingContent: .marker("•"),
+            depth: depth,
             onTextChange: onTextChange,
             onEnter: onEnter,
             onBackspaceAtStart: onBackspaceAtStart

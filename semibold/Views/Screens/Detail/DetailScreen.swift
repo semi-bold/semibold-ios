@@ -381,6 +381,7 @@ struct DetailScreen: View {
             ChecklistBlockView.chrome(
                 item: item,
                 content: content,
+                depth: viewModel.depth(forItemId: item.id),
                 focusedBlockId: $focusedBlockId,
                 cursorOffsetToApply: $cursorOffsetToApply,
                 onTextChange: { text in viewModel.updateBlockText(item.id, text: text) },
@@ -394,6 +395,7 @@ struct DetailScreen: View {
             BulletedListBlockView.chrome(
                 item: item,
                 content: content,
+                depth: viewModel.depth(forItemId: item.id),
                 focusedBlockId: $focusedBlockId,
                 cursorOffsetToApply: $cursorOffsetToApply,
                 onTextChange: { text in viewModel.updateBlockText(item.id, text: text) },
@@ -407,6 +409,7 @@ struct DetailScreen: View {
                 item: item,
                 content: content,
                 numberedListNumber: viewModel.numberedListNumber(forItemId: item.id),
+                depth: viewModel.depth(forItemId: item.id),
                 focusedBlockId: $focusedBlockId,
                 cursorOffsetToApply: $cursorOffsetToApply,
                 onTextChange: { text in viewModel.updateBlockText(item.id, text: text) },

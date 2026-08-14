@@ -76,6 +76,16 @@ struct BlockRowChrome: View {
     /// `dividerRuleOverlay` for what this switches on. Every other kind
     /// leaves this at the default `false`.
     var isDividerRow: Bool = false
+    /// This row's nesting depth (0 for a top-level item), from
+    /// `DetailViewModel.depth(forItemId:)` — only the three list-kind
+    /// factories (`BulletedListBlockView`/`NumberedListBlockView`/
+    /// `ChecklistBlockView`) ever pass a nonzero value; every other kind
+    /// leaves this at the default `0`, since non-list blocks never nest
+    /// (`tasks/NO-009.md` §2.2). Adds `depth * AppTheme.Spacing.lg` of
+    /// leading padding on top of the row's existing horizontal padding —
+    /// see `body`'s `.padding(.leading, ...)` — so a depth-0 row is
+    /// pixel-identical to before this parameter existed.
+    var depth: Int = 0
 
     let onTextChange: (String) -> Void
     let onEnter: (String, Int) -> Void
@@ -127,6 +137,18 @@ struct BlockRowChrome: View {
         return showsDividerRule ? AppTheme.Spacing.lg : AppTheme.Spacing.sm
     }
 
+    /// One `AppTheme.Spacing.lg` step per nesting level — matches the
+    /// `AppTheme.Spacing.lg` `minWidth` `leadingColumnView` already gives
+    /// each list kind's marker/checkbox column, so a nested item's marker
+    /// lines up one full marker-column-width in from its parent's rather
+    /// than an arbitrary new spacing value (`03-depth-padding-rendering`
+    /// brief's Decisions). Additive to the row's existing horizontal
+    /// padding, not a replacement — `depth == 0` adds zero, keeping today's
+    /// layout pixel-identical.
+    private var indentPadding: CGFloat {
+        CGFloat(depth) * AppTheme.Spacing.lg
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
             // No spacing beyond the leading column's own `minWidth`
@@ -155,6 +177,7 @@ struct BlockRowChrome: View {
                 .overlay(alignment: .leading) { dividerRuleOverlay }
             }
         }
+        .padding(.leading, indentPadding)
         .padding(.horizontal, AppTheme.Spacing.md)
         .padding(.vertical, resolvedVerticalPadding)
         .background(isCodeBlock ? AppTheme.Colors.Neutral.n700 : AppTheme.Colors.Neutral.n900)
