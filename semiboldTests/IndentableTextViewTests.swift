@@ -96,37 +96,32 @@ struct IndentableTextViewTests {
 
     // MARK: - `inputAccessoryView` (`05-onscreen-keyboard-indent-toolbar`)
 
-    /// `inputAccessoryView` gates on `onDismissKeyboard` — every block
-    /// kind's factory passes it, not just list kinds, since a
-    /// keyboard-dismiss affordance isn't list-specific. `onIndent`/
-    /// `onOutdent` separately control the toolbar's *content* (see
-    /// `accessoryToolbarHasExactlyThreeButtonsForListKind`/
-    /// `accessoryToolbarHasOnlyDismissButtonForNonListKind` below), not
-    /// whether it's shown at all. Rendering/positioning the toolbar above
-    /// a real on-screen keyboard isn't practical in this test target —
-    /// see this suite's doc comment — so these confirm the gating and the
-    /// button-level state/wiring instead.
-    @Test("inputAccessoryView is nil when onDismissKeyboard isn't set")
-    func inputAccessoryViewIsNilWithNoOnDismissKeyboard() {
+    /// `inputAccessoryView` reuses the exact same "`onIndent` non-`nil`"
+    /// gate `keyCommands` above already uses — both agree on what counts
+    /// as a list-kind block, per the brief's Decisions (don't invent a
+    /// second detection mechanism). Rendering/positioning the toolbar
+    /// above a real on-screen keyboard isn't practical in this test
+    /// target — see this suite's doc comment — so these confirm the
+    /// gating and the button-level state/wiring instead.
+    @Test("inputAccessoryView is nil when onIndent isn't set, matching every non-list block")
+    func inputAccessoryViewIsNilWithNoOnIndent() {
         let textView = IndentableTextView()
 
         #expect(textView.inputAccessoryView == nil)
     }
 
-    @Test("inputAccessoryView is the accessory toolbar once onDismissKeyboard is set, even for a non-list block")
-    func inputAccessoryViewIsToolbarWhenOnDismissKeyboardSet() {
+    @Test("inputAccessoryView is the accessory toolbar once onIndent is set, matching a focused list-kind block")
+    func inputAccessoryViewIsToolbarWhenOnIndentSet() {
         let textView = IndentableTextView()
-        textView.onDismissKeyboard = {}
+        textView.onIndent = {}
 
         #expect(textView.inputAccessoryView === textView.accessoryToolbar)
     }
 
-    @Test("inputAccessoryView's toolbar shows exactly the indent, outdent, and dismiss buttons for a list-kind block — no undo/redo")
-    func accessoryToolbarHasExactlyThreeButtonsForListKind() {
+    @Test("inputAccessoryView's toolbar shows exactly the indent, outdent, and dismiss buttons — no undo/redo")
+    func accessoryToolbarHasExactlyThreeButtons() {
         let textView = IndentableTextView()
-        textView.onDismissKeyboard = {}
         textView.onIndent = {}
-        textView.onOutdent = {}
 
         let items = textView.accessoryToolbar.items ?? []
         // Indent, outdent, a flexible space, and dismiss — 3 actionable
@@ -137,21 +132,6 @@ struct IndentableTextViewTests {
         #expect(customViews.contains(where: { $0 === textView.indentButton }))
         #expect(customViews.contains(where: { $0 === textView.outdentButton }))
         #expect(customViews.contains(where: { $0 === textView.dismissButton }))
-    }
-
-    @Test("inputAccessoryView's toolbar shows only the dismiss button for a non-list block")
-    func accessoryToolbarHasOnlyDismissButtonForNonListKind() {
-        let textView = IndentableTextView()
-        textView.onDismissKeyboard = {}
-        // onIndent/onOutdent left nil, matching every non-list block's
-        // factory call.
-
-        let items = textView.accessoryToolbar.items ?? []
-        let customViews = items.compactMap { $0.customView }
-        #expect(customViews.count == 1)
-        #expect(customViews.contains(where: { $0 === textView.dismissButton }))
-        #expect(!customViews.contains(where: { $0 === textView.indentButton }))
-        #expect(!customViews.contains(where: { $0 === textView.outdentButton }))
     }
 
     @Test("The toolbar's indent button tap calls onIndent")

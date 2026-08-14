@@ -220,10 +220,10 @@ struct ParagraphTextField: UIViewRepresentable {
 
 /// A `UITextView` subclass that turns a hardware Tab/Shift+Tab press into
 /// `onIndent`/`onOutdent`, rather than the character `UITextViewDelegate
-/// .shouldChangeTextIn` sees on every other keypress, and shows an
-/// on-screen keyboard toolbar for the on-screen keyboard, which has no
-/// physical Tab key at all (`05-onscreen-keyboard-indent-toolbar` brief,
-/// `tasks/NO-009.md` §3.3).
+/// .shouldChangeTextIn` sees on every other keypress, and shows a matching
+/// on-screen keyboard toolbar (indent/outdent/dismiss) for the on-screen
+/// keyboard, which has no physical Tab key at all
+/// (`05-onscreen-keyboard-indent-toolbar` brief, `tasks/NO-009.md` §3.3).
 ///
 /// `shouldChangeTextIn` (used for Enter/Backspace above) only fires when a
 /// keypress actually changes the text — Shift+Tab typically inserts no
@@ -238,27 +238,15 @@ struct ParagraphTextField: UIViewRepresentable {
 /// matching `onIndent`/`onOutdent` closure is non-`nil` — when both are
 /// `nil` (every non-list block), this returns `nil` and Tab falls through
 /// to `UITextView`'s own default handling (inserting a tab character),
-/// unchanged from before this type existed.
-///
-/// The on-screen toolbar is a *different* concern from Tab handling,
-/// despite sharing the same underlying closures: a keyboard-dismiss
-/// affordance is useful on every block, not just list ones, so
-/// `inputAccessoryView` shows `accessoryToolbar` whenever
-/// `onDismissKeyboard` is set (every block kind) — `updateToolbarItems()`
-/// is what keeps the toolbar's *content* list-aware, adding the
-/// indent/outdent buttons only while `onIndent`/`onOutdent` are non-`nil`,
-/// the same check `keyCommands` uses. A non-list block's toolbar is
-/// dismiss-only; a list block's toolbar is indent/outdent/dismiss.
+/// unchanged from before this type existed. `inputAccessoryView` reuses
+/// that exact same "`onIndent` non-`nil`" gate (see its doc comment below)
+/// so the on-screen toolbar and the hardware key commands agree on what
+/// counts as "a list-kind block" without a second detection mechanism.
 final class IndentableTextView: UITextView {
     var onIndent: (() -> Void)? {
-        didSet {
-            updateToolbarItems()
-            reloadInputViewsIfFirstResponder()
-        }
+        didSet { reloadInputViewsIfFirstResponder() }
     }
-    var onOutdent: (() -> Void)? {
-        didSet { updateToolbarItems() }
-    }
+    var onOutdent: (() -> Void)?
 
     /// Whether the on-screen toolbar's outdent button is enabled — see
     /// `ParagraphTextField.canOutdent`'s doc comment. Defaults to `true` so
@@ -270,40 +258,26 @@ final class IndentableTextView: UITextView {
     }
 
     /// Called when the on-screen toolbar's dismiss button is tapped — see
-    /// `ParagraphTextField.onDismissKeyboard`'s doc comment. Every block
-    /// kind sets this (not just list kinds — unlike `onIndent`/
-    /// `onOutdent`), so it's what `inputAccessoryView` gates on: the
-    /// toolbar (dismiss button alone, or indent/outdent/dismiss together
-    /// for list kinds) shows for every block, matching how a keyboard
-    /// dismiss affordance isn't a list-specific concept.
-    ///
-    /// Also calls `updateToolbarItems()`, not just `onIndent`/`onOutdent`
-    /// — a block whose `onIndent`/`onOutdent` are both `nil` from the
-    /// start (every non-list block) never triggers *their* `didSet`s if
-    /// nothing ever assigns them, so `accessoryToolbar.items` would stay
-    /// empty until something did. In practice `ParagraphTextField
-    /// .makeUIView`/`updateUIView` always assign all three together, but
-    /// this avoids depending on that assignment order/completeness.
-    var onDismissKeyboard: (() -> Void)? {
-        didSet {
-            updateToolbarItems()
-            reloadInputViewsIfFirstResponder()
-        }
-    }
+    /// `ParagraphTextField.onDismissKeyboard`'s doc comment.
+    var onDismissKeyboard: (() -> Void)?
 
     /// The on-screen keyboard toolbar (`KeyboardToolbar_States` state
-    /// B/C, `05-onscreen-keyboard-indent-toolbar` brief) — SF Symbol
-    /// buttons on a dark surface matching the rest of this app's theme,
-    /// rather than `UIToolbar`'s default light-appearance items. Built
-    /// lazily since it's the same instance reused across `onIndent`/
-    /// `onOutdent` changes; `updateToolbarItems()` swaps its `items`
-    /// between the list-kind (indent/outdent/dismiss) and every-other-kind
-    /// (dismiss alone) layouts rather than rebuilding the toolbar itself.
+    /// B/C, `05-onscreen-keyboard-indent-toolbar` brief) — three SF
+    /// Symbol buttons (indent, outdent, keyboard-dismiss) on a dark
+    /// surface matching the rest of this app's theme, rather than
+    /// `UIToolbar`'s default light-appearance items. Built lazily since
+    /// most `IndentableTextView`s (every non-list block) never show it.
     lazy var accessoryToolbar: UIToolbar = {
         let toolbar = UIToolbar(frame: CGRect(x: 0, y: 0, width: 0, height: 44))
         toolbar.autoresizingMask = [.flexibleWidth]
         toolbar.isTranslucent = false
         toolbar.barTintColor = UIColor(AppTheme.Colors.Neutral.n800)
+        toolbar.items = [
+            UIBarButtonItem(customView: indentButton),
+            UIBarButtonItem(customView: outdentButton),
+            UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
+            UIBarButtonItem(customView: dismissButton)
+        ]
         toolbar.sizeToFit()
         return toolbar
     }()
@@ -341,52 +315,23 @@ final class IndentableTextView: UITextView {
         return commands.isEmpty ? nil : commands
     }
 
-    /// Shows `accessoryToolbar` above the on-screen keyboard whenever
-    /// `onDismissKeyboard` is non-`nil` — every block kind sets this
-    /// (`DetailScreen.blockRow(for:content:)` passes it for all 8
-    /// `content.textKind` cases, not just the 3 list kinds), so every
-    /// block gets at least the keyboard-dismiss button. `onIndent`/
-    /// `onOutdent` (list-kind-only) separately control whether
-    /// `updateToolbarItems()` also includes the indent/outdent buttons —
-    /// see that method's doc comment. `nil` `onDismissKeyboard` leaves
-    /// `inputAccessoryView` at `UITextView`'s own default (no accessory
-    /// view), which shouldn't happen in practice once every call site
-    /// passes it, but keeps this safe for any caller that doesn't.
+    /// Shows `accessoryToolbar` above the on-screen keyboard only while
+    /// `onIndent` is non-`nil` — the exact same gate `keyCommands` above
+    /// uses, so both the hardware-Tab path and the on-screen-toolbar path
+    /// agree on "is this a list-kind block" (`05
+    /// -onscreen-keyboard-indent-toolbar` brief's Decisions: don't invent
+    /// a second detection mechanism). `nil` for every non-list block
+    /// leaves `inputAccessoryView` at `UITextView`'s own default (no
+    /// accessory view), unchanged from before this override existed.
     ///
     /// `UITextView.inputAccessoryView` is read-write (`{ get set }`) on
     /// `UIResponder`, so overriding it needs a `set` too, even though
     /// nothing outside this type ever assigns it — this view's
-    /// accessory view is entirely derived from `onDismissKeyboard`, not
-    /// settable from outside.
+    /// accessory view is entirely derived from `onIndent`, not settable
+    /// from outside.
     override var inputAccessoryView: UIView? {
-        get { onDismissKeyboard != nil ? accessoryToolbar : nil }
-        set { /* Derived from `onDismissKeyboard` — intentionally ignored. */ }
-    }
-
-    /// Swaps `accessoryToolbar.items` between the list-kind layout
-    /// (indent, outdent, flexible space, dismiss) and the layout every
-    /// other block kind gets (flexible space, dismiss alone, right-aligned
-    /// to match where dismiss sits in the list-kind layout) — called
-    /// whenever `onIndent`/`onOutdent` change, so the toolbar's *content*
-    /// tracks "is this a list-kind block" the same way `keyCommands`
-    /// already does via the identical `onIndent != nil` check, while
-    /// `inputAccessoryView`'s own gate (whether to show a toolbar at all)
-    /// is `onDismissKeyboard`, not `onIndent` — the toolbar itself is no
-    /// longer list-specific, only its indent/outdent buttons are.
-    private func updateToolbarItems() {
-        if onIndent != nil {
-            accessoryToolbar.items = [
-                UIBarButtonItem(customView: indentButton),
-                UIBarButtonItem(customView: outdentButton),
-                UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
-                UIBarButtonItem(customView: dismissButton)
-            ]
-        } else {
-            accessoryToolbar.items = [
-                UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
-                UIBarButtonItem(customView: dismissButton)
-            ]
-        }
+        get { onIndent != nil ? accessoryToolbar : nil }
+        set { /* Derived from `onIndent` — intentionally ignored. */ }
     }
 
     /// The `UIKeyCommand` target-action for a plain Tab press — a thin

@@ -363,8 +363,7 @@ struct DetailScreen: View {
                 onEnter: { text, cursorOffset in
                     viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                 },
-                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
-                onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: item.id) }
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         case TextItemKind.quote:
             QuoteBlockView.chrome(
@@ -376,8 +375,7 @@ struct DetailScreen: View {
                 onEnter: { text, cursorOffset in
                     viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                 },
-                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
-                onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: item.id) }
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         case TextItemKind.checklist:
             ChecklistBlockView.chrome(
@@ -442,8 +440,7 @@ struct DetailScreen: View {
                 onEnter: { text, cursorOffset in
                     viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                 },
-                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
-                onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: item.id) }
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         case TextItemKind.divider:
             DividerBlockView.chrome(
@@ -455,8 +452,7 @@ struct DetailScreen: View {
                 onEnter: { text, cursorOffset in
                     viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                 },
-                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
-                onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: item.id) }
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         default:
             ParagraphBlockView.chrome(
@@ -468,8 +464,7 @@ struct DetailScreen: View {
                 onEnter: { text, cursorOffset in
                     viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                 },
-                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
-                onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: item.id) }
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         }
     }
