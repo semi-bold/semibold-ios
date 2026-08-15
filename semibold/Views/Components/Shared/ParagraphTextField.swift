@@ -220,10 +220,10 @@ struct ParagraphTextField: UIViewRepresentable {
 
 /// A `UITextView` subclass that turns a hardware Tab/Shift+Tab press into
 /// `onIndent`/`onOutdent`, rather than the character `UITextViewDelegate
-/// .shouldChangeTextIn` sees on every other keypress, and shows a matching
-/// on-screen keyboard toolbar (indent/outdent/dismiss) for the on-screen
-/// keyboard, which has no physical Tab key at all
-/// (`05-onscreen-keyboard-indent-toolbar` brief, `tasks/NO-009.md` §3.3).
+/// .shouldChangeTextIn` sees on every other keypress, and shows an
+/// on-screen keyboard toolbar for the on-screen keyboard, which has no
+/// physical Tab key at all (`05-onscreen-keyboard-indent-toolbar` brief,
+/// `tasks/NO-009.md` §3.3).
 ///
 /// `shouldChangeTextIn` (used for Enter/Backspace above) only fires when a
 /// keypress actually changes the text — Shift+Tab typically inserts no
@@ -238,15 +238,27 @@ struct ParagraphTextField: UIViewRepresentable {
 /// matching `onIndent`/`onOutdent` closure is non-`nil` — when both are
 /// `nil` (every non-list block), this returns `nil` and Tab falls through
 /// to `UITextView`'s own default handling (inserting a tab character),
-/// unchanged from before this type existed. `inputAccessoryView` reuses
-/// that exact same "`onIndent` non-`nil`" gate (see its doc comment below)
-/// so the on-screen toolbar and the hardware key commands agree on what
-/// counts as "a list-kind block" without a second detection mechanism.
+/// unchanged from before this type existed.
+///
+/// The on-screen toolbar is owned by `AccessoryToolbarCoordinator.shared`,
+/// **one instance shared across every block in the document**, not built
+/// per `IndentableTextView` — a document with N blocks only ever has one
+/// actual first responder at a time, so N separately-constructed
+/// `UIToolbar`s (each with their own `UIButton`s and SF Symbol image
+/// loads) was pure waste, and — when this row's `onIndent`/`onOutdent`/
+/// `onDismissKeyboard` got reassigned on every SwiftUI re-render, for
+/// every row, regardless of focus — measurable main-thread cost on every
+/// keystroke and on the document's very first appearance. `configure(for:)`
+/// only runs when a block actually gains focus (`becomeFirstResponder`
+/// below) or when the *currently-focused* block's own indent/outdent
+/// state changes — never for the other N-1 unfocused rows.
 final class IndentableTextView: UITextView {
     var onIndent: (() -> Void)? {
-        didSet { reloadInputViewsIfFirstResponder() }
+        didSet { refreshSharedToolbarIfActive(reloadAccessoryView: true) }
     }
-    var onOutdent: (() -> Void)?
+    var onOutdent: (() -> Void)? {
+        didSet { refreshSharedToolbarIfActive(reloadAccessoryView: false) }
+    }
 
     /// Whether the on-screen toolbar's outdent button is enabled — see
     /// `ParagraphTextField.canOutdent`'s doc comment. Defaults to `true` so
@@ -254,50 +266,16 @@ final class IndentableTextView: UITextView {
     /// list items before `updateUIView`'s first pass) doesn't start out
     /// dimmed.
     var canOutdent: Bool = true {
-        didSet { updateOutdentButtonState() }
+        didSet { refreshSharedToolbarIfActive(reloadAccessoryView: false) }
     }
 
     /// Called when the on-screen toolbar's dismiss button is tapped — see
-    /// `ParagraphTextField.onDismissKeyboard`'s doc comment.
-    var onDismissKeyboard: (() -> Void)?
-
-    /// The on-screen keyboard toolbar (`KeyboardToolbar_States` state
-    /// B/C, `05-onscreen-keyboard-indent-toolbar` brief) — three SF
-    /// Symbol buttons (indent, outdent, keyboard-dismiss) on a dark
-    /// surface matching the rest of this app's theme, rather than
-    /// `UIToolbar`'s default light-appearance items. Built lazily since
-    /// most `IndentableTextView`s (every non-list block) never show it.
-    lazy var accessoryToolbar: UIToolbar = {
-        let toolbar = UIToolbar(frame: CGRect(x: 0, y: 0, width: 0, height: 44))
-        toolbar.autoresizingMask = [.flexibleWidth]
-        toolbar.isTranslucent = false
-        toolbar.barTintColor = UIColor(AppTheme.Colors.Neutral.n800)
-        toolbar.items = [
-            UIBarButtonItem(customView: indentButton),
-            UIBarButtonItem(customView: outdentButton),
-            UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
-            UIBarButtonItem(customView: dismissButton)
-        ]
-        toolbar.sizeToFit()
-        return toolbar
-    }()
-
-    lazy var indentButton = Self.makeToolbarButton(
-        systemName: "increase.indent", target: self, action: #selector(handleIndentButtonTap)
-    )
-    lazy var outdentButton = Self.makeToolbarButton(
-        systemName: "decrease.indent", target: self, action: #selector(handleOutdentButtonTap)
-    )
-    lazy var dismissButton = Self.makeToolbarButton(
-        systemName: "keyboard", target: self, action: #selector(handleDismissButtonTap)
-    )
-
-    private static func makeToolbarButton(systemName: String, target: Any, action: Selector) -> UIButton {
-        let button = UIButton(type: .system)
-        button.setImage(UIImage(systemName: systemName), for: .normal)
-        button.tintColor = UIColor(AppTheme.Colors.Content.secondary)
-        button.addTarget(target, action: action, for: .touchUpInside)
-        return button
+    /// `ParagraphTextField.onDismissKeyboard`'s doc comment. Every block
+    /// kind sets this (not just list kinds — unlike `onIndent`/
+    /// `onOutdent`), so it's what `inputAccessoryView` gates on: every
+    /// block gets at least a dismiss-only toolbar.
+    var onDismissKeyboard: (() -> Void)? {
+        didSet { refreshSharedToolbarIfActive(reloadAccessoryView: true) }
     }
 
     override var keyCommands: [UIKeyCommand]? {
@@ -315,23 +293,35 @@ final class IndentableTextView: UITextView {
         return commands.isEmpty ? nil : commands
     }
 
-    /// Shows `accessoryToolbar` above the on-screen keyboard only while
-    /// `onIndent` is non-`nil` — the exact same gate `keyCommands` above
-    /// uses, so both the hardware-Tab path and the on-screen-toolbar path
-    /// agree on "is this a list-kind block" (`05
-    /// -onscreen-keyboard-indent-toolbar` brief's Decisions: don't invent
-    /// a second detection mechanism). `nil` for every non-list block
-    /// leaves `inputAccessoryView` at `UITextView`'s own default (no
-    /// accessory view), unchanged from before this override existed.
+    /// Shows the shared toolbar above the on-screen keyboard whenever
+    /// `onDismissKeyboard` is non-`nil` — every block kind sets this, so
+    /// every block gets at least the keyboard-dismiss button.
+    /// `AccessoryToolbarCoordinator.configure(for:)` is what keeps the
+    /// toolbar's *content* list-aware (indent/outdent shown only while
+    /// `onIndent`/`onOutdent` are non-`nil`, the same check `keyCommands`
+    /// uses) — this getter only decides whether a toolbar shows at all.
     ///
     /// `UITextView.inputAccessoryView` is read-write (`{ get set }`) on
     /// `UIResponder`, so overriding it needs a `set` too, even though
-    /// nothing outside this type ever assigns it — this view's
-    /// accessory view is entirely derived from `onIndent`, not settable
+    /// nothing outside this type ever assigns it — this view's accessory
+    /// view is entirely derived from `onDismissKeyboard`, not settable
     /// from outside.
     override var inputAccessoryView: UIView? {
-        get { onIndent != nil ? accessoryToolbar : nil }
-        set { /* Derived from `onIndent` — intentionally ignored. */ }
+        get { onDismissKeyboard != nil ? AccessoryToolbarCoordinator.shared.toolbar : nil }
+        set { /* Derived from `onDismissKeyboard` — intentionally ignored. */ }
+    }
+
+    /// The point where a block's toolbar actually becomes relevant:
+    /// gaining keyboard focus. Re-targets the shared toolbar at `self` so
+    /// its buttons act on *this* block, and refreshes its content/state
+    /// for this block's `onIndent`/`onOutdent`/`canOutdent`.
+    @discardableResult
+    override func becomeFirstResponder() -> Bool {
+        let didBecomeFirstResponder = super.becomeFirstResponder()
+        if didBecomeFirstResponder {
+            AccessoryToolbarCoordinator.shared.configure(for: self)
+        }
+        return didBecomeFirstResponder
     }
 
     /// The `UIKeyCommand` target-action for a plain Tab press — a thin
@@ -348,48 +338,121 @@ final class IndentableTextView: UITextView {
         onOutdent?()
     }
 
-    /// The on-screen toolbar's indent button tap — always calls `onIndent`
-    /// unconditionally, matching indent's own lack of a "can't act" state
-    /// (unlike outdent, indent has nothing to disable: any list item can
-    /// nest under its previous sibling).
-    @objc func handleIndentButtonTap() {
-        onIndent?()
-    }
-
-    /// The on-screen toolbar's outdent button tap — only calls `onOutdent`
-    /// while `canOutdent` is `true`, so a top-level item's dimmed outdent
-    /// button stays inert even if it somehow still receives a tap (belt
-    /// and suspenders alongside `updateOutdentButtonState()` disabling the
-    /// button itself).
-    @objc func handleOutdentButtonTap() {
-        guard canOutdent else { return }
-        onOutdent?()
-    }
-
-    /// The on-screen toolbar's keyboard-dismiss button tap.
-    @objc func handleDismissButtonTap() {
-        onDismissKeyboard?()
-    }
-
-    /// Keeps `outdentButton`'s enabled state and ~35% dimmed opacity in
-    /// sync with `canOutdent` (`05-onscreen-keyboard-indent-toolbar`
-    /// brief's Decisions: 35% opacity, not full hiding, so the toolbar's
-    /// layout stays stable). Runs on every `canOutdent` change, including
-    /// the first one that gives `outdentButton` its initial state.
-    private func updateOutdentButtonState() {
-        outdentButton.isEnabled = canOutdent
-        outdentButton.alpha = canOutdent ? 1.0 : 0.35
-    }
-
-    /// `onIndent` changing while this text view already has keyboard
-    /// focus (e.g. `DetailViewModel.exitEmptyListItem` converting a
-    /// focused empty list item back to a paragraph) needs to actually
-    /// hide/show `inputAccessoryView` right away rather than waiting for
-    /// the next focus change — `reloadInputViews()` is what makes UIKit
-    /// re-query `inputAccessoryView` while already first responder.
-    private func reloadInputViewsIfFirstResponder() {
+    /// Refreshes the shared toolbar's content/state and, when
+    /// `reloadAccessoryView` is `true`, forces UIKit to re-query
+    /// `inputAccessoryView` right away — but only while `self` is the
+    /// block currently focused. `onIndent`/`onOutdent`/`onDismissKeyboard`/
+    /// `canOutdent` are reassigned on every SwiftUI re-render for *every*
+    /// row (`ParagraphTextField.updateUIView`), so without the
+    /// `isFirstResponder` guard this would redo the same work this type
+    /// exists to avoid — see this type's doc comment. For the other N-1
+    /// unfocused rows, this is a cheap early return.
+    ///
+    /// `reloadAccessoryView` only needs to be `true` for `onIndent`/
+    /// `onDismissKeyboard` — those can flip a block between "no toolbar"/
+    /// "toolbar" or "dismiss-only"/"indent+outdent+dismiss" while already
+    /// focused (e.g. `DetailViewModel.exitEmptyListItem` converting a
+    /// focused empty list item to a paragraph in place), which needs
+    /// `reloadInputViews()` to actually show up. `onOutdent`/`canOutdent`
+    /// only ever change the *already-shown* toolbar's button state, which
+    /// `configure(for:)` updates in place without needing a reload.
+    private func refreshSharedToolbarIfActive(reloadAccessoryView: Bool) {
         guard isFirstResponder else { return }
-        reloadInputViews()
+        AccessoryToolbarCoordinator.shared.configure(for: self)
+        if reloadAccessoryView {
+            reloadInputViews()
+        }
+    }
+}
+
+/// Coordinates the single keyboard accessory toolbar shared by every
+/// `IndentableTextView` in the app — see that type's doc comment for why
+/// one shared instance replaces one-per-block construction. Only the
+/// block currently focused ever has its `inputAccessoryView` actually
+/// queried/displayed by UIKit, so re-pointing one toolbar at whichever
+/// block just gained focus is both correct and far cheaper than building
+/// a toolbar per block.
+final class AccessoryToolbarCoordinator: NSObject {
+    static let shared = AccessoryToolbarCoordinator()
+
+    private override init() {}
+
+    /// The block whose `onIndent`/`onOutdent`/`onDismissKeyboard` the
+    /// toolbar's buttons currently act on — weak since this coordinator
+    /// outlives any single block's text view (e.g. once scrolled
+    /// off-screen and reused by `List`).
+    private(set) weak var activeTextView: IndentableTextView?
+
+    lazy var toolbar: UIToolbar = {
+        let toolbar = UIToolbar(frame: CGRect(x: 0, y: 0, width: 0, height: 44))
+        toolbar.autoresizingMask = [.flexibleWidth]
+        toolbar.isTranslucent = false
+        toolbar.barTintColor = UIColor(AppTheme.Colors.Neutral.n800)
+        toolbar.sizeToFit()
+        return toolbar
+    }()
+
+    lazy var indentButton = makeButton(systemName: "increase.indent", action: #selector(handleIndentTap))
+    lazy var outdentButton = makeButton(systemName: "decrease.indent", action: #selector(handleOutdentTap))
+    lazy var dismissButton = makeButton(systemName: "keyboard", action: #selector(handleDismissTap))
+
+    private func makeButton(systemName: String, action: Selector) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(systemName: systemName), for: .normal)
+        button.tintColor = UIColor(AppTheme.Colors.Content.secondary)
+        button.addTarget(self, action: action, for: .touchUpInside)
+        return button
+    }
+
+    /// Re-targets the shared toolbar at `textView` — its content
+    /// (indent/outdent shown only while `textView.onIndent` is non-`nil`,
+    /// the same check `IndentableTextView.keyCommands` uses, so both
+    /// agree on "is this a list-kind block") and outdent's enabled/~35%-
+    /// dimmed state (`05-onscreen-keyboard-indent-toolbar` brief's
+    /// Decisions). Called only when a block gains focus
+    /// (`IndentableTextView.becomeFirstResponder()`) or when the
+    /// currently-focused block's own state changes
+    /// (`refreshSharedToolbarIfActive`) — never once per unfocused row.
+    func configure(for textView: IndentableTextView) {
+        activeTextView = textView
+        if textView.onIndent != nil {
+            toolbar.items = [
+                UIBarButtonItem(customView: indentButton),
+                UIBarButtonItem(customView: outdentButton),
+                UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
+                UIBarButtonItem(customView: dismissButton)
+            ]
+        } else {
+            toolbar.items = [
+                UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
+                UIBarButtonItem(customView: dismissButton)
+            ]
+        }
+        outdentButton.isEnabled = textView.canOutdent
+        outdentButton.alpha = textView.canOutdent ? 1.0 : 0.35
+    }
+
+    /// The toolbar's indent button tap — always calls `activeTextView`'s
+    /// `onIndent` unconditionally, matching indent's own lack of a
+    /// "can't act" state (unlike outdent, indent has nothing to disable:
+    /// any list item can nest under its previous sibling).
+    @objc private func handleIndentTap() {
+        activeTextView?.onIndent?()
+    }
+
+    /// The toolbar's outdent button tap — only calls `onOutdent` while
+    /// `activeTextView.canOutdent` is `true`, so a top-level item's
+    /// dimmed outdent button stays inert even if it somehow still
+    /// receives a tap (belt and suspenders alongside `configure(for:)`
+    /// disabling the button itself).
+    @objc private func handleOutdentTap() {
+        guard let activeTextView, activeTextView.canOutdent else { return }
+        activeTextView.onOutdent?()
+    }
+
+    /// The toolbar's keyboard-dismiss button tap.
+    @objc private func handleDismissTap() {
+        activeTextView?.onDismissKeyboard?()
     }
 }
 

@@ -3,15 +3,17 @@ import UIKit
 
 @testable import semibold
 
-/// Tests for `IndentableTextView` (`Views/Components/Shared
-/// /ParagraphTextField.swift`) — the `UITextView` subclass that turns a
-/// hardware Tab/Shift+Tab press into `onIndent`/`onOutdent`
-/// (`tasks/NO-009.md` §2.1/§3.3).
+/// Tests for `IndentableTextView` and `AccessoryToolbarCoordinator`
+/// (`Views/Components/Shared/ParagraphTextField.swift`) — the `UITextView`
+/// subclass that turns a hardware Tab/Shift+Tab press into
+/// `onIndent`/`onOutdent` (`tasks/NO-009.md` §2.1/§3.3), and the single
+/// keyboard accessory toolbar shared across every block instead of one
+/// built per block.
 ///
-/// Simulating an actual hardware key event isn't practical in this test
-/// target (`04-tab-key-hardware-interception` brief's Decisions), so these
-/// instead check the two things that make the interception correct without
-/// one:
+/// Simulating an actual hardware key event, or a real `becomeFirstResponder()`
+/// (which needs a live window to succeed), isn't practical in this test
+/// target — so these instead check the things that make both correct
+/// without either:
 /// - `keyCommands` only advertises Tab/Shift+Tab when a handler is set, so
 ///   a block with no handler falls straight through to `UITextView`'s own
 ///   default Tab behavior (inserting a tab character) rather than being
@@ -20,6 +22,9 @@ import UIKit
 ///   forward to `onIndent`/`onOutdent` when called directly — the same
 ///   call UIKit itself makes once it resolves a real Tab/Shift+Tab press
 ///   against `keyCommands`.
+/// - `AccessoryToolbarCoordinator.configure(for:)` — what
+///   `becomeFirstResponder()` calls in production — called directly to
+///   simulate "this block just gained focus."
 @MainActor
 struct IndentableTextViewTests {
     @Test("keyCommands is nil when neither onIndent nor onOutdent is set — Tab keeps its default behavior")
@@ -96,63 +101,143 @@ struct IndentableTextViewTests {
 
     // MARK: - `inputAccessoryView` (`05-onscreen-keyboard-indent-toolbar`)
 
-    /// `inputAccessoryView` reuses the exact same "`onIndent` non-`nil`"
-    /// gate `keyCommands` above already uses — both agree on what counts
-    /// as a list-kind block, per the brief's Decisions (don't invent a
-    /// second detection mechanism). Rendering/positioning the toolbar
-    /// above a real on-screen keyboard isn't practical in this test
-    /// target — see this suite's doc comment — so these confirm the
-    /// gating and the button-level state/wiring instead.
-    @Test("inputAccessoryView is nil when onIndent isn't set, matching every non-list block")
-    func inputAccessoryViewIsNilWithNoOnIndent() {
+    /// `inputAccessoryView` gates on `onDismissKeyboard` — every block
+    /// kind's factory passes it, not just list kinds, since a
+    /// keyboard-dismiss affordance isn't list-specific. `onIndent`/
+    /// `onOutdent` separately control the toolbar's *content* once
+    /// `AccessoryToolbarCoordinator.configure(for:)` runs — see the tests
+    /// below.
+    @Test("inputAccessoryView is nil when onDismissKeyboard isn't set")
+    func inputAccessoryViewIsNilWithNoOnDismissKeyboard() {
         let textView = IndentableTextView()
 
         #expect(textView.inputAccessoryView == nil)
     }
 
-    @Test("inputAccessoryView is the accessory toolbar once onIndent is set, matching a focused list-kind block")
-    func inputAccessoryViewIsToolbarWhenOnIndentSet() {
+    @Test("inputAccessoryView is the shared coordinator's toolbar once onDismissKeyboard is set, even for a non-list block")
+    func inputAccessoryViewIsSharedToolbarWhenOnDismissKeyboardSet() {
         let textView = IndentableTextView()
-        textView.onIndent = {}
+        textView.onDismissKeyboard = {}
 
-        #expect(textView.inputAccessoryView === textView.accessoryToolbar)
+        #expect(textView.inputAccessoryView === AccessoryToolbarCoordinator.shared.toolbar)
     }
 
-    @Test("inputAccessoryView's toolbar shows exactly the indent, outdent, and dismiss buttons — no undo/redo")
-    func accessoryToolbarHasExactlyThreeButtons() {
-        let textView = IndentableTextView()
-        textView.onIndent = {}
+    /// The whole point of today's redesign: a document with many blocks
+    /// must only ever build ONE toolbar, not one per block — verified
+    /// directly by checking that two entirely separate `IndentableTextView`
+    /// instances (as two different blocks would have) report the exact
+    /// same `inputAccessoryView` object.
+    @Test("inputAccessoryView is the SAME instance across different IndentableTextViews, not rebuilt per block")
+    func inputAccessoryViewIsSharedAcrossDifferentTextViews() {
+        let textViewA = IndentableTextView()
+        textViewA.onDismissKeyboard = {}
+        let textViewB = IndentableTextView()
+        textViewB.onDismissKeyboard = {}
 
-        let items = textView.accessoryToolbar.items ?? []
+        #expect(textViewA.inputAccessoryView === textViewB.inputAccessoryView)
+    }
+
+    // MARK: - `AccessoryToolbarCoordinator.configure(for:)`
+
+    @Test("configure(for:) shows exactly the indent, outdent, and dismiss buttons for a list-kind block — no undo/redo")
+    func configureShowsThreeButtonsForListKind() {
+        let textView = IndentableTextView()
+        textView.onDismissKeyboard = {}
+        textView.onIndent = {}
+        textView.onOutdent = {}
+        let coordinator = AccessoryToolbarCoordinator.shared
+
+        coordinator.configure(for: textView)
+
+        let items = coordinator.toolbar.items ?? []
         // Indent, outdent, a flexible space, and dismiss — 3 actionable
         // buttons total, matching `KeyboardToolbar_States` state B/C
         // (indent/outdent/dismiss only, no undo/redo).
         let customViews = items.compactMap { $0.customView }
         #expect(customViews.count == 3)
-        #expect(customViews.contains(where: { $0 === textView.indentButton }))
-        #expect(customViews.contains(where: { $0 === textView.outdentButton }))
-        #expect(customViews.contains(where: { $0 === textView.dismissButton }))
+        #expect(customViews.contains(where: { $0 === coordinator.indentButton }))
+        #expect(customViews.contains(where: { $0 === coordinator.outdentButton }))
+        #expect(customViews.contains(where: { $0 === coordinator.dismissButton }))
     }
 
-    @Test("The toolbar's indent button tap calls onIndent")
-    func indentButtonTapCallsOnIndent() {
+    @Test("configure(for:) shows only the dismiss button for a non-list block")
+    func configureShowsOnlyDismissButtonForNonListKind() {
+        let textView = IndentableTextView()
+        textView.onDismissKeyboard = {}
+        // onIndent/onOutdent left nil, matching every non-list block's
+        // factory call.
+        let coordinator = AccessoryToolbarCoordinator.shared
+
+        coordinator.configure(for: textView)
+
+        let items = coordinator.toolbar.items ?? []
+        let customViews = items.compactMap { $0.customView }
+        #expect(customViews.count == 1)
+        #expect(customViews.contains(where: { $0 === coordinator.dismissButton }))
+        #expect(!customViews.contains(where: { $0 === coordinator.indentButton }))
+        #expect(!customViews.contains(where: { $0 === coordinator.outdentButton }))
+    }
+
+    @Test("configure(for:) leaves the outdent button enabled at full opacity when canOutdent is true")
+    func configureEnablesOutdentButtonAtFullOpacityWhenCanOutdentTrue() {
+        let textView = IndentableTextView()
+        textView.onDismissKeyboard = {}
+        textView.onIndent = {}
+        textView.canOutdent = true
+        let coordinator = AccessoryToolbarCoordinator.shared
+
+        coordinator.configure(for: textView)
+
+        #expect(coordinator.outdentButton.isEnabled == true)
+        #expect(coordinator.outdentButton.alpha == 1.0)
+    }
+
+    @Test("configure(for:) dims the outdent button to ~35% opacity and disables it when canOutdent is false")
+    func configureDimsAndDisablesOutdentButtonWhenCanOutdentFalse() {
+        let textView = IndentableTextView()
+        textView.onDismissKeyboard = {}
+        textView.onIndent = {}
+        textView.canOutdent = false
+        let coordinator = AccessoryToolbarCoordinator.shared
+
+        coordinator.configure(for: textView)
+
+        #expect(coordinator.outdentButton.isEnabled == false)
+        // `UIButton.alpha` is a `CGFloat` backed by a 32-bit `Float` on
+        // this platform, so a `0.35` `Double` literal doesn't round-trip
+        // bit-for-bit — compare within a small tolerance instead of exact
+        // equality.
+        #expect(abs(coordinator.outdentButton.alpha - 0.35) < 0.001)
+    }
+
+    // MARK: - Shared toolbar button taps route to the active block
+
+    @Test("The toolbar's indent button tap calls the configured block's onIndent")
+    func indentButtonTapCallsActiveTextViewOnIndent() {
         let textView = IndentableTextView()
         var indentCallCount = 0
+        textView.onDismissKeyboard = {}
         textView.onIndent = { indentCallCount += 1 }
+        let coordinator = AccessoryToolbarCoordinator.shared
+        coordinator.configure(for: textView)
 
-        textView.handleIndentButtonTap()
+        coordinator.indentButton.sendActions(for: .touchUpInside)
 
         #expect(indentCallCount == 1)
     }
 
-    @Test("The toolbar's outdent button tap calls onOutdent when canOutdent is true")
+    @Test("The toolbar's outdent button tap calls the configured block's onOutdent when canOutdent is true")
     func outdentButtonTapCallsOnOutdentWhenEnabled() {
         let textView = IndentableTextView()
         var outdentCallCount = 0
+        textView.onDismissKeyboard = {}
+        textView.onIndent = {}
         textView.onOutdent = { outdentCallCount += 1 }
         textView.canOutdent = true
+        let coordinator = AccessoryToolbarCoordinator.shared
+        coordinator.configure(for: textView)
 
-        textView.handleOutdentButtonTap()
+        coordinator.outdentButton.sendActions(for: .touchUpInside)
 
         #expect(outdentCallCount == 1)
     }
@@ -161,46 +246,50 @@ struct IndentableTextViewTests {
     func outdentButtonTapDoesNotCallOnOutdentWhenDisabled() {
         let textView = IndentableTextView()
         var outdentCallCount = 0
+        textView.onDismissKeyboard = {}
+        textView.onIndent = {}
         textView.onOutdent = { outdentCallCount += 1 }
         textView.canOutdent = false
+        let coordinator = AccessoryToolbarCoordinator.shared
+        coordinator.configure(for: textView)
 
-        textView.handleOutdentButtonTap()
+        coordinator.outdentButton.sendActions(for: .touchUpInside)
 
         #expect(outdentCallCount == 0)
     }
 
-    @Test("canOutdent = true leaves the outdent button enabled at full opacity")
-    func canOutdentTrueEnablesOutdentButtonAtFullOpacity() {
-        let textView = IndentableTextView()
-
-        textView.canOutdent = true
-
-        #expect(textView.outdentButton.isEnabled == true)
-        #expect(textView.outdentButton.alpha == 1.0)
-    }
-
-    @Test("canOutdent = false dims the outdent button to ~35% opacity and disables it")
-    func canOutdentFalseDimsAndDisablesOutdentButton() {
-        let textView = IndentableTextView()
-
-        textView.canOutdent = false
-
-        #expect(textView.outdentButton.isEnabled == false)
-        // `UIButton.alpha` is a `CGFloat` backed by a 32-bit `Float` on
-        // this platform, so a `0.35` `Double` literal doesn't round-trip
-        // bit-for-bit — compare within a small tolerance instead of exact
-        // equality.
-        #expect(abs(textView.outdentButton.alpha - 0.35) < 0.001)
-    }
-
-    @Test("The toolbar's keyboard-dismiss button tap calls onDismissKeyboard")
+    @Test("The toolbar's keyboard-dismiss button tap calls the configured block's onDismissKeyboard")
     func dismissButtonTapCallsOnDismissKeyboard() {
         let textView = IndentableTextView()
         var dismissCallCount = 0
         textView.onDismissKeyboard = { dismissCallCount += 1 }
+        let coordinator = AccessoryToolbarCoordinator.shared
+        coordinator.configure(for: textView)
 
-        textView.handleDismissButtonTap()
+        coordinator.dismissButton.sendActions(for: .touchUpInside)
 
         #expect(dismissCallCount == 1)
+    }
+
+    @Test("Configuring the toolbar for a different block re-targets its buttons at the new block, not the old one")
+    func configuringForDifferentBlockRetargetsButtons() {
+        let firstTextView = IndentableTextView()
+        var firstIndentCallCount = 0
+        firstTextView.onDismissKeyboard = {}
+        firstTextView.onIndent = { firstIndentCallCount += 1 }
+
+        let secondTextView = IndentableTextView()
+        var secondIndentCallCount = 0
+        secondTextView.onDismissKeyboard = {}
+        secondTextView.onIndent = { secondIndentCallCount += 1 }
+
+        let coordinator = AccessoryToolbarCoordinator.shared
+        coordinator.configure(for: firstTextView)
+        coordinator.configure(for: secondTextView)
+
+        coordinator.indentButton.sendActions(for: .touchUpInside)
+
+        #expect(firstIndentCallCount == 0)
+        #expect(secondIndentCallCount == 1)
     }
 }
