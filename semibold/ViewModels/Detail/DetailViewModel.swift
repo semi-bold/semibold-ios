@@ -21,6 +21,13 @@ enum TextItemKind {
     /// safety net for content a newer app version wrote that this build
     /// doesn't know how to render.
     static let unknown = "unknown"
+
+    /// The kinds that can be nested/indented (`tasks/NO-009.md` §2.1) —
+    /// one shared definition rather than re-typing the same three cases
+    /// at every call site that needs to ask "is this a list item?" (list
+    /// membership is exactly the kind of internal policy a typo could
+    /// silently fragment across call sites).
+    static let listKinds: Set<String> = [bulletedListItem, numberedListItem, checklist]
 }
 
 /// Drives `DetailScreen` — the document editor screen.
@@ -353,6 +360,25 @@ final class DetailViewModel {
             currentItem = items.first(where: { $0.id == parentId })
         }
         return depth
+    }
+
+    /// Everything `DetailScreen`'s on-screen keyboard toolbar needs to
+    /// know about `itemId`'s list-nesting state, or `nil` if it isn't a
+    /// list-kind block at all — bundled into one call so the View never
+    /// re-derives "is this a list item?" itself, nor reads
+    /// `DocumentItem.parentItemId` directly to work out whether it can
+    /// outdent. Nesting is currently represented via `parentItemId`
+    /// (`indentBlock`/`outdentBlock`'s doc comments); if that
+    /// representation ever changes, only this method's body needs to
+    /// change — `DetailScreen` only ever sees `ListNestingInfo`.
+    struct ListNestingInfo: Equatable {
+        let canOutdent: Bool
+    }
+
+    func listNestingInfo(forItemId itemId: String) -> ListNestingInfo? {
+        guard TextItemKind.listKinds.contains(textContent(forItemId: itemId).textKind) else { return nil }
+        let canOutdent = items.first(where: { $0.id == itemId })?.parentItemId != nil
+        return ListNestingInfo(canOutdent: canOutdent)
     }
 
     /// Updates the in-memory text for `blockId` immediately (so the editor
@@ -756,9 +782,7 @@ final class DetailViewModel {
     /// their own normal handling (`false`) or stop here (`true`).
     private func exitEmptyListItem(_ blockId: String, currentText: String) -> Bool {
         let currentKind = textContent(forItemId: blockId).textKind
-        let isListKind = [TextItemKind.bulletedListItem, TextItemKind.numberedListItem, TextItemKind.checklist]
-            .contains(currentKind)
-        guard isListKind, currentText.isEmpty else { return false }
+        guard TextItemKind.listKinds.contains(currentKind), currentText.isEmpty else { return false }
 
         textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.paragraph, plainText: "")
         cancelPendingSave(blockId)
@@ -873,8 +897,7 @@ final class DetailViewModel {
         guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
         let item = items[index]
         let kind = textContent(forItemId: blockId).textKind
-        let listKinds: Set<String> = [TextItemKind.bulletedListItem, TextItemKind.numberedListItem, TextItemKind.checklist]
-        guard listKinds.contains(kind), index > 0 else { return }
+        guard TextItemKind.listKinds.contains(kind), index > 0 else { return }
 
         let previousItem = items[index - 1]
         guard previousItem.parentItemId == item.parentItemId,

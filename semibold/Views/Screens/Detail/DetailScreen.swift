@@ -483,6 +483,11 @@ struct DetailScreen: View {
     /// anything about *why* focus changed or how the keyboard gets shown
     /// — see `AccessoryToolbarCoordinator`'s doc comment
     /// (`Views/Components/Shared/ParagraphTextField.swift`).
+    ///
+    /// This screen has no opinion on what makes a block "list-kind" or
+    /// able to outdent — that's `DetailViewModel.listNestingInfo(forItemId:)`'s
+    /// call entirely, so nesting can be represented however the data
+    /// layer likes without this view ever changing.
     private func configureAccessoryToolbar(forBlockId blockId: String?) {
         guard let blockId else {
             AccessoryToolbarCoordinator.shared.configure(
@@ -491,14 +496,11 @@ struct DetailScreen: View {
             return
         }
 
-        let listKinds: Set<String> = [TextItemKind.bulletedListItem, TextItemKind.numberedListItem, TextItemKind.checklist]
-        let isListKind = listKinds.contains(viewModel.textContent(forItemId: blockId).textKind)
-        let canOutdent = viewModel.items.first(where: { $0.id == blockId })?.parentItemId != nil
-
+        let nestingInfo = viewModel.listNestingInfo(forItemId: blockId)
         AccessoryToolbarCoordinator.shared.configure(
-            canOutdent: canOutdent,
-            onIndent: isListKind ? { viewModel.indentBlock(blockId) } : nil,
-            onOutdent: isListKind ? { viewModel.outdentBlock(blockId) } : nil,
+            canOutdent: nestingInfo?.canOutdent ?? false,
+            onIndent: nestingInfo != nil ? { viewModel.indentBlock(blockId) } : nil,
+            onOutdent: nestingInfo != nil ? { viewModel.outdentBlock(blockId) } : nil,
             onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: blockId) }
         )
     }

@@ -176,17 +176,20 @@ struct ListIndentOutdentWiringTests {
         #expect(chrome.onOutdent == nil)
     }
 
-    // MARK: - `canOutdent` expression (`DetailScreen.configureAccessoryToolbar`)
+    // MARK: - `DetailViewModel.listNestingInfo(forItemId:)`
     //
     // `canOutdent`/`onDismissKeyboard` are no longer `chrome(...)`/
     // `BlockRowChrome` parameters — the on-screen keyboard toolbar is
     // configured independently, off `focusedBlockId`, by `DetailScreen
     // .configureAccessoryToolbar(forBlockId:)` (`AccessoryToolbarCoordinator`'s
-    // doc comment explains why). These two tests just confirm the
-    // `item.parentItemId != nil` expression that method uses.
+    // doc comment explains why). That method no longer reads
+    // `item.parentItemId` or checks list-kind membership itself — it asks
+    // `DetailViewModel.listNestingInfo(forItemId:)` for both, so these
+    // tests exercise that method directly rather than reproducing its
+    // expression inline.
 
-    @Test("DetailScreen's canOutdent expression (item.parentItemId != nil) is false for a top-level item")
-    func detailScreenStyleCanOutdentExpressionIsFalseForTopLevelItem() throws {
+    @Test("listNestingInfo(forItemId:) reports canOutdent == false for a top-level list item")
+    func listNestingInfoReportsCanOutdentFalseForTopLevelItem() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
         let documentItemRepository = DocumentItemRepository(context: store.context)
@@ -198,14 +201,14 @@ struct ListIndentOutdentWiringTests {
             text: "Top level", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
         )
 
-        // Exactly `DetailScreen.blockRow(for:content:)`'s own expression
-        // for the bulleted-list case.
-        let item = topLevelItem
-        #expect((item.parentItemId != nil) == false)
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+
+        #expect(viewModel.listNestingInfo(forItemId: topLevelItem.id)?.canOutdent == false)
     }
 
-    @Test("DetailScreen's canOutdent expression (item.parentItemId != nil) is true for a nested item")
-    func detailScreenStyleCanOutdentExpressionIsTrueForNestedItem() throws {
+    @Test("listNestingInfo(forItemId:) reports canOutdent == true for a nested list item")
+    func listNestingInfoReportsCanOutdentTrueForNestedItem() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
         let documentItemRepository = DocumentItemRepository(context: store.context)
@@ -222,8 +225,29 @@ struct ListIndentOutdentWiringTests {
             text: "Nested", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
         )
 
-        let item = nestedItem
-        #expect((item.parentItemId != nil) == true)
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+
+        #expect(viewModel.listNestingInfo(forItemId: nestedItem.id)?.canOutdent == true)
+    }
+
+    @Test("listNestingInfo(forItemId:) is nil for a non-list-kind block")
+    func listNestingInfoIsNilForNonListKind() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let documentItemRepository = DocumentItemRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let paragraphItem = try createItem(
+            documentId: document.id, orderKey: OrderKey.between(nil, nil), textKind: TextItemKind.paragraph,
+            text: "Just a paragraph", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+
+        #expect(viewModel.listNestingInfo(forItemId: paragraphItem.id) == nil)
     }
 
     // MARK: - `DetailScreen.blockRow(for:content:)`'s closure literals, reproduced

@@ -147,11 +147,6 @@ enum MarkdownExporter {
     /// delimiter (§7.3 `- item` / `<n>. item` / `- [ ] item`), so mixing two
     /// different families still gets a blank line between them.
     private static func listFamily(for textKind: String) -> String? {
-        switch textKind {
-        case TextItemKind.bulletedListItem, TextItemKind.numberedListItem, TextItemKind.checklist:
-            return textKind
-        default:
-            return nil
-        }
+        TextItemKind.listKinds.contains(textKind) ? textKind : nil
     }
 }
