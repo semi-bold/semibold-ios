@@ -33,16 +33,7 @@ enum NumberedListBlockView {
         /// behavior unchanged (`tasks/NO-009.md` §2.1/§3.3).
         onIndent: (() -> Void)? = nil,
         /// A hardware Shift+Tab press on this item — see `onIndent`.
-        onOutdent: (() -> Void)? = nil,
-        /// Whether this item's on-screen toolbar outdent button is
-        /// enabled — `DetailScreen.blockRow(for:content:)` supplies
-        /// `item.parentItemId != nil` for this kind
-        /// (`05-onscreen-keyboard-indent-toolbar` brief). Defaults to
-        /// `true` so existing call sites don't need to change.
-        canOutdent: Bool = true,
-        /// A tap on the on-screen toolbar's keyboard-dismiss button — see
-        /// `onIndent`.
-        onDismissKeyboard: (() -> Void)? = nil
+        onOutdent: (() -> Void)? = nil
     ) -> BlockRowChrome {
         BlockRowChrome(
             item: item,
@@ -56,9 +47,7 @@ enum NumberedListBlockView {
             onEnter: onEnter,
             onBackspaceAtStart: onBackspaceAtStart,
             onIndent: onIndent,
-            onOutdent: onOutdent,
-            canOutdent: canOutdent,
-            onDismissKeyboard: onDismissKeyboard
+            onOutdent: onOutdent
         )
     }
 }

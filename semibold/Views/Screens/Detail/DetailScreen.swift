@@ -72,6 +72,13 @@ struct DetailScreen: View {
             }
             viewModel.defocusHandled()
         }
+        .onChange(of: focusedBlockId, initial: true) { _, newValue in
+            // Deliberately separate from the `viewModel.focusedBlockId`
+            // handler above — see `configureAccessoryToolbar`'s doc
+            // comment for why this needs to watch the actual `@FocusState`
+            // instead.
+            configureAccessoryToolbar(forBlockId: newValue)
+        }
         .onChange(of: scenePhase) { _, newPhase in
             // Flush any debounced block edits before the app moves to the
             // background, so nothing typed right before backgrounding is
@@ -363,8 +370,7 @@ struct DetailScreen: View {
                 onEnter: { text, cursorOffset in
                     viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                 },
-                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
-                onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: item.id) }
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         case TextItemKind.quote:
             QuoteBlockView.chrome(
@@ -376,8 +382,7 @@ struct DetailScreen: View {
                 onEnter: { text, cursorOffset in
                     viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                 },
-                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
-                onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: item.id) }
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         case TextItemKind.checklist:
             ChecklistBlockView.chrome(
@@ -393,9 +398,7 @@ struct DetailScreen: View {
                 onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
                 onToggleChecklist: { viewModel.toggleChecklistItem(blockId: item.id) },
                 onIndent: { viewModel.indentBlock(item.id) },
-                onOutdent: { viewModel.outdentBlock(item.id) },
-                canOutdent: item.parentItemId != nil,
-                onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: item.id) }
+                onOutdent: { viewModel.outdentBlock(item.id) }
             )
         case TextItemKind.bulletedListItem:
             BulletedListBlockView.chrome(
@@ -410,9 +413,7 @@ struct DetailScreen: View {
                 },
                 onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
                 onIndent: { viewModel.indentBlock(item.id) },
-                onOutdent: { viewModel.outdentBlock(item.id) },
-                canOutdent: item.parentItemId != nil,
-                onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: item.id) }
+                onOutdent: { viewModel.outdentBlock(item.id) }
             )
         case TextItemKind.numberedListItem:
             NumberedListBlockView.chrome(
@@ -428,9 +429,7 @@ struct DetailScreen: View {
                 },
                 onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
                 onIndent: { viewModel.indentBlock(item.id) },
-                onOutdent: { viewModel.outdentBlock(item.id) },
-                canOutdent: item.parentItemId != nil,
-                onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: item.id) }
+                onOutdent: { viewModel.outdentBlock(item.id) }
             )
         case TextItemKind.codeBlock:
             CodeBlockView.chrome(
@@ -442,8 +441,7 @@ struct DetailScreen: View {
                 onEnter: { text, cursorOffset in
                     viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                 },
-                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
-                onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: item.id) }
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         case TextItemKind.divider:
             DividerBlockView.chrome(
@@ -455,8 +453,7 @@ struct DetailScreen: View {
                 onEnter: { text, cursorOffset in
                     viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                 },
-                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
-                onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: item.id) }
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         default:
             ParagraphBlockView.chrome(
@@ -468,10 +465,42 @@ struct DetailScreen: View {
                 onEnter: { text, cursorOffset in
                     viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                 },
-                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
-                onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: item.id) }
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         }
+    }
+
+    // MARK: - On-screen keyboard toolbar
+
+    /// The single point that configures `AccessoryToolbarCoordinator
+    /// .shared` — completely independent of the two `onChange` handlers
+    /// above that move focus. This one only reacts to `focusedBlockId`
+    /// (the actual `@FocusState`, not `viewModel.focusedBlockId`) so it
+    /// catches every way focus can change — a programmatic move (Enter,
+    /// Backspace-merge) *and* the user directly tapping a different
+    /// block, which never touches `viewModel.focusedBlockId` at all.
+    /// Neither this method nor the coordinator it configures know
+    /// anything about *why* focus changed or how the keyboard gets shown
+    /// — see `AccessoryToolbarCoordinator`'s doc comment
+    /// (`Views/Components/Shared/ParagraphTextField.swift`).
+    private func configureAccessoryToolbar(forBlockId blockId: String?) {
+        guard let blockId else {
+            AccessoryToolbarCoordinator.shared.configure(
+                canOutdent: false, onIndent: nil, onOutdent: nil, onDismissKeyboard: nil
+            )
+            return
+        }
+
+        let listKinds: Set<String> = [TextItemKind.bulletedListItem, TextItemKind.numberedListItem, TextItemKind.checklist]
+        let isListKind = listKinds.contains(viewModel.textContent(forItemId: blockId).textKind)
+        let canOutdent = viewModel.items.first(where: { $0.id == blockId })?.parentItemId != nil
+
+        AccessoryToolbarCoordinator.shared.configure(
+            canOutdent: canOutdent,
+            onIndent: isListKind ? { viewModel.indentBlock(blockId) } : nil,
+            onOutdent: isListKind ? { viewModel.outdentBlock(blockId) } : nil,
+            onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: blockId) }
+        )
     }
 }
 

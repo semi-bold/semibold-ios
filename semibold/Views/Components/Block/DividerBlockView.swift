@@ -23,8 +23,7 @@ enum DividerBlockView {
         cursorOffsetToApply: Binding<Int?>,
         onTextChange: @escaping (String) -> Void,
         onEnter: @escaping (String, Int) -> Void,
-        onBackspaceAtStart: @escaping (String) -> Void,
-        onDismissKeyboard: (() -> Void)? = nil
+        onBackspaceAtStart: @escaping (String) -> Void
     ) -> BlockRowChrome {
         BlockRowChrome(
             item: item,
@@ -35,8 +34,7 @@ enum DividerBlockView {
             isDividerRow: true,
             onTextChange: onTextChange,
             onEnter: onEnter,
-            onBackspaceAtStart: onBackspaceAtStart,
-            onDismissKeyboard: onDismissKeyboard
+            onBackspaceAtStart: onBackspaceAtStart
         )
     }
 }

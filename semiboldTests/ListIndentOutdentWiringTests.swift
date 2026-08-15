@@ -174,90 +174,16 @@ struct ListIndentOutdentWiringTests {
 
         #expect(chrome.onIndent == nil)
         #expect(chrome.onOutdent == nil)
-        #expect(chrome.onDismissKeyboard == nil)
     }
 
-    // MARK: - `canOutdent`/`onDismissKeyboard` (`05-onscreen-keyboard-indent-toolbar`)
-
-    @Test("BulletedListBlockView.chrome(...) forwards canOutdent and onDismissKeyboard to the returned BlockRowChrome")
-    func bulletedListChromeForwardsCanOutdentAndOnDismissKeyboard() {
-        var dismissCalls = 0
-        let holder = FocusStateHolder()
-        var cursorOffsetToApply: Int?
-
-        let chrome = BulletedListBlockView.chrome(
-            item: DocumentItem(documentId: "doc", contentType: "text", orderKey: "a"),
-            content: TextContent(itemId: "item", textKind: TextItemKind.bulletedListItem, plainText: "Item"),
-            depth: 1,
-            focusedBlockId: holder.$focusedBlockId,
-            cursorOffsetToApply: Binding(get: { cursorOffsetToApply }, set: { cursorOffsetToApply = $0 }),
-            onTextChange: { _ in },
-            onEnter: { _, _ in },
-            onBackspaceAtStart: { _ in },
-            onIndent: {},
-            onOutdent: {},
-            canOutdent: false,
-            onDismissKeyboard: { dismissCalls += 1 }
-        )
-
-        #expect(chrome.canOutdent == false)
-        chrome.onDismissKeyboard?()
-        #expect(dismissCalls == 1)
-    }
-
-    @Test("NumberedListBlockView.chrome(...) forwards canOutdent and onDismissKeyboard to the returned BlockRowChrome")
-    func numberedListChromeForwardsCanOutdentAndOnDismissKeyboard() {
-        var dismissCalls = 0
-        let holder = FocusStateHolder()
-        var cursorOffsetToApply: Int?
-
-        let chrome = NumberedListBlockView.chrome(
-            item: DocumentItem(documentId: "doc", contentType: "text", orderKey: "a"),
-            content: TextContent(itemId: "item", textKind: TextItemKind.numberedListItem, plainText: "Item"),
-            numberedListNumber: 1,
-            depth: 1,
-            focusedBlockId: holder.$focusedBlockId,
-            cursorOffsetToApply: Binding(get: { cursorOffsetToApply }, set: { cursorOffsetToApply = $0 }),
-            onTextChange: { _ in },
-            onEnter: { _, _ in },
-            onBackspaceAtStart: { _ in },
-            onIndent: {},
-            onOutdent: {},
-            canOutdent: false,
-            onDismissKeyboard: { dismissCalls += 1 }
-        )
-
-        #expect(chrome.canOutdent == false)
-        chrome.onDismissKeyboard?()
-        #expect(dismissCalls == 1)
-    }
-
-    @Test("ChecklistBlockView.chrome(...) forwards canOutdent and onDismissKeyboard to the returned BlockRowChrome")
-    func checklistChromeForwardsCanOutdentAndOnDismissKeyboard() {
-        var dismissCalls = 0
-        let holder = FocusStateHolder()
-        var cursorOffsetToApply: Int?
-
-        let chrome = ChecklistBlockView.chrome(
-            item: DocumentItem(documentId: "doc", contentType: "text", orderKey: "a"),
-            content: TextContent(itemId: "item", textKind: TextItemKind.checklist, plainText: "Item"),
-            depth: 1,
-            focusedBlockId: holder.$focusedBlockId,
-            cursorOffsetToApply: Binding(get: { cursorOffsetToApply }, set: { cursorOffsetToApply = $0 }),
-            onTextChange: { _ in },
-            onEnter: { _, _ in },
-            onBackspaceAtStart: { _ in },
-            onToggleChecklist: {},
-            onIndent: {},
-            onOutdent: {},
-            canOutdent: false,
-            onDismissKeyboard: { dismissCalls += 1 }
-        )
-
-        #expect(chrome.canOutdent == false)
-        chrome.onDismissKeyboard?()
-        #expect(dismissCalls == 1)
-    }
+    // MARK: - `canOutdent` expression (`DetailScreen.configureAccessoryToolbar`)
+    //
+    // `canOutdent`/`onDismissKeyboard` are no longer `chrome(...)`/
+    // `BlockRowChrome` parameters — the on-screen keyboard toolbar is
+    // configured independently, off `focusedBlockId`, by `DetailScreen
+    // .configureAccessoryToolbar(forBlockId:)` (`AccessoryToolbarCoordinator`'s
+    // doc comment explains why). These two tests just confirm the
+    // `item.parentItemId != nil` expression that method uses.
 
     @Test("DetailScreen's canOutdent expression (item.parentItemId != nil) is false for a top-level item")
     func detailScreenStyleCanOutdentExpressionIsFalseForTopLevelItem() throws {

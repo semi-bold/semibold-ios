@@ -96,35 +96,16 @@ struct BlockRowChrome: View {
     /// `NumberedListBlockView`/`ChecklistBlockView`) ever pass a non-`nil`
     /// closure here; every other kind leaves this at the default `nil`, so
     /// Tab keeps its plain `UITextView` default behavior on those rows.
+    /// Hardware-key-only — the on-screen keyboard toolbar's indent/outdent
+    /// buttons are wired independently by `DetailScreen` configuring
+    /// `AccessoryToolbarCoordinator` off `focusedBlockId`, not through this
+    /// row-level parameter (see that coordinator's doc comment for why:
+    /// changing which block is focused, the OS bringing up the keyboard,
+    /// and the toolbar's content are three separate concerns now).
     var onIndent: (() -> Void)? = nil
 
     /// Called on a hardware Shift+Tab press — see `onIndent`.
     var onOutdent: (() -> Void)? = nil
-
-    /// Whether the on-screen toolbar's outdent button is enabled for this
-    /// row — `false` when the item has no parent (already top-level), so
-    /// the toolbar shows outdent dimmed at ~35% opacity instead of a
-    /// silently-inert tap (`05-onscreen-keyboard-indent-toolbar` brief's
-    /// Decisions). Only the three list-kind factories ever pass `false`
-    /// here (computed by `DetailScreen.blockRow(for:content:)` from
-    /// `item.parentItemId != nil`); every other kind leaves this at the
-    /// default `true`, which is moot since their `onOutdent` is `nil` —
-    /// `AccessoryToolbarCoordinator.configure(for:)` never even puts an
-    /// outdent button in the toolbar for those rows, so this value is
-    /// never read for them.
-    var canOutdent: Bool = true
-
-    /// Called when the on-screen toolbar's dismiss button is tapped.
-    /// Unlike `onIndent`/`onOutdent`, every block kind's factory passes a
-    /// non-`nil` closure here — a keyboard-dismiss affordance isn't a
-    /// list-specific concept, so every row gets at least a dismiss-only
-    /// toolbar (`IndentableTextView.inputAccessoryView` gates on this
-    /// property, not `onIndent`). This no longer risks the per-block
-    /// construction cost it once did — see `AccessoryToolbarCoordinator`'s
-    /// doc comment (`Views/Components/Shared/ParagraphTextField.swift`):
-    /// the toolbar itself is a single instance shared across every block,
-    /// not rebuilt per row.
-    var onDismissKeyboard: (() -> Void)? = nil
 
     /// Reads straight from `content.plainText` (the view model's source
     /// of truth) rather than mirroring it into a separate local `@State`
@@ -207,8 +188,6 @@ struct BlockRowChrome: View {
                     },
                     onIndent: onIndent,
                     onOutdent: onOutdent,
-                    canOutdent: canOutdent,
-                    onDismissKeyboard: onDismissKeyboard,
                     cursorOffsetToApply: focusedBlockId.wrappedValue == item.id ? $cursorOffsetToApply : .constant(nil)
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
