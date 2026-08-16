@@ -338,9 +338,12 @@ final class AccessoryToolbarCoordinator: NSObject {
         self.onOutdent = onOutdent
         self.onDismissKeyboard = onDismissKeyboard
         if onIndent != nil {
+            // outdent (내어쓰기, 왼쪽 방향) → indent (들여쓰기, 오른쪽 방향)
+            // 순서로 배치 — 각 아이콘이 텍스트를 밀어내는 실제 방향과
+            // 화면상 위치가 일치해 더 직관적이다.
             toolbar.items = [
-                UIBarButtonItem(customView: indentButton),
                 UIBarButtonItem(customView: outdentButton),
+                UIBarButtonItem(customView: indentButton),
                 UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
                 UIBarButtonItem(customView: dismissButton)
             ]
