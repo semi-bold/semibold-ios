@@ -313,11 +313,22 @@ final class AccessoryToolbarCoordinator: NSObject {
 
     lazy var indentButton = makeButton(systemName: "increase.indent", action: #selector(handleIndentTap))
     lazy var outdentButton = makeButton(systemName: "decrease.indent", action: #selector(handleOutdentTap))
-    lazy var dismissButton = makeButton(systemName: "keyboard", action: #selector(handleDismissTap))
+    /// Uses the same custom `IconKeyboardHide` asset (a template-rendered
+    /// SVG in `Assets.xcassets`) as the Figma `KeyboardToolbar_States`
+    /// frame's dismiss icon, instead of the system `"keyboard"` SF Symbol —
+    /// matches `BackButtonIcon`'s `IconHome` asset's rationale for going
+    /// custom over a system glyph.
+    lazy var dismissButton = makeButton(
+        image: UIImage(named: "IconKeyboardHide")?.withRenderingMode(.alwaysTemplate), action: #selector(handleDismissTap)
+    )
 
     private func makeButton(systemName: String, action: Selector) -> UIButton {
+        makeButton(image: UIImage(systemName: systemName), action: action)
+    }
+
+    private func makeButton(image: UIImage?, action: Selector) -> UIButton {
         let button = UIButton(type: .system)
-        button.setImage(UIImage(systemName: systemName), for: .normal)
+        button.setImage(image, for: .normal)
         button.tintColor = UIColor(AppTheme.Colors.Content.secondary)
         button.addTarget(self, action: action, for: .touchUpInside)
         return button
