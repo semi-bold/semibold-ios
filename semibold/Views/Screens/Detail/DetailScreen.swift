@@ -485,22 +485,39 @@ struct DetailScreen: View {
     /// (`Views/Components/Shared/ParagraphTextField.swift`).
     ///
     /// This screen has no opinion on what makes a block "list-kind" or
-    /// able to outdent — that's `DetailViewModel.listNestingInfo(forItemId:)`'s
-    /// call entirely, so nesting can be represented however the data
-    /// layer likes without this view ever changing.
+    /// able to indent/outdent — that's `DetailViewModel.listNestingInfo
+    /// (forItemId:)`'s call entirely, so nesting can be represented however
+    /// the data layer likes without this view ever changing.
+    ///
+    /// `onIndent`/`onOutdent` call this method again on the same `blockId`
+    /// right after mutating — indenting/outdenting a block changes its own
+    /// `canIndent`/`canOutdent` state (e.g. indenting once usually makes a
+    /// second indent ineligible, and always makes outdent newly eligible),
+    /// and nothing else re-triggers this method for that: it only reacts to
+    /// `focusedBlockId` *changing*, which a toolbar button tap never does
+    /// (focus stays on the same block). Without this, the toolbar kept
+    /// showing stale enabled/disabled state until focus moved away and
+    /// back.
     private func configureAccessoryToolbar(forBlockId blockId: String?) {
         guard let blockId else {
             AccessoryToolbarCoordinator.shared.configure(
-                canOutdent: false, onIndent: nil, onOutdent: nil, onDismissKeyboard: nil
+                canIndent: false, canOutdent: false, onIndent: nil, onOutdent: nil, onDismissKeyboard: nil
             )
             return
         }
 
         let nestingInfo = viewModel.listNestingInfo(forItemId: blockId)
         AccessoryToolbarCoordinator.shared.configure(
+            canIndent: nestingInfo?.canIndent ?? false,
             canOutdent: nestingInfo?.canOutdent ?? false,
-            onIndent: nestingInfo != nil ? { viewModel.indentBlock(blockId) } : nil,
-            onOutdent: nestingInfo != nil ? { viewModel.outdentBlock(blockId) } : nil,
+            onIndent: nestingInfo != nil ? {
+                viewModel.indentBlock(blockId)
+                configureAccessoryToolbar(forBlockId: blockId)
+            } : nil,
+            onOutdent: nestingInfo != nil ? {
+                viewModel.outdentBlock(blockId)
+                configureAccessoryToolbar(forBlockId: blockId)
+            } : nil,
             onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: blockId) }
         )
     }

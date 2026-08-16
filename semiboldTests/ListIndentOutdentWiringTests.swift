@@ -259,6 +259,107 @@ struct ListIndentOutdentWiringTests {
         #expect(viewModel.listNestingInfo(forItemId: paragraphItem.id) == nil)
     }
 
+    @Test("listNestingInfo(forItemId:) reports canIndent == false for the first item in a document")
+    func listNestingInfoReportsCanIndentFalseForFirstItem() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let documentItemRepository = DocumentItemRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let onlyItem = try createItem(
+            documentId: document.id, orderKey: OrderKey.between(nil, nil), textKind: TextItemKind.bulletedListItem,
+            text: "Only item", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+
+        #expect(viewModel.listNestingInfo(forItemId: onlyItem.id)?.canIndent == false)
+    }
+
+    @Test("listNestingInfo(forItemId:) reports canIndent == true when the previous item is a same-depth, same-kind sibling")
+    func listNestingInfoReportsCanIndentTrueForEligibleSibling() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let documentItemRepository = DocumentItemRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let firstItem = try createItem(
+            documentId: document.id, orderKey: OrderKey.between(nil, nil), textKind: TextItemKind.bulletedListItem,
+            text: "First", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+        let secondItem = try createItem(
+            documentId: document.id, orderKey: OrderKey.between(firstItem.orderKey, nil), textKind: TextItemKind.bulletedListItem,
+            text: "Second", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+
+        #expect(viewModel.listNestingInfo(forItemId: secondItem.id)?.canIndent == true)
+    }
+
+    @Test("listNestingInfo(forItemId:) reports canIndent == false when the previous item is a different list kind")
+    func listNestingInfoReportsCanIndentFalseForDifferentKindPreviousItem() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let documentItemRepository = DocumentItemRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let bulletedItem = try createItem(
+            documentId: document.id, orderKey: OrderKey.between(nil, nil), textKind: TextItemKind.bulletedListItem,
+            text: "Bulleted", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+        let numberedItem = try createItem(
+            documentId: document.id, orderKey: OrderKey.between(bulletedItem.orderKey, nil), textKind: TextItemKind.numberedListItem,
+            text: "Numbered", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+
+        #expect(viewModel.listNestingInfo(forItemId: numberedItem.id)?.canIndent == false)
+    }
+
+    /// Reproduces the real bug report: right after `indentBlock` runs, a
+    /// second `indentBlock` call on the same item should usually no-op
+    /// (its own new depth no longer matches its now-more-shallow previous
+    /// sibling) — `listNestingInfo` has to reflect that immediately,
+    /// without needing focus to move away and back, since `DetailScreen`
+    /// re-derives the toolbar's state from exactly this call right after
+    /// every indent/outdent (`configureAccessoryToolbar`'s doc comment).
+    @Test("listNestingInfo(forItemId:) reflects canIndent/canOutdent immediately after indentBlock, no reload needed")
+    func listNestingInfoReflectsStateImmediatelyAfterIndent() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let documentItemRepository = DocumentItemRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let firstItem = try createItem(
+            documentId: document.id, orderKey: OrderKey.between(nil, nil), textKind: TextItemKind.bulletedListItem,
+            text: "First", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+        let secondItem = try createItem(
+            documentId: document.id, orderKey: OrderKey.between(firstItem.orderKey, nil), textKind: TextItemKind.bulletedListItem,
+            text: "Second", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        #expect(viewModel.listNestingInfo(forItemId: secondItem.id)?.canOutdent == false)
+
+        viewModel.indentBlock(secondItem.id)
+
+        // No `viewModel.load()`/reload in between — same in-memory state
+        // the toolbar's `configureAccessoryToolbar` would see.
+        #expect(viewModel.listNestingInfo(forItemId: secondItem.id)?.canOutdent == true)
+        #expect(viewModel.listNestingInfo(forItemId: secondItem.id)?.canIndent == false)
+    }
+
     // MARK: - `DetailScreen.blockRow(for:content:)`'s closure literals, reproduced
 
     @Test("DetailScreen's onIndent closure ({ viewModel.indentBlock(item.id) }) indents exactly the focused item")

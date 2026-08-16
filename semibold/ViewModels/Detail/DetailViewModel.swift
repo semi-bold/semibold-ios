@@ -361,13 +361,28 @@ final class DetailViewModel {
     /// again, only this method's body needs to change — `DetailScreen`
     /// only ever sees `ListNestingInfo`.
     struct ListNestingInfo: Equatable {
+        let canIndent: Bool
         let canOutdent: Bool
     }
 
     func listNestingInfo(forItemId itemId: String) -> ListNestingInfo? {
         guard TextItemKind.listKinds.contains(textContent(forItemId: itemId).textKind) else { return nil }
         let canOutdent = (items.first(where: { $0.id == itemId })?.depth ?? 0) > 0
-        return ListNestingInfo(canOutdent: canOutdent)
+        return ListNestingInfo(canIndent: canIndentBlock(itemId), canOutdent: canOutdent)
+    }
+
+    /// `indentBlock(_:)`'s own eligibility check, factored out so both it
+    /// and `listNestingInfo(forItemId:)` (the toolbar's "should the indent
+    /// button be enabled?" answer) share one source of truth instead of
+    /// two copies that could drift apart.
+    private func canIndentBlock(_ blockId: String) -> Bool {
+        guard let index = items.firstIndex(where: { $0.id == blockId }) else { return false }
+        let item = items[index]
+        let kind = textContent(forItemId: blockId).textKind
+        guard TextItemKind.listKinds.contains(kind), index > 0 else { return false }
+
+        let previousItem = items[index - 1]
+        return previousItem.depth == item.depth && textContent(forItemId: previousItem.id).textKind == kind
     }
 
     /// Updates the in-memory text for `blockId` immediately (so the editor
@@ -938,10 +953,12 @@ final class DetailViewModel {
     /// its own level) can nest arbitrarily deep, matching a Word-style
     /// outline.
     ///
-    /// No-ops unless every one of these holds
+    /// No-ops unless every one of these (`canIndentBlock(_:)`) holds
     /// (`02-indent-outdent-viewmodel` brief's Decisions — a deliberately
     /// literal reading, not a full tree-aware "find my true previous
-    /// sibling" walk):
+    /// sibling" walk) — the on-screen toolbar's indent button reflects
+    /// this same check via `listNestingInfo(forItemId:).canIndent`, so it's
+    /// disabled exactly when this would no-op:
     /// - `blockId` is itself a list-kind item (bulleted/numbered/
     ///   checklist, `tasks/NO-009.md` §2.1) — indenting a paragraph/
     ///   heading/etc. under another block isn't this feature's scope
@@ -966,14 +983,7 @@ final class DetailViewModel {
     /// derived, so this has to be done explicitly rather than following
     /// "for free."
     func indentBlock(_ blockId: String) {
-        guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
-        let item = items[index]
-        let kind = textContent(forItemId: blockId).textKind
-        guard TextItemKind.listKinds.contains(kind), index > 0 else { return }
-
-        let previousItem = items[index - 1]
-        guard previousItem.depth == item.depth,
-              textContent(forItemId: previousItem.id).textKind == kind else { return }
+        guard canIndentBlock(blockId), let index = items.firstIndex(where: { $0.id == blockId }) else { return }
 
         let subtree = subtreeRange(startingAt: index)
         var updatedSubtree = Array(items[subtree])

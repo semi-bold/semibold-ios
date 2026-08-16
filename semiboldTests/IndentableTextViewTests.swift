@@ -124,7 +124,7 @@ struct AccessoryToolbarCoordinatorTests {
     func configureShowsThreeButtonsForListKind() {
         let coordinator = AccessoryToolbarCoordinator.shared
 
-        coordinator.configure(canOutdent: true, onIndent: {}, onOutdent: {}, onDismissKeyboard: {})
+        coordinator.configure(canIndent: true, canOutdent: true, onIndent: {}, onOutdent: {}, onDismissKeyboard: {})
 
         let items = coordinator.toolbar.items ?? []
         // Indent, outdent, a flexible space, and dismiss — 3 actionable
@@ -141,7 +141,7 @@ struct AccessoryToolbarCoordinatorTests {
     func configureShowsOnlyDismissButtonForNonListKind() {
         let coordinator = AccessoryToolbarCoordinator.shared
 
-        coordinator.configure(canOutdent: false, onIndent: nil, onOutdent: nil, onDismissKeyboard: {})
+        coordinator.configure(canIndent: false, canOutdent: false, onIndent: nil, onOutdent: nil, onDismissKeyboard: {})
 
         let items = coordinator.toolbar.items ?? []
         let customViews = items.compactMap { $0.customView }
@@ -151,11 +151,35 @@ struct AccessoryToolbarCoordinatorTests {
         #expect(!customViews.contains(where: { $0 === coordinator.outdentButton }))
     }
 
+    @Test("configure(...) leaves the indent button enabled at full opacity when canIndent is true")
+    func configureEnablesIndentButtonAtFullOpacityWhenCanIndentTrue() {
+        let coordinator = AccessoryToolbarCoordinator.shared
+
+        coordinator.configure(canIndent: true, canOutdent: true, onIndent: {}, onOutdent: {}, onDismissKeyboard: {})
+
+        #expect(coordinator.indentButton.isEnabled == true)
+        #expect(coordinator.indentButton.alpha == 1.0)
+    }
+
+    @Test("configure(...) dims the indent button to ~35% opacity and disables it when canIndent is false")
+    func configureDimsAndDisablesIndentButtonWhenCanIndentFalse() {
+        let coordinator = AccessoryToolbarCoordinator.shared
+
+        coordinator.configure(canIndent: false, canOutdent: true, onIndent: {}, onOutdent: {}, onDismissKeyboard: {})
+
+        #expect(coordinator.indentButton.isEnabled == false)
+        // `UIButton.alpha` is a `CGFloat` backed by a 32-bit `Float` on
+        // this platform, so a `0.35` `Double` literal doesn't round-trip
+        // bit-for-bit — compare within a small tolerance instead of exact
+        // equality.
+        #expect(abs(coordinator.indentButton.alpha - 0.35) < 0.001)
+    }
+
     @Test("configure(...) leaves the outdent button enabled at full opacity when canOutdent is true")
     func configureEnablesOutdentButtonAtFullOpacityWhenCanOutdentTrue() {
         let coordinator = AccessoryToolbarCoordinator.shared
 
-        coordinator.configure(canOutdent: true, onIndent: {}, onOutdent: {}, onDismissKeyboard: {})
+        coordinator.configure(canIndent: true, canOutdent: true, onIndent: {}, onOutdent: {}, onDismissKeyboard: {})
 
         #expect(coordinator.outdentButton.isEnabled == true)
         #expect(coordinator.outdentButton.alpha == 1.0)
@@ -165,25 +189,36 @@ struct AccessoryToolbarCoordinatorTests {
     func configureDimsAndDisablesOutdentButtonWhenCanOutdentFalse() {
         let coordinator = AccessoryToolbarCoordinator.shared
 
-        coordinator.configure(canOutdent: false, onIndent: {}, onOutdent: {}, onDismissKeyboard: {})
+        coordinator.configure(canIndent: true, canOutdent: false, onIndent: {}, onOutdent: {}, onDismissKeyboard: {})
 
         #expect(coordinator.outdentButton.isEnabled == false)
-        // `UIButton.alpha` is a `CGFloat` backed by a 32-bit `Float` on
-        // this platform, so a `0.35` `Double` literal doesn't round-trip
-        // bit-for-bit — compare within a small tolerance instead of exact
-        // equality.
         #expect(abs(coordinator.outdentButton.alpha - 0.35) < 0.001)
     }
 
-    @Test("The toolbar's indent button tap calls the configured onIndent")
-    func indentButtonTapCallsConfiguredOnIndent() {
+    @Test("The toolbar's indent button tap calls the configured onIndent when canIndent is true")
+    func indentButtonTapCallsOnIndentWhenEnabled() {
         var indentCallCount = 0
         let coordinator = AccessoryToolbarCoordinator.shared
-        coordinator.configure(canOutdent: true, onIndent: { indentCallCount += 1 }, onOutdent: {}, onDismissKeyboard: {})
+        coordinator.configure(
+            canIndent: true, canOutdent: true, onIndent: { indentCallCount += 1 }, onOutdent: {}, onDismissKeyboard: {}
+        )
 
         coordinator.indentButton.sendActions(for: .touchUpInside)
 
         #expect(indentCallCount == 1)
+    }
+
+    @Test("The toolbar's indent button tap does not call onIndent when canIndent is false")
+    func indentButtonTapDoesNotCallOnIndentWhenDisabled() {
+        var indentCallCount = 0
+        let coordinator = AccessoryToolbarCoordinator.shared
+        coordinator.configure(
+            canIndent: false, canOutdent: true, onIndent: { indentCallCount += 1 }, onOutdent: {}, onDismissKeyboard: {}
+        )
+
+        coordinator.indentButton.sendActions(for: .touchUpInside)
+
+        #expect(indentCallCount == 0)
     }
 
     @Test("The toolbar's outdent button tap calls the configured onOutdent when canOutdent is true")
@@ -191,7 +226,7 @@ struct AccessoryToolbarCoordinatorTests {
         var outdentCallCount = 0
         let coordinator = AccessoryToolbarCoordinator.shared
         coordinator.configure(
-            canOutdent: true, onIndent: {}, onOutdent: { outdentCallCount += 1 }, onDismissKeyboard: {}
+            canIndent: true, canOutdent: true, onIndent: {}, onOutdent: { outdentCallCount += 1 }, onDismissKeyboard: {}
         )
 
         coordinator.outdentButton.sendActions(for: .touchUpInside)
@@ -204,7 +239,7 @@ struct AccessoryToolbarCoordinatorTests {
         var outdentCallCount = 0
         let coordinator = AccessoryToolbarCoordinator.shared
         coordinator.configure(
-            canOutdent: false, onIndent: {}, onOutdent: { outdentCallCount += 1 }, onDismissKeyboard: {}
+            canIndent: true, canOutdent: false, onIndent: {}, onOutdent: { outdentCallCount += 1 }, onDismissKeyboard: {}
         )
 
         coordinator.outdentButton.sendActions(for: .touchUpInside)
@@ -216,7 +251,9 @@ struct AccessoryToolbarCoordinatorTests {
     func dismissButtonTapCallsOnDismissKeyboard() {
         var dismissCallCount = 0
         let coordinator = AccessoryToolbarCoordinator.shared
-        coordinator.configure(canOutdent: true, onIndent: {}, onOutdent: {}, onDismissKeyboard: { dismissCallCount += 1 })
+        coordinator.configure(
+            canIndent: true, canOutdent: true, onIndent: {}, onOutdent: {}, onDismissKeyboard: { dismissCallCount += 1 }
+        )
 
         coordinator.dismissButton.sendActions(for: .touchUpInside)
 
@@ -229,12 +266,33 @@ struct AccessoryToolbarCoordinatorTests {
         var secondIndentCallCount = 0
         let coordinator = AccessoryToolbarCoordinator.shared
 
-        coordinator.configure(canOutdent: true, onIndent: { firstIndentCallCount += 1 }, onOutdent: {}, onDismissKeyboard: {})
-        coordinator.configure(canOutdent: true, onIndent: { secondIndentCallCount += 1 }, onOutdent: {}, onDismissKeyboard: {})
+        coordinator.configure(
+            canIndent: true, canOutdent: true, onIndent: { firstIndentCallCount += 1 }, onOutdent: {}, onDismissKeyboard: {}
+        )
+        coordinator.configure(
+            canIndent: true, canOutdent: true, onIndent: { secondIndentCallCount += 1 }, onOutdent: {}, onDismissKeyboard: {}
+        )
 
         coordinator.indentButton.sendActions(for: .touchUpInside)
 
         #expect(firstIndentCallCount == 0)
         #expect(secondIndentCallCount == 1)
+    }
+
+    /// Re-configuring also has to refresh enabled/disabled state, not just
+    /// which closures are targeted — this is what fixes the real bug
+    /// (`DetailScreen.configureAccessoryToolbar`'s doc comment) where
+    /// tapping indent left the outdent button showing its stale
+    /// disabled/dimmed state until focus moved away and back.
+    @Test("Re-configuring updates enabled/disabled state, not just the targeted closures")
+    func reconfiguringUpdatesEnabledDisabledState() {
+        let coordinator = AccessoryToolbarCoordinator.shared
+
+        coordinator.configure(canIndent: true, canOutdent: false, onIndent: {}, onOutdent: {}, onDismissKeyboard: {})
+        #expect(coordinator.outdentButton.isEnabled == false)
+
+        coordinator.configure(canIndent: false, canOutdent: true, onIndent: {}, onOutdent: {}, onDismissKeyboard: {})
+        #expect(coordinator.outdentButton.isEnabled == true)
+        #expect(coordinator.indentButton.isEnabled == false)
     }
 }

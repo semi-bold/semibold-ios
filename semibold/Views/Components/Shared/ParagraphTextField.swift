@@ -327,8 +327,10 @@ final class AccessoryToolbarCoordinator: NSObject {
     /// once per focus change from `DetailScreen`, never per block/row.
     /// `onIndent`/`onOutdent` non-`nil` is what decides whether the
     /// indent/outdent buttons show at all (`nil` for a non-list block —
-    /// dismiss-only toolbar); `canOutdent` only matters when they do.
+    /// dismiss-only toolbar); `canIndent`/`canOutdent` only matter when
+    /// they do.
     func configure(
+        canIndent: Bool,
         canOutdent: Bool,
         onIndent: (() -> Void)?,
         onOutdent: (() -> Void)?,
@@ -353,15 +355,19 @@ final class AccessoryToolbarCoordinator: NSObject {
                 UIBarButtonItem(customView: dismissButton)
             ]
         }
+        indentButton.isEnabled = canIndent
+        indentButton.alpha = canIndent ? 1.0 : 0.35
         outdentButton.isEnabled = canOutdent
         outdentButton.alpha = canOutdent ? 1.0 : 0.35
     }
 
-    /// The toolbar's indent button tap — always calls `onIndent`
-    /// unconditionally, matching indent's own lack of a "can't act" state
-    /// (unlike outdent, indent has nothing to disable: any list item can
-    /// nest under its previous sibling).
+    /// The toolbar's indent button tap — only calls `onIndent` while
+    /// `indentButton` is enabled, so a not-currently-indentable item's
+    /// dimmed indent button stays inert even if it somehow still receives
+    /// a tap (belt and suspenders alongside `configure(...)` disabling the
+    /// button itself) — mirrors `handleOutdentTap()`.
     @objc private func handleIndentTap() {
+        guard indentButton.isEnabled else { return }
         onIndent?()
     }
 
