@@ -39,18 +39,20 @@ struct ListIndentOutdentWiringTests {
             textItemRepository: TextItemRepository(context: store.context),
             textMarkRepository: TextMarkRepository(context: store.context),
             mediaItemRepository: MediaItemRepository(context: store.context),
+            listGroupRepository: ListGroupRepository(context: store.context),
             folderRepository: FolderRepository(context: store.context)
         )
     }
 
     /// Same helper as `DetailViewModelTests.createItem` — builds a
     /// `DocumentItem` + `TextContent` directly through the repositories so
-    /// a test can set up an already-nested tree before exercising
+    /// a test can set up an already-nested item before exercising
     /// `indentBlock`/`outdentBlock` against it.
     @discardableResult
     private func createItem(
         documentId: String,
-        parentItemId: String? = nil,
+        depth: Int = 0,
+        listGroupId: String? = nil,
         orderKey: String,
         textKind: String,
         text: String,
@@ -58,7 +60,9 @@ struct ListIndentOutdentWiringTests {
         textItemRepository: TextItemRepository
     ) throws -> DocumentItem {
         let item = try documentItemRepository.create(
-            DocumentItem(documentId: documentId, parentItemId: parentItemId, contentType: "text", orderKey: orderKey)
+            DocumentItem(
+                documentId: documentId, depth: depth, listGroupId: listGroupId, contentType: "text", orderKey: orderKey
+            )
         )
         _ = try textItemRepository.create(TextContent(itemId: item.id, textKind: textKind, plainText: text))
         return item
@@ -183,7 +187,7 @@ struct ListIndentOutdentWiringTests {
     // configured independently, off `focusedBlockId`, by `DetailScreen
     // .configureAccessoryToolbar(forBlockId:)` (`AccessoryToolbarCoordinator`'s
     // doc comment explains why). That method no longer reads
-    // `item.parentItemId` or checks list-kind membership itself — it asks
+    // `item.depth` or checks list-kind membership itself — it asks
     // `DetailViewModel.listNestingInfo(forItemId:)` for both, so these
     // tests exercise that method directly rather than reproducing its
     // expression inline.
@@ -215,12 +219,17 @@ struct ListIndentOutdentWiringTests {
         let textItemRepository = TextItemRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
+        let listGroup = try ListGroupRepository(context: store.context).create(
+            ListGroup(documentId: document.id, listType: TextItemKind.bulletedListItem)
+        )
         let parentItem = try createItem(
-            documentId: document.id, orderKey: OrderKey.between(nil, nil), textKind: TextItemKind.bulletedListItem,
+            documentId: document.id, listGroupId: listGroup.id, orderKey: OrderKey.between(nil, nil),
+            textKind: TextItemKind.bulletedListItem,
             text: "Parent", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
         )
         let nestedItem = try createItem(
-            documentId: document.id, parentItemId: parentItem.id, orderKey: OrderKey.between(nil, nil),
+            documentId: document.id, depth: 1, listGroupId: listGroup.id,
+            orderKey: OrderKey.between(parentItem.orderKey, nil),
             textKind: TextItemKind.bulletedListItem,
             text: "Nested", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
         )
@@ -281,10 +290,10 @@ struct ListIndentOutdentWiringTests {
 
         onIndent()
 
-        #expect(viewModel.items.first(where: { $0.id == secondItem.id })?.parentItemId == firstItem.id)
+        #expect(viewModel.items.first(where: { $0.id == secondItem.id })?.depth == 1)
         // The other item is untouched — confirms the closure acted on the
         // right block id, not just any list item.
-        #expect(viewModel.items.first(where: { $0.id == firstItem.id })?.parentItemId == nil)
+        #expect(viewModel.items.first(where: { $0.id == firstItem.id })?.depth == 0)
     }
 
     @Test("DetailScreen's onOutdent closure ({ viewModel.outdentBlock(item.id) }) outdents exactly the focused item")
@@ -295,12 +304,17 @@ struct ListIndentOutdentWiringTests {
         let textItemRepository = TextItemRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
+        let listGroup = try ListGroupRepository(context: store.context).create(
+            ListGroup(documentId: document.id, listType: TextItemKind.bulletedListItem)
+        )
         let parentItem = try createItem(
-            documentId: document.id, orderKey: OrderKey.between(nil, nil), textKind: TextItemKind.bulletedListItem,
+            documentId: document.id, listGroupId: listGroup.id, orderKey: OrderKey.between(nil, nil),
+            textKind: TextItemKind.bulletedListItem,
             text: "Parent", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
         )
         let nestedItem = try createItem(
-            documentId: document.id, parentItemId: parentItem.id, orderKey: OrderKey.between(nil, nil),
+            documentId: document.id, depth: 1, listGroupId: listGroup.id,
+            orderKey: OrderKey.between(parentItem.orderKey, nil),
             textKind: TextItemKind.bulletedListItem,
             text: "Nested", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
         )
@@ -316,7 +330,6 @@ struct ListIndentOutdentWiringTests {
 
         onOutdent()
 
-        #expect(viewModel.items.first(where: { $0.id == nestedItem.id })?.parentItemId == nil)
         #expect(viewModel.depth(forItemId: nestedItem.id) == 0)
     }
 }

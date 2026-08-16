@@ -13,7 +13,7 @@ import Foundation
 /// disappears from the content lists callers normally fetch.
 ///
 /// `DocumentItem` has no Core Data relationships — `documentId` and
-/// `parentItemId` are plain string foreign keys, not relationship
+/// `listGroupId` are plain string foreign keys, not relationship
 /// traversals (`STORAGE_ARCHITECTURE.md` §5) — so every query here
 /// predicates on those columns directly instead of walking
 /// `entity.parent`/`entity.children` the way `FolderRepository` does.
@@ -40,44 +40,14 @@ struct DocumentItemRepository {
         try fetchEntity(id: id).map(DocumentItem.init(entity:))
     }
 
-    /// Fetches the direct children of `parentItemId` (or the document's
-    /// top-level items when `parentItemId` is `nil`) within `documentId`,
-    /// excluding soft-deleted items, ordered by `orderKey` — the
-    /// string-based fractional index siblings are positioned by
-    /// (`tasks/NO-005.md` §2.2), so plain lexicographic ascending order
-    /// matches display order.
-    func children(documentId: String, parentItemId: String?) throws -> [DocumentItem] {
-        let request = DocumentItemEntity.fetchRequest()
-        let documentPredicate = NSPredicate(format: "documentId == %@", documentId)
-        let deletedPredicate = NSPredicate(format: "deletedAt == nil")
-        let parentPredicate: NSPredicate
-        if let parentItemId {
-            parentPredicate = NSPredicate(format: "parentItemId == %@", parentItemId)
-        } else {
-            parentPredicate = NSPredicate(format: "parentItemId == nil")
-        }
-        request.predicate = NSCompoundPredicate(
-            andPredicateWithSubpredicates: [documentPredicate, deletedPredicate, parentPredicate]
-        )
-        request.sortDescriptors = [NSSortDescriptor(key: "orderKey", ascending: true)]
-        return try context.fetch(request).map(DocumentItem.init(entity:))
-    }
-
-    /// Fetches **every** live (non-soft-deleted) item in `documentId`, at
-    /// any depth, flattened into display order: top-level items in
-    /// `orderKey` order, each immediately followed by its own children in
-    /// `orderKey` order, recursively (depth-first) — the same order
-    /// `DetailScreen.blockList`'s `ForEach` renders top-to-bottom with no
-    /// separate tree-walk step. Unlike `children(documentId:
-    /// parentItemId:)`, which returns one level at a time, this returns
-    /// the whole tree at once for callers (`DetailViewModel.load()`) that
-    /// keep the document's content as a single flat array.
-    ///
-    /// Issues one query for the whole document (sorted by `orderKey`) and
-    /// assembles the flat parent→children order in memory, rather than one
-    /// query per depth level — a personal document's item count is small
-    /// enough that this is simpler and fast enough, matching this file's
-    /// existing single-query-per-call style.
+    /// Fetches **every** live (non-soft-deleted) item in `documentId`,
+    /// ordered by `orderKey` — the string-based fractional index items
+    /// are positioned by (`tasks/NO-005.md` §2.2), so plain
+    /// lexicographic ascending order already matches display order.
+    /// Nesting no longer requires a separate tree-assembly step: a list
+    /// item's place in the hierarchy is its own stored `depth`, not a
+    /// parent reference to walk (`tasks/NO-009.md` §3.1) — `orderKey`
+    /// order alone is display order for every item, nested or not.
     func allItems(documentId: String) throws -> [DocumentItem] {
         let request = DocumentItemEntity.fetchRequest()
         let documentPredicate = NSPredicate(format: "documentId == %@", documentId)
@@ -86,22 +56,7 @@ struct DocumentItemRepository {
             andPredicateWithSubpredicates: [documentPredicate, deletedPredicate]
         )
         request.sortDescriptors = [NSSortDescriptor(key: "orderKey", ascending: true)]
-        let allLiveItems = try context.fetch(request).map(DocumentItem.init(entity:))
-
-        var childrenByParentId: [String?: [DocumentItem]] = [:]
-        for item in allLiveItems {
-            childrenByParentId[item.parentItemId, default: []].append(item)
-        }
-
-        var flattened: [DocumentItem] = []
-        func appendSubtree(parentItemId: String?) {
-            for item in childrenByParentId[parentItemId] ?? [] {
-                flattened.append(item)
-                appendSubtree(parentItemId: item.id)
-            }
-        }
-        appendSubtree(parentItemId: nil)
-        return flattened
+        return try context.fetch(request).map(DocumentItem.init(entity:))
     }
 
     /// Saves changes to an existing item, refreshing `updatedAt`. Pass
@@ -143,32 +98,45 @@ struct DocumentItemRepository {
     /// happily purge live (non-soft-deleted) content as soft-deleted
     /// content. Because `DocumentItem` has no Core Data relationship to
     /// recurse through (unlike `FolderRepository`'s `Deny`-rule-driven
-    /// subtree walk), this instead re-queries `parentItemId` at each
-    /// level to find and remove nested items before removing the item
-    /// itself. Callers wiring up a "delete" UI must soft-delete (or
-    /// confirm with the user) before calling this — there is no built-in
-    /// guard against permanently deleting active content.
+    /// subtree walk), this instead re-derives `id`'s descendants (found
+    /// via its `listGroupId`, if it has one) to find and remove nested
+    /// items before removing the item itself. Callers wiring up a
+    /// "delete" UI must soft-delete (or confirm with the user) before
+    /// calling this — there is no built-in guard against permanently
+    /// deleting active content.
     func hardDelete(id: String) throws {
         guard let entity = try fetchEntity(id: id) else { return }
-        try deleteSubtree(of: id)
+        try deleteSubtree(of: DocumentItem(entity: entity))
         try deleteAssociatedContent(itemId: id)
         context.delete(entity)
         try context.save()
     }
 
-    /// Recursively removes every item nested under `parentItemId`
-    /// (found by re-querying `parentItemId`, since there's no
-    /// relationship to walk) along with each one's own associated
-    /// content rows.
-    private func deleteSubtree(of parentItemId: String) throws {
+    /// Removes every item nested under `item` along with each one's own
+    /// associated content rows. `item`'s descendants are whatever
+    /// immediately follows it, in `orderKey` order, within the same
+    /// `listGroupId`, up until the first item whose `depth` isn't
+    /// greater than `item`'s own — the same contiguous-range reasoning
+    /// as `DetailViewModel.subtreeRange(startingAt:)`, just expressed as
+    /// a fetch instead of an in-memory array walk. Does nothing if
+    /// `item` has no `listGroupId` (not a list item, so it can't have
+    /// nested descendants at all).
+    private func deleteSubtree(of item: DocumentItem) throws {
+        guard let listGroupId = item.listGroupId else { return }
         let request = DocumentItemEntity.fetchRequest()
-        request.predicate = NSPredicate(format: "parentItemId == %@", parentItemId)
-        let children = try context.fetch(request)
-        for child in children {
-            guard let childId = child.id else { continue }
-            try deleteSubtree(of: childId)
-            try deleteAssociatedContent(itemId: childId)
-            context.delete(child)
+        request.predicate = NSPredicate(format: "listGroupId == %@", listGroupId)
+        request.sortDescriptors = [NSSortDescriptor(key: "orderKey", ascending: true)]
+        let groupMembers = try context.fetch(request)
+        guard let rootIndex = groupMembers.firstIndex(where: { $0.id == item.id }) else { return }
+
+        var end = rootIndex + 1
+        while end < groupMembers.count, groupMembers[end].depth > item.depth {
+            end += 1
+        }
+        for descendant in groupMembers[(rootIndex + 1)..<end] {
+            guard let descendantId = descendant.id else { continue }
+            try deleteAssociatedContent(itemId: descendantId)
+            context.delete(descendant)
         }
     }
 
@@ -215,7 +183,8 @@ struct DocumentItemRepository {
     private func apply(_ item: DocumentItem, to entity: DocumentItemEntity) {
         entity.id = item.id
         entity.documentId = item.documentId
-        entity.parentItemId = item.parentItemId
+        entity.depth = Int64(item.depth)
+        entity.listGroupId = item.listGroupId
         entity.contentType = item.contentType
         entity.orderKey = item.orderKey
         entity.revision = Int64(item.revision)
@@ -230,7 +199,8 @@ private extension DocumentItem {
         self.init(
             id: entity.id ?? "",
             documentId: entity.documentId ?? "",
-            parentItemId: entity.parentItemId,
+            depth: Int(entity.depth),
+            listGroupId: entity.listGroupId,
             contentType: entity.contentType ?? "text",
             orderKey: entity.orderKey ?? "",
             revision: Int(entity.revision),

@@ -52,22 +52,23 @@ struct DetailViewModelTests {
             textItemRepository: TextItemRepository(context: store.context),
             textMarkRepository: TextMarkRepository(context: store.context),
             mediaItemRepository: MediaItemRepository(context: store.context),
+            listGroupRepository: ListGroupRepository(context: store.context),
             folderRepository: FolderRepository(context: store.context),
             autosaveDebounceInterval: autosaveDebounceInterval
         )
     }
 
-    /// The persisted plain text of `documentId`'s top-level items, in
-    /// display order — the "read it back from the database" counterpart
-    /// to `viewModel.items.map { viewModel.textContent(forItemId: $0.id)
-    /// .plainText }`, used to confirm an edit actually reached storage
-    /// and not just the in-memory view model.
+    /// The persisted plain text of `documentId`'s items, in display order
+    /// — the "read it back from the database" counterpart to
+    /// `viewModel.items.map { viewModel.textContent(forItemId: $0.id)
+    /// .plainText }`, used to confirm an edit actually reached storage and
+    /// not just the in-memory view model.
     private func storedPlainTexts(
         documentId: String,
         documentItemRepository: DocumentItemRepository,
         textItemRepository: TextItemRepository
     ) throws -> [String] {
-        let items = try documentItemRepository.children(documentId: documentId, parentItemId: nil)
+        let items = try documentItemRepository.allItems(documentId: documentId)
         return try items.map { try textItemRepository.find(itemId: $0.id)?.plainText ?? "" }
     }
 
@@ -87,7 +88,7 @@ struct DetailViewModelTests {
         #expect(viewModel.focusedBlockId == viewModel.items.first?.id)
 
         // The item is actually persisted, not just held in memory.
-        let stored = try documentItemRepository.children(documentId: document.id, parentItemId: nil)
+        let stored = try documentItemRepository.allItems(documentId: document.id)
         #expect(stored.count == 1)
     }
 
@@ -494,7 +495,7 @@ struct DetailViewModelTests {
         #expect(viewModel.focusedBlockCursorOffset == "First".utf16.count)
 
         // The empty block is soft-deleted, not just dropped in memory.
-        let stored = try documentItemRepository.children(documentId: document.id, parentItemId: nil)
+        let stored = try documentItemRepository.allItems(documentId: document.id)
         #expect(stored.map(\.id) == [firstBlockId, thirdItem.id])
 
         let deleted = try documentItemRepository.find(id: secondItem.id)
@@ -809,14 +810,14 @@ struct DetailViewModelTests {
 
     /// Creates a `DocumentItem` + its `TextContent` directly through the
     /// repositories (bypassing `DetailViewModel`'s Markdown-prefix
-    /// conversion), so a test can set up an already-nested tree — several
-    /// list items with specific `parentItemId`/`orderKey` values — before
-    /// exercising `indentBlock`/`outdentBlock`/`numberedListNumber`
-    /// against it.
+    /// conversion), so a test can set up already-nested items — specific
+    /// `depth`/`listGroupId`/`orderKey` values — before exercising
+    /// `indentBlock`/`outdentBlock`/`numberedListNumber` against them.
     @discardableResult
     private func createItem(
         documentId: String,
-        parentItemId: String? = nil,
+        depth: Int = 0,
+        listGroupId: String? = nil,
         orderKey: String,
         textKind: String,
         text: String,
@@ -824,7 +825,9 @@ struct DetailViewModelTests {
         textItemRepository: TextItemRepository
     ) throws -> DocumentItem {
         let item = try documentItemRepository.create(
-            DocumentItem(documentId: documentId, parentItemId: parentItemId, contentType: "text", orderKey: orderKey)
+            DocumentItem(
+                documentId: documentId, depth: depth, listGroupId: listGroupId, contentType: "text", orderKey: orderKey
+            )
         )
         _ = try textItemRepository.create(TextContent(itemId: item.id, textKind: textKind, plainText: text))
         return item
@@ -845,7 +848,7 @@ struct DetailViewModelTests {
         viewModel.indentBlock(firstBlockId)
 
         #expect(viewModel.items.count == 1)
-        #expect(viewModel.items[0].parentItemId == nil)
+        #expect(viewModel.items[0].depth == 0)
     }
 
     @Test("Indenting with a different-kind previous sibling does nothing")
@@ -872,7 +875,7 @@ struct DetailViewModelTests {
         viewModel.indentBlock(numberedItem.id)
 
         #expect(viewModel.items.map(\.id) == [bulletedItem.id, numberedItem.id])
-        #expect(viewModel.items.first(where: { $0.id == numberedItem.id })?.parentItemId == nil)
+        #expect(viewModel.items.first(where: { $0.id == numberedItem.id })?.depth == 0)
     }
 
     @Test("Indenting with a same-kind previous sibling nests it under that sibling, in place")
@@ -898,15 +901,16 @@ struct DetailViewModelTests {
         viewModel.indentBlock(secondItem.id)
 
         // The item stays right where it was in display order — indenting
-        // only changes what it renders as a child of, not its position.
+        // only changes its `depth`, not its position or `orderKey`.
         #expect(viewModel.items.map(\.id) == [firstItem.id, secondItem.id])
-        #expect(viewModel.items[1].parentItemId == firstItem.id)
+        #expect(viewModel.items[1].depth == 1)
+        #expect(viewModel.items[1].orderKey == secondItem.orderKey)
         #expect(viewModel.depth(forItemId: secondItem.id) == 1)
         #expect(viewModel.depth(forItemId: firstItem.id) == 0)
 
         // Persisted immediately, not just in memory.
         let stored = try #require(try documentItemRepository.find(id: secondItem.id))
-        #expect(stored.parentItemId == firstItem.id)
+        #expect(stored.depth == 1)
     }
 
     @Test("Outdenting a top-level item does nothing")
@@ -923,10 +927,10 @@ struct DetailViewModelTests {
         viewModel.outdentBlock(firstBlockId)
 
         #expect(viewModel.items.count == 1)
-        #expect(viewModel.items[0].parentItemId == nil)
+        #expect(viewModel.items[0].depth == 0)
     }
 
-    @Test("Outdenting a nested item promotes it to its grandparent, right after its former parent")
+    @Test("Outdenting a nested item promotes it to top-level, right after its former parent's subtree")
     func outdentBlockPromotesNestedItemAfterFormerParent() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
@@ -934,16 +938,21 @@ struct DetailViewModelTests {
         let textItemRepository = TextItemRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
+        let listGroup = try ListGroupRepository(context: store.context).create(
+            ListGroup(documentId: document.id, listType: TextItemKind.bulletedListItem)
+        )
         let parentItem = try createItem(
-            documentId: document.id, orderKey: OrderKey.between(nil, nil), textKind: TextItemKind.bulletedListItem,
+            documentId: document.id, listGroupId: listGroup.id, orderKey: OrderKey.between(nil, nil),
+            textKind: TextItemKind.bulletedListItem,
             text: "Parent", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
         )
         let nestedItem = try createItem(
-            documentId: document.id, parentItemId: parentItem.id, orderKey: OrderKey.between(nil, nil), textKind: TextItemKind.bulletedListItem,
+            documentId: document.id, depth: 1, listGroupId: listGroup.id,
+            orderKey: OrderKey.between(parentItem.orderKey, nil), textKind: TextItemKind.bulletedListItem,
             text: "Nested", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
         )
         let thirdItem = try createItem(
-            documentId: document.id, orderKey: OrderKey.between(parentItem.orderKey, nil), textKind: TextItemKind.bulletedListItem,
+            documentId: document.id, orderKey: OrderKey.between(nestedItem.orderKey, nil), textKind: TextItemKind.bulletedListItem,
             text: "Third", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
         )
 
@@ -955,14 +964,14 @@ struct DetailViewModelTests {
 
         #expect(viewModel.items.map(\.id) == [parentItem.id, nestedItem.id, thirdItem.id])
         let promoted = try #require(viewModel.items.first(where: { $0.id == nestedItem.id }))
-        #expect(promoted.parentItemId == nil)
+        #expect(promoted.depth == 0)
         #expect(viewModel.depth(forItemId: nestedItem.id) == 0)
         // Positioned between the former parent and whatever followed it.
         #expect(promoted.orderKey > parentItem.orderKey)
         #expect(promoted.orderKey < thirdItem.orderKey)
 
         let stored = try #require(try documentItemRepository.find(id: nestedItem.id))
-        #expect(stored.parentItemId == nil)
+        #expect(stored.depth == 0)
     }
 
     @Test("indent, indent, outdent, outdent round-trips back to the original flat, top-level layout")
@@ -1002,13 +1011,13 @@ struct DetailViewModelTests {
         viewModel.outdentBlock(itemC.id) // C promoted back to top-level.
 
         #expect(viewModel.items.map(\.id) == [itemA.id, itemB.id, itemC.id])
-        #expect(viewModel.items.allSatisfy { $0.parentItemId == nil })
+        #expect(viewModel.items.allSatisfy { $0.depth == 0 })
         #expect(viewModel.depth(forItemId: itemA.id) == 0)
         #expect(viewModel.depth(forItemId: itemB.id) == 0)
         #expect(viewModel.depth(forItemId: itemC.id) == 0)
     }
 
-    @Test("numberedListNumber counts each sibling group under its own parent independently")
+    @Test("numberedListNumber counts each same-depth group independently")
     func numberedListNumberCountsSiblingsUnderSameParentOnly() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
@@ -1016,20 +1025,26 @@ struct DetailViewModelTests {
         let textItemRepository = TextItemRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
+        let listGroup = try ListGroupRepository(context: store.context).create(
+            ListGroup(documentId: document.id, listType: TextItemKind.bulletedListItem)
+        )
         let container = try createItem(
-            documentId: document.id, orderKey: OrderKey.between(nil, nil), textKind: TextItemKind.bulletedListItem,
+            documentId: document.id, listGroupId: listGroup.id, orderKey: OrderKey.between(nil, nil),
+            textKind: TextItemKind.bulletedListItem,
             text: "Container", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
         )
         let nestedFirst = try createItem(
-            documentId: document.id, parentItemId: container.id, orderKey: OrderKey.between(nil, nil), textKind: TextItemKind.numberedListItem,
+            documentId: document.id, depth: 1, listGroupId: listGroup.id, orderKey: OrderKey.between(container.orderKey, nil),
+            textKind: TextItemKind.numberedListItem,
             text: "Nested 1", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
         )
         let nestedSecond = try createItem(
-            documentId: document.id, parentItemId: container.id, orderKey: OrderKey.between(nestedFirst.orderKey, nil), textKind: TextItemKind.numberedListItem,
+            documentId: document.id, depth: 1, listGroupId: listGroup.id, orderKey: OrderKey.between(nestedFirst.orderKey, nil),
+            textKind: TextItemKind.numberedListItem,
             text: "Nested 2", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
         )
         let topLevelFirst = try createItem(
-            documentId: document.id, orderKey: OrderKey.between(container.orderKey, nil), textKind: TextItemKind.numberedListItem,
+            documentId: document.id, orderKey: OrderKey.between(nestedSecond.orderKey, nil), textKind: TextItemKind.numberedListItem,
             text: "Top 1", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
         )
         let topLevelSecond = try createItem(
@@ -1050,6 +1065,90 @@ struct DetailViewModelTests {
         // parent.
         #expect(viewModel.numberedListNumber(forItemId: topLevelFirst.id) == 1)
         #expect(viewModel.numberedListNumber(forItemId: topLevelSecond.id) == 2)
+    }
+
+    /// Depth is a stored value now, not derived from a parent chain
+    /// (`tasks/NO-009.md` §3.1) — indenting an item that already has its
+    /// own nested descendants has to explicitly bump their `depth` too,
+    /// or their nesting level would silently fall out of sync with what
+    /// they render under.
+    @Test("Indenting an item with its own descendants carries their depth along with it")
+    func indentBlockCascadesDepthToOwnDescendants() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let documentItemRepository = DocumentItemRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let listGroup = try ListGroupRepository(context: store.context).create(
+            ListGroup(documentId: document.id, listType: TextItemKind.bulletedListItem)
+        )
+        let itemA = try createItem(
+            documentId: document.id, orderKey: OrderKey.between(nil, nil), textKind: TextItemKind.bulletedListItem,
+            text: "A", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+        let itemB = try createItem(
+            documentId: document.id, listGroupId: listGroup.id, orderKey: OrderKey.between(itemA.orderKey, nil),
+            textKind: TextItemKind.bulletedListItem,
+            text: "B", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+        let itemC = try createItem(
+            documentId: document.id, depth: 1, listGroupId: listGroup.id, orderKey: OrderKey.between(itemB.orderKey, nil),
+            textKind: TextItemKind.bulletedListItem,
+            text: "C, already nested under B", documentItemRepository: documentItemRepository,
+            textItemRepository: textItemRepository
+        )
+
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        #expect(viewModel.depth(forItemId: itemC.id) == 1)
+
+        viewModel.indentBlock(itemB.id) // B nests under A; C should move deeper with it.
+
+        #expect(viewModel.depth(forItemId: itemB.id) == 1)
+        #expect(viewModel.depth(forItemId: itemC.id) == 2)
+        let storedC = try #require(try documentItemRepository.find(id: itemC.id))
+        #expect(storedC.depth == 2)
+    }
+
+    @Test("Outdenting an item with its own descendants carries their depth along with it")
+    func outdentBlockCascadesDepthToOwnDescendants() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let documentItemRepository = DocumentItemRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Diary"))
+        let listGroup = try ListGroupRepository(context: store.context).create(
+            ListGroup(documentId: document.id, listType: TextItemKind.bulletedListItem)
+        )
+        let itemA = try createItem(
+            documentId: document.id, listGroupId: listGroup.id, orderKey: OrderKey.between(nil, nil),
+            textKind: TextItemKind.bulletedListItem,
+            text: "A", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+        let itemB = try createItem(
+            documentId: document.id, depth: 1, listGroupId: listGroup.id, orderKey: OrderKey.between(itemA.orderKey, nil),
+            textKind: TextItemKind.bulletedListItem,
+            text: "B, nested under A", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+        let itemC = try createItem(
+            documentId: document.id, depth: 2, listGroupId: listGroup.id, orderKey: OrderKey.between(itemB.orderKey, nil),
+            textKind: TextItemKind.bulletedListItem,
+            text: "C, nested under B", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+        #expect(viewModel.depth(forItemId: itemC.id) == 2)
+
+        viewModel.outdentBlock(itemB.id) // B promotes to top-level; C should move shallower with it.
+
+        #expect(viewModel.items.map(\.id) == [itemA.id, itemB.id, itemC.id])
+        #expect(viewModel.depth(forItemId: itemB.id) == 0)
+        #expect(viewModel.depth(forItemId: itemC.id) == 1)
+        let storedC = try #require(try documentItemRepository.find(id: itemC.id))
+        #expect(storedC.depth == 1)
     }
 
 }
