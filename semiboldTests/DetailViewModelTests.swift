@@ -298,6 +298,11 @@ struct DetailViewModelTests {
         #expect(viewModel.items.map(\.id) == [firstBlockId])
         #expect(viewModel.textContent(forItemId: firstBlockId).textKind == TextItemKind.paragraph)
         #expect(viewModel.textContent(forItemId: firstBlockId).plainText == "")
+        // Immediately, without a reload — `DetailScreen`'s
+        // `.onChange(of: viewModel.items)` re-derives the on-screen
+        // keyboard toolbar from exactly this, so a block that just exited
+        // a list must stop reporting list-nesting info right away.
+        #expect(viewModel.listNestingInfo(forItemId: firstBlockId) == nil)
     }
 
     @Test("Typing '---' converts a paragraph to a divider and drops keyboard focus")
@@ -606,6 +611,9 @@ struct DetailViewModelTests {
         #expect(viewModel.textContent(forItemId: firstBlockId).plainText == "First")
         #expect(viewModel.textContent(forItemId: secondItem.id).textKind == TextItemKind.paragraph)
         #expect(viewModel.textContent(forItemId: secondItem.id).plainText == "")
+        // Immediately, without a reload — same rationale as
+        // `insertBlockOnEmptyListItemExitsToParagraph`'s equivalent check.
+        #expect(viewModel.listNestingInfo(forItemId: secondItem.id) == nil)
 
         let stored = try documentItemRepository.find(id: secondItem.id)
         #expect(stored?.deletedAt == nil)
