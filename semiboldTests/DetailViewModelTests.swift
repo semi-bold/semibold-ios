@@ -729,11 +729,11 @@ struct DetailViewModelTests {
         #expect(viewModel.errorMessage == nil)
 
         // `mergeOrDeleteBlock` on the only block does nothing (PLANNING's
-        // "every document keeps ≥1 block" invariant), so use a keyboard
-        // shortcut's immediate-persist path instead — toggling bold on an
-        // empty block does nothing, so use the structural Heading
-        // conversion instead, which also persists immediately.
-        viewModel.convertBlockToHeading(blockId, level: 1)
+        // "every document keeps ≥1 block" invariant), so use a different
+        // immediate-persist path instead — toggling bold on an empty block
+        // does nothing, so use the "# " Markdown-prefix Heading conversion
+        // instead, which also persists immediately.
+        viewModel.updateBlockText(blockId, text: "# Title")
 
         #expect(viewModel.errorMessage == AppErrorMessages.saveFailed)
     }

@@ -5,9 +5,12 @@ import Testing
 /// Tests for `DetailViewModel+KeyboardShortcuts` — the view-model side of
 /// macOS keyboard shortcuts (`tasks/NO-001.md` §13.2):
 ///
-/// - Cmd+Option+1/2/3 → `convertBlockToHeading(_:level:)`
-/// - Cmd+B / Cmd+I    → `toggleBoldOnBlock`/`toggleItalicOnBlock`
-/// - Cmd+K            → `toggleLinkOnBlock`
+/// - Cmd+B / Cmd+I → `toggleBoldOnBlock`/`toggleItalicOnBlock`
+/// - Cmd+K         → `toggleLinkOnBlock`
+///
+/// §13.2's Cmd+Option+1/2/3 (heading conversion/re-leveling) isn't here —
+/// see `DetailViewModel+KeyboardShortcuts.swift`'s doc comment for why it
+/// was deliberately left unimplemented.
 ///
 /// **NO-005 model note**: rewritten against the `DocumentItem`/
 /// `TextContent` model (`tasks/NO-005.md` §3). These shortcuts wrap/unwrap
@@ -42,54 +45,6 @@ struct KeyboardShortcutConversionTests {
             folderRepository: FolderRepository(context: store.context),
             autosaveDebounceInterval: autosaveDebounceInterval
         )
-    }
-
-    // MARK: - Cmd+Option+1/2/3 (Heading conversion)
-
-    @Test(
-        "Cmd+Option+1/2/3 converts the focused item to a heading at the matching level, saved immediately",
-        arguments: [1, 2, 3]
-    )
-    func convertBlockToHeadingSetsLevelAndPersists(_ level: Int) throws {
-        let store = try makeStore()
-        let documentRepository = DocumentRepository(context: store.context)
-        let textItemRepository = TextItemRepository(context: store.context)
-
-        let document = try documentRepository.create(Document(title: "Diary"))
-        let viewModel = makeViewModel(document: document, store: store, autosaveDebounceInterval: .seconds(10))
-        viewModel.load()
-        let blockId = try #require(viewModel.items.first?.id)
-        viewModel.updateBlockText(blockId, text: "Diary Entry")
-
-        viewModel.convertBlockToHeading(blockId, level: level)
-
-        let content = viewModel.textContent(forItemId: blockId)
-        #expect(content.textKind == TextItemKind.heading)
-        #expect(content.plainText == "Diary Entry")
-        #expect(content.headingLevel == level)
-
-        // Structural change — persisted immediately.
-        let stored = try #require(try textItemRepository.find(itemId: blockId))
-        #expect(stored.textKind == TextItemKind.heading)
-        #expect(stored.headingLevel == level)
-    }
-
-    @Test("Cmd+Option+2 on an already-heading item re-levels it, keeping its text")
-    func convertHeadingToDifferentLevelKeepsText() throws {
-        let store = try makeStore()
-        let documentRepository = DocumentRepository(context: store.context)
-
-        let document = try documentRepository.create(Document(title: "Diary"))
-        let viewModel = makeViewModel(document: document, store: store)
-        viewModel.load()
-        let blockId = try #require(viewModel.items.first?.id)
-        viewModel.updateBlockText(blockId, text: "# Title")
-
-        viewModel.convertBlockToHeading(blockId, level: 2)
-
-        let content = viewModel.textContent(forItemId: blockId)
-        #expect(content.headingLevel == 2)
-        #expect(content.plainText == "Title")
     }
 
     // MARK: - Cmd+B (Bold)

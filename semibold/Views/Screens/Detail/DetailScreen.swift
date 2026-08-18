@@ -149,8 +149,15 @@ struct DetailScreen: View {
     // MARK: - macOS keyboard shortcuts
 
     /// Invisible buttons that exist only to register the macOS
-    /// keyboard shortcuts from §13.2 — Cmd+B/I/K and Cmd+Option+1/2/3 — and
-    /// apply them to whichever block currently has keyboard focus.
+    /// keyboard shortcuts from §13.2 — Cmd+B/I/K — and apply them to
+    /// whichever block currently has keyboard focus.
+    ///
+    /// Cmd+Option+1/2/3 (heading conversion/re-leveling) was deliberately
+    /// left out — this app's users are already fluent in the Markdown
+    /// prefixes (`"# "`/`"## "`/`"### "`) that do the same thing, and a
+    /// shortcut on top of that is more to remember, not less. Keyboard
+    /// shortcuts here are reserved for actions that have no typed
+    /// equivalent at all (Tab/Shift+Tab for list indent/outdent).
     ///
     /// `ParagraphTextField` is a `UITextView` wrapper that doesn't surface
     /// these key combinations to SwiftUI directly, so `.keyboardShortcut()`
@@ -177,14 +184,6 @@ struct DetailScreen: View {
                 viewModel.toggleLinkOnBlock(blockId)
             }
             .keyboardShortcut("k", modifiers: [.command])
-
-            ForEach(1...3, id: \.self) { level in
-                Button("Heading \(level)") {
-                    guard let blockId = focusedBlockId else { return }
-                    viewModel.convertBlockToHeading(blockId, level: level)
-                }
-                .keyboardShortcut(KeyEquivalent(Character("\(level)")), modifiers: [.command, .option])
-            }
         }
         .frame(width: 0, height: 0)
         .hidden()

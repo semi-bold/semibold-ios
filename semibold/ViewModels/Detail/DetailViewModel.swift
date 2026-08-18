@@ -818,6 +818,30 @@ final class DetailViewModel {
         return true
     }
 
+    /// Converts `blockId`'s heading back to a plain paragraph in place,
+    /// keeping its text — the shared "exit a heading" behavior for
+    /// Backspace-at-start (`mergeOrDeleteBlock`). This is how a heading
+    /// gets re-leveled now that there's no keyboard shortcut for it
+    /// (`DetailViewModel+KeyboardShortcuts.swift`'s doc comment): Backspace
+    /// at the very start reverts it to a plain paragraph, then retyping
+    /// `"# "`/`"## "`/`"### "` picks a new level through the same
+    /// Markdown-prefix conversion `updateBlockText` already applies to a
+    /// fresh paragraph — no separate re-leveling logic needed.
+    ///
+    /// Unlike `exitEmptyListItem`, this doesn't require empty text — a
+    /// heading has no "keep typing vs. leave" ambiguity for emptiness to
+    /// resolve, so Backspace-at-start always exits it, text and all.
+    ///
+    /// Returns whether it did so, matching `exitEmptyListItem`'s contract.
+    private func exitHeading(_ blockId: String) -> Bool {
+        let content = textContent(forItemId: blockId)
+        guard content.textKind == TextItemKind.heading else { return false }
+        textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.paragraph, plainText: content.plainText)
+        cancelPendingSave(blockId)
+        persistBlock(blockId)
+        return true
+    }
+
     /// Removes `listGroupId`'s `ListGroup` row if `blockId` leaving it
     /// (converted away, or soft-deleted) left it with no live members —
     /// group rows carry no content of their own (`Models/ListGroup.swift`),
@@ -885,6 +909,11 @@ final class DetailViewModel {
     ///   behavior, symmetric with `insertBlock`'s Enter handling. This
     ///   takes precedence even for the document's first block, unlike the
     ///   merge/delete path below.
+    /// - If `blockId` is a heading (any text), `exitHeading` converts it to
+    ///   a plain paragraph in place instead, same precedence as the list
+    ///   case above — this is how a heading's level gets changed now that
+    ///   there's no dedicated shortcut for it (`exitHeading`'s doc
+    ///   comment).
     /// - If `blockId` is the document's first block, there's nothing to
     ///   merge/delete into — every document keeps at least one block
     ///   (`load()`'s bootstrap invariant), so this does nothing.
@@ -905,6 +934,7 @@ final class DetailViewModel {
     func mergeOrDeleteBlock(_ blockId: String, currentText: String) {
         guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
         guard !exitEmptyListItem(blockId, currentText: currentText) else { return }
+        guard !exitHeading(blockId) else { return }
         guard index > 0 else {
             // First block in the document — Backspace at its start does
             // nothing, matching AC2's "every document has ≥1 block".
