@@ -472,8 +472,17 @@ final class DetailViewModel {
             textContents[blockId] = TextContent(
                 itemId: blockId, textKind: TextItemKind.checklist, plainText: checklist.text, isChecked: checklist.checked
             )
+            // A different list kind can't stay in its old group (README
+            // "공통 불변조건" 3 — one kind per group), so re-run A2's
+            // join-or-create under the new kind (README A3-b) and clean up
+            // the old group if that left it empty (A3-c).
+            let formerListGroupId = items.first(where: { $0.id == blockId })?.listGroupId
+            assignFreshListGroup(forBlockId: blockId, listType: TextItemKind.checklist)
             cancelPendingSave(blockId)
             persistBlock(blockId)
+            if let formerListGroupId {
+                cleanUpListGroupIfOrphaned(formerListGroupId)
+            }
             return
         }
 
@@ -806,6 +815,18 @@ final class DetailViewModel {
         guard TextItemKind.listKinds.contains(currentKind), currentText.isEmpty else { return false }
         guard let index = items.firstIndex(where: { $0.id == blockId }) else { return false }
 
+        // `blockId` is leaving the list in place (still sitting at `index`,
+        // just no longer a list item), so its own descendants lose their
+        // parent without moving anywhere themselves — shift them all up by
+        // exactly 1 depth level so the shallowest one (always `depth + 1`
+        // by invariant 6) lands on `blockId`'s own original `depth`,
+        // keeping every invariant intact (README B2-b/C1).
+        let descendantsEnd = subtreeRange(startingAt: index).upperBound
+        let descendantRange = (index + 1)..<descendantsEnd
+        if !descendantRange.isEmpty {
+            shiftDepth(of: descendantRange, by: -1)
+        }
+
         let formerListGroupId = items[index].listGroupId
         items[index].depth = 0
         items[index].listGroupId = nil
@@ -861,14 +882,24 @@ final class DetailViewModel {
     /// depth 0 (so typing "- a" then "- b" back to back reads as one
     /// list, matching how `indentBlock` already treats array-adjacent
     /// same-depth items as siblings), or creating a new `ListGroup`
-    /// otherwise. Called by every place a paragraph first becomes a list
-    /// item (`updateBlockText`'s Markdown-prefix conversions,
+    /// otherwise (README A2-b/c). Called by every place a block newly
+    /// becomes (or switches to) a list item (`updateBlockText`'s
+    /// Markdown-prefix conversions and bulleted→checklist upgrade,
     /// `DetailViewModel+SlashCommand.swift`'s `convertBlock(_:
     /// toSlashCommandOption:)`).
     ///
-    /// Mutates `items[blockId]` in place — callers still persist it
-    /// themselves via `persistBlock`, same as every other structural
-    /// conversion in this file.
+    /// Also reconciles `blockId` with whatever now sits right after it
+    /// (README A2-d) via `reconcileAdjacentListBlocks` — typing/picking a
+    /// list conversion can just as easily land *above* an existing
+    /// same-kind list as below one (e.g. a block sandwiched between two
+    /// list groups), and that side needs the same group-merge/depth-fix
+    /// treatment.
+    ///
+    /// Mutates `items[blockId]` in place — callers still persist `blockId`
+    /// itself via `persistBlock`, same as every other structural
+    /// conversion in this file; the below-neighbor reconciliation (if any)
+    /// persists its own affected range immediately, same as
+    /// `indentBlock`/`outdentBlock`.
     /// Not `private` for the same cross-file-access reason as
     /// `persistBlock` — `+SlashCommand.swift`'s `convertBlock(_:
     /// toSlashCommandOption:)` calls this too.
@@ -881,6 +912,7 @@ final class DetailViewModel {
                textContent(forItemId: previousItem.id).textKind == listType {
                 items[index].depth = 0
                 items[index].listGroupId = previousGroupId
+                reconcileWithNextBlock(afterIndex: index)
                 return
             }
         }
@@ -896,6 +928,111 @@ final class DetailViewModel {
             // the next successful edit or a reload reconciles it.
             errorMessage = AppErrorMessages.saveFailed
         }
+        reconcileWithNextBlock(afterIndex: index)
+    }
+
+    /// Shifts every item in `range`'s `depth` by `delta` (positive or
+    /// negative) and persists the whole range as one transaction — the
+    /// depth-cascade primitive shared by `exitEmptyListItem`,
+    /// `reconcileAdjacentListBlocks`, and (inline, for their own single
+    /// moved subtree) `indentBlock`/`outdentBlock`.
+    private func shiftDepth(of range: Range<Int>, by delta: Int) {
+        guard !range.isEmpty else { return }
+        var updatedMembers = Array(items[range])
+        for i in updatedMembers.indices {
+            updatedMembers[i].depth += delta
+        }
+        do {
+            try documentItemRepository.context.withTransaction {
+                for member in updatedMembers {
+                    _ = try documentItemRepository.update(member, save: false)
+                }
+            }
+            items.replaceSubrange(range, with: updatedMembers)
+        } catch {
+            // §15.2 "저장 실패" — the edit stays local-only; the next
+            // successful save (or a reload) reconciles it.
+            errorMessage = AppErrorMessages.saveFailed
+        }
+    }
+
+    /// Calls `reconcileAdjacentListBlocks` for `items[afterIndex]` and
+    /// whatever immediately follows it, if anything does — the "check the
+    /// block below" half of README A2-d/A3-b, shared by every
+    /// `assignFreshListGroup` exit path.
+    private func reconcileWithNextBlock(afterIndex index: Int) {
+        guard items.indices.contains(index), items.indices.contains(index + 1) else { return }
+        reconcileAdjacentListBlocks(upperItemId: items[index].id, lowerItemId: items[index + 1].id)
+    }
+
+    /// Reconciles two list blocks that just became array-adjacent —
+    /// `upperItemId` immediately followed by `lowerItemId` in `items` —
+    /// so the document's list invariants (`ListBlock/README.md`'s "공통
+    /// 불변조건") keep holding after whatever structural change made them
+    /// neighbors. Shared by every place the README says "그룹을
+    /// 병합합니다": A2/A3/D1 (via `assignFreshListGroup`), C3, F2.
+    ///
+    /// No-ops unless both are list items of the *same* kind (README
+    /// C3-e) — a different kind, or either one not a list, never merges
+    /// or adjusts depth.
+    ///
+    /// Otherwise (README C3-b/c/d):
+    /// 1. If they're not already in the same group, merges `lowerItemId`'s
+    ///    group into `upperItemId`'s (the earlier-in-the-array group wins
+    ///    — `mergeListGroups`).
+    /// 2. If `lowerItemId`'s depth now exceeds `upperItemId`'s depth by
+    ///    more than 1, clamps `lowerItemId` and its own descendants down
+    ///    so `lowerItemId` lands at exactly `upperItemId`'s depth + 1 —
+    ///    otherwise leaves depth untouched.
+    private func reconcileAdjacentListBlocks(upperItemId: String, lowerItemId: String) {
+        guard let upperIndex = items.firstIndex(where: { $0.id == upperItemId }),
+              let lowerIndex = items.firstIndex(where: { $0.id == lowerItemId }) else { return }
+
+        let upperKind = textContent(forItemId: upperItemId).textKind
+        let lowerKind = textContent(forItemId: lowerItemId).textKind
+        guard TextItemKind.listKinds.contains(upperKind), upperKind == lowerKind else { return }
+
+        let upperGroupId = items[upperIndex].listGroupId
+        let lowerGroupId = items[lowerIndex].listGroupId
+        if let upperGroupId, let lowerGroupId, upperGroupId != lowerGroupId {
+            mergeListGroups(keeping: upperGroupId, removing: lowerGroupId, fromIndex: lowerIndex)
+        }
+
+        let upperDepth = items[upperIndex].depth
+        let lowerDepth = items[lowerIndex].depth
+        guard lowerDepth > upperDepth + 1 else { return }
+
+        let range = subtreeRange(startingAt: lowerIndex)
+        shiftDepth(of: range, by: -(lowerDepth - (upperDepth + 1)))
+    }
+
+    /// Reassigns every live member of `removingGroupId` (a contiguous run
+    /// starting at `startIndex` — README's "그룹" invariant guarantees
+    /// this) to `keepingGroupId`, then removes the now-empty
+    /// `removingGroupId` row — the "그룹 병합" glossary entry
+    /// (`ListBlock/README.md`), keeping the earlier-in-the-array group's
+    /// id so nothing referencing it (none currently, but this is the
+    /// stable identity going forward) needs to change.
+    private func mergeListGroups(keeping keepingGroupId: String, removing removingGroupId: String, fromIndex startIndex: Int) {
+        var end = startIndex
+        while end < items.count, items[end].listGroupId == removingGroupId {
+            items[end].listGroupId = keepingGroupId
+            end += 1
+        }
+        guard end > startIndex else { return }
+
+        do {
+            try documentItemRepository.context.withTransaction {
+                for member in items[startIndex..<end] {
+                    _ = try documentItemRepository.update(member, save: false)
+                }
+            }
+        } catch {
+            // §15.2 "저장 실패" — the edit stays local-only; the next
+            // successful save (or a reload) reconciles it.
+            errorMessage = AppErrorMessages.saveFailed
+        }
+        try? listGroupRepository.hardDelete(id: removingGroupId)
     }
 
     /// Handles pressing Backspace with the caret at the very start of
@@ -967,6 +1104,13 @@ final class DetailViewModel {
             focusedBlockCursorOffset = cursorOffset
             if let formerListGroupId {
                 cleanUpListGroupIfOrphaned(formerListGroupId)
+            }
+            // Removing `blockId` may have put `previousItem` and whatever
+            // now sits at its old `index` newly adjacent to each other —
+            // reconcile them the same way any other newly-adjacent list
+            // pair is (README C3-a through C3-d).
+            if items.indices.contains(index) {
+                reconcileAdjacentListBlocks(upperItemId: previousItem.id, lowerItemId: items[index].id)
             }
         } catch {
             // §15.2 "삭제 실패" — the block stays in the database
@@ -1103,6 +1247,14 @@ final class DetailViewModel {
             items.removeSubrange(movedSubtreeRange)
             let insertionIndex = formerParentSubtreeEnd - movedSubtreeRange.count
             items.insert(contentsOf: movedSubtree, at: insertionIndex)
+
+            // Whatever now sits right after the moved subtree's new
+            // position may be a different same-kind list group — reconcile
+            // them (README F2-c, same procedure as C3-b~d).
+            let afterMovedSubtree = insertionIndex + movedSubtree.count
+            if items.indices.contains(afterMovedSubtree) {
+                reconcileAdjacentListBlocks(upperItemId: blockId, lowerItemId: items[afterMovedSubtree].id)
+            }
         } catch {
             // §15.2 "저장 실패" — the edit stays local-only; the next
             // successful save (or a reload) reconciles it.

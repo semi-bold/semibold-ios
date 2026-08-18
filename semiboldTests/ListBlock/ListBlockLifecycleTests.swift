@@ -22,9 +22,10 @@ import Testing
 /// (No E section here — README's E1 (Cmd+B/I/K) has no list-state effect
 /// and is already covered by `KeyboardShortcutConversionTests.swift`.)
 ///
-/// Cases marked `.disabled(...)` document a known gap — the *expected*
-/// behavior once fixed, not what happens today. Removing the `.disabled`
-/// trait is the acceptance check for that fix.
+/// A case marked `.disabled(...)`, if one appears again later, documents a
+/// known gap — the *expected* behavior once fixed, not what happens
+/// today. Removing the `.disabled` trait is the acceptance check for that
+/// fix.
 @MainActor
 struct ListBlockLifecycleTests {
     private func makeStore() throws -> CoreDataTestStore {
@@ -117,10 +118,7 @@ struct ListBlockLifecycleTests {
         #expect(stored.listGroupId == listGroup.id)
     }
 
-    @Test(
-        "A2 GAP: converting a block sandwiched between two same-kind list groups should merge all three into one",
-        .disabled("group merge on structural adjacency isn't implemented yet — see ListBlock/README.md")
-    )
+    @Test("A2: converting a block sandwiched between two same-kind list groups merges all three into one")
     func a2_convertingBlockBetweenTwoGroupsMergesThem() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
@@ -159,19 +157,21 @@ struct ListBlockLifecycleTests {
         #expect(storedB.listGroupId == storedA.listGroupId)
     }
 
-    @Test("A3: Upgrading a bulleted item to a checklist (typing '[ ] ' after '- ') keeps its depth and group")
-    func a3_bulletedToChecklistUpgradeKeepsDepthAndGroup() throws {
+    @Test("A3: Upgrading a bulleted item to a checklist (typing '[ ] ' after '- ') moves it into a fresh checklist group, cleaning up the old one")
+    func a3_bulletedToChecklistUpgradeReassignsGroup() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
         let documentItemRepository = DocumentItemRepository(context: store.context)
+        let listGroupRepository = ListGroupRepository(context: store.context)
 
         let document = try documentRepository.create(Document(title: "Diary"))
         let viewModel = makeViewModel(document: document, store: store)
         viewModel.load()
         let blockId = try #require(viewModel.items.first?.id)
         viewModel.updateBlockText(blockId, text: "- ")
-        let depthBefore = try #require(try documentItemRepository.find(id: blockId)).depth
-        let groupBefore = try #require(try documentItemRepository.find(id: blockId)).listGroupId
+        let storedBeforeUpgrade = try #require(try documentItemRepository.find(id: blockId))
+        let depthBefore = storedBeforeUpgrade.depth
+        let groupBefore = try #require(storedBeforeUpgrade.listGroupId)
 
         // "- " already converted this block, so continuing to type only
         // appends to its now-empty remainder — not re-typing "- ".
@@ -179,8 +179,12 @@ struct ListBlockLifecycleTests {
 
         #expect(viewModel.textContent(forItemId: blockId).textKind == TextItemKind.checklist)
         let stored = try #require(try documentItemRepository.find(id: blockId))
+        // Same kind of blocks around it, so its depth-0 position doesn't
+        // change — but "하나의 그룹에는 같은 종류만" (불변조건 3) means it
+        // can't stay in the old bulleted group.
         #expect(stored.depth == depthBefore)
-        #expect(stored.listGroupId == groupBefore)
+        #expect(stored.listGroupId != groupBefore)
+        #expect(try listGroupRepository.find(id: groupBefore) == nil)
     }
 
     // MARK: - B. Enter 키 (`insertBlock`)
@@ -213,10 +217,7 @@ struct ListBlockLifecycleTests {
         #expect(stored.listGroupId == group.id)
     }
 
-    @Test(
-        "B2 GAP: Enter on an empty nested list item (exit to paragraph) shifts its own descendants up one depth",
-        .disabled("exitEmptyListItem doesn't cascade depth to descendants yet — see ListBlock/README.md")
-    )
+    @Test("B2: Enter on an empty nested list item (exit to paragraph) shifts its own descendants up one depth")
     func b2_enterOnEmptyNestedListItemCascadesDescendantDepth() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
@@ -374,10 +375,7 @@ struct ListBlockLifecycleTests {
         #expect(storedB.listGroupId == groupB.id)
     }
 
-    @Test(
-        "C3 GAP: Backspace-removing a list item shifts its own descendants up one depth",
-        .disabled("mergeOrDeleteBlock doesn't cascade depth to the removed item's descendants yet — see ListBlock/README.md")
-    )
+    @Test("C3: Backspace-removing a list item shifts its own descendants up one depth")
     func c3_backspaceRemovingListItemCascadesDescendantDepth() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
@@ -415,10 +413,7 @@ struct ListBlockLifecycleTests {
         #expect(viewModel.depth(forItemId: line3.id) == 1)
     }
 
-    @Test(
-        "C3 GAP: Backspace-removing a block between two same-kind list groups merges them",
-        .disabled("group merge on structural adjacency isn't implemented yet — see ListBlock/README.md")
-    )
+    @Test("C3: Backspace-removing a block between two same-kind list groups merges them")
     func c3_backspaceRemovingSeparatorMergesAdjacentGroups() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
@@ -519,10 +514,7 @@ struct ListBlockLifecycleTests {
         #expect(stored.listGroupId == group.id)
     }
 
-    @Test(
-        "F2 GAP: Outdenting an item into a position adjacent to a different same-kind group merges them",
-        .disabled("group merge on structural adjacency isn't implemented yet — see ListBlock/README.md")
-    )
+    @Test("F2: Outdenting an item into a position adjacent to a different same-kind group merges them")
     func f2_outdentIntoAdjacentGroupMergesThem() throws {
         let store = try makeStore()
         let documentRepository = DocumentRepository(context: store.context)
