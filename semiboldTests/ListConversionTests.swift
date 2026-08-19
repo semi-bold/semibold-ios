@@ -39,6 +39,7 @@ struct ListConversionTests {
             textItemRepository: TextItemRepository(context: store.context),
             textMarkRepository: TextMarkRepository(context: store.context),
             mediaItemRepository: MediaItemRepository(context: store.context),
+            listGroupRepository: ListGroupRepository(context: store.context),
             folderRepository: FolderRepository(context: store.context),
             autosaveDebounceInterval: autosaveDebounceInterval
         )

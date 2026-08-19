@@ -12,8 +12,9 @@ import Foundation
 ///
 /// `DetailViewModel.items`/`.textContents`/`.marksByItemId` are already the
 /// "문서/블록 조회" + "Block Tree 조립" steps (loaded in `orderKey` order via
-/// `DocumentItemRepository.children(documentId:parentItemId:)`), so this
-/// type only covers
+/// `DocumentItemRepository.allItems(documentId:)` — display order is
+/// `orderKey` order directly, `tasks/NO-009.md` §3.1), so this type only
+/// covers
 /// "Markdown Renderer" → "`.md` 문자열 생성": turning each item's `TextContent`
 /// (plus any inline `TextMark`s) into its literal Markdown line and joining
 /// them into one document-wide string.
@@ -147,11 +148,6 @@ enum MarkdownExporter {
     /// delimiter (§7.3 `- item` / `<n>. item` / `- [ ] item`), so mixing two
     /// different families still gets a blank line between them.
     private static func listFamily(for textKind: String) -> String? {
-        switch textKind {
-        case TextItemKind.bulletedListItem, TextItemKind.numberedListItem, TextItemKind.checklist:
-            return textKind
-        default:
-            return nil
-        }
+        TextItemKind.listKinds.contains(textKind) ? textKind : nil
     }
 }

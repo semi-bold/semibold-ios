@@ -18,11 +18,22 @@ enum NumberedListBlockView {
         /// This row's position among consecutive numbered-list-item
         /// siblings — see `DetailViewModel.numberedListNumber(forItemId:)`.
         numberedListNumber: Int,
+        /// This item's nesting depth (0 for top-level) — see
+        /// `DetailViewModel.depth(forItemId:)`. Forwarded straight to
+        /// `BlockRowChrome`, which renders the per-level indent.
+        depth: Int,
         focusedBlockId: FocusState<String?>.Binding,
         cursorOffsetToApply: Binding<Int?>,
         onTextChange: @escaping (String) -> Void,
         onEnter: @escaping (String, Int) -> Void,
-        onBackspaceAtStart: @escaping (String) -> Void
+        onBackspaceAtStart: @escaping (String) -> Void,
+        /// A hardware Tab press on this item — `DetailScreen.blockRow(for:
+        /// content:)` supplies `{ viewModel.indentBlock(item.id) }` for
+        /// this kind. `nil` (the default) leaves Tab's plain `UITextView`
+        /// behavior unchanged (`tasks/NO-009.md` §2.1/§3.3).
+        onIndent: (() -> Void)? = nil,
+        /// A hardware Shift+Tab press on this item — see `onIndent`.
+        onOutdent: (() -> Void)? = nil
     ) -> BlockRowChrome {
         BlockRowChrome(
             item: item,
@@ -31,9 +42,12 @@ enum NumberedListBlockView {
             cursorOffsetToApply: cursorOffsetToApply,
             textStyle: AppTheme.Typography.body,
             leadingContent: .marker("\(numberedListNumber)."),
+            depth: depth,
             onTextChange: onTextChange,
             onEnter: onEnter,
-            onBackspaceAtStart: onBackspaceAtStart
+            onBackspaceAtStart: onBackspaceAtStart,
+            onIndent: onIndent,
+            onOutdent: onOutdent
         )
     }
 }

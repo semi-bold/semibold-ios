@@ -72,6 +72,13 @@ struct DetailScreen: View {
             }
             viewModel.defocusHandled()
         }
+        .onChange(of: toolbarTrigger, initial: true) { _, newValue in
+            // Deliberately separate from the `viewModel.focusedBlockId`
+            // handler above — see `configureAccessoryToolbar`'s doc
+            // comment for why this needs to watch the actual `@FocusState`
+            // (via `toolbarTrigger`) instead.
+            configureAccessoryToolbar(forBlockId: newValue.blockId)
+        }
         .onChange(of: scenePhase) { _, newPhase in
             // Flush any debounced block edits before the app moves to the
             // background, so nothing typed right before backgrounding is
@@ -142,8 +149,15 @@ struct DetailScreen: View {
     // MARK: - macOS keyboard shortcuts
 
     /// Invisible buttons that exist only to register the macOS
-    /// keyboard shortcuts from §13.2 — Cmd+B/I/K and Cmd+Option+1/2/3 — and
-    /// apply them to whichever block currently has keyboard focus.
+    /// keyboard shortcuts from §13.2 — Cmd+B/I/K — and apply them to
+    /// whichever block currently has keyboard focus.
+    ///
+    /// Cmd+Option+1/2/3 (heading conversion/re-leveling) was deliberately
+    /// left out — this app's users are already fluent in the Markdown
+    /// prefixes (`"# "`/`"## "`/`"### "`) that do the same thing, and a
+    /// shortcut on top of that is more to remember, not less. Keyboard
+    /// shortcuts here are reserved for actions that have no typed
+    /// equivalent at all (Tab/Shift+Tab for list indent/outdent).
     ///
     /// `ParagraphTextField` is a `UITextView` wrapper that doesn't surface
     /// these key combinations to SwiftUI directly, so `.keyboardShortcut()`
@@ -170,14 +184,6 @@ struct DetailScreen: View {
                 viewModel.toggleLinkOnBlock(blockId)
             }
             .keyboardShortcut("k", modifiers: [.command])
-
-            ForEach(1...3, id: \.self) { level in
-                Button("Heading \(level)") {
-                    guard let blockId = focusedBlockId else { return }
-                    viewModel.convertBlockToHeading(blockId, level: level)
-                }
-                .keyboardShortcut(KeyEquivalent(Character("\(level)")), modifiers: [.command, .option])
-            }
         }
         .frame(width: 0, height: 0)
         .hidden()
@@ -201,16 +207,16 @@ struct DetailScreen: View {
     /// planning's scope (callout ④ of `Planning_4_BlockCreateFlow`,
     /// PLANNING §1.2), so it's omitted here.
     ///
-    /// A trailing share button (§10.3 "파일 저장 또는 공유") is added on the
-    /// opposite side from the back button — no `Screen_*`/`Planning_N_*Flow`
-    /// artboard defines an export affordance for `iOS_Editor` (only the
-    /// "잠금" button is shown there, and that's the out-of-scope Secret Lock
-    /// button above), so this reuses the back button's row/typography and a
-    /// standard SF Symbol share icon rather than inventing new layout.
+    /// A trailing share button (§10.3 "파일 저장 또는 공유") used to sit here
+    /// (`exportShareLink`, exporting to a Markdown `.md` file via
+    /// `MarkdownExporter`/`MarkdownDocumentExport` — both still present and
+    /// tested, just no longer wired to any UI) — hidden for now since the
+    /// export format (Markdown vs. PDF vs. HTML publish) isn't decided yet
+    /// and it's out of scope for the current release. Re-wire it here once
+    /// that direction is set.
     ///
-    /// A menu (hamburger) button joins it in the trailing group as of
-    /// `Planning_Nav_1_TopBarFlow` (FLOW-NAV-001) — this NavBar previously
-    /// had no trailing element besides `exportShareLink`; same trailing
+    /// A menu (hamburger) button joins the trailing group as of
+    /// `Planning_Nav_1_TopBarFlow` (FLOW-NAV-001); same trailing
     /// inset/spacing as `HomeScreen`/`FolderContentsScreen` use for their own
     /// menu buttons.
     private var navBar: some View {
@@ -223,42 +229,10 @@ struct DetailScreen: View {
                 }
                 .accessibilityLabel(viewModel.backButtonLabel.accessibilityLabel)
             },
-            trailingExtra: { exportShareLink },
             onMenuTapped: {
                 isDrawerPresented = true
             }
         )
-    }
-
-    /// "파일 저장 또는 공유" (§10.3's final step): shares the document's
-    /// content as a Markdown `.md` file, using `ShareLink`'s standard sheet —
-    /// which already covers both "Save to Files" and sharing to other apps
-    /// from one control.
-    ///
-    /// `ShareLink(item:)` takes a `MarkdownDocumentExport` (a `Transferable`
-    /// wrapping this document's title and its currently-loaded
-    /// `items`/`textContents`/`marksByItemId`) rather than a pre-rendered
-    /// file `URL`. That defers `MarkdownExporter.render` and the
-    /// temporary-file write to `MarkdownDocumentExport`'s `exporting` closure,
-    /// which only runs when the user taps this button and the system actually
-    /// requests the export — not on every `body` re-evaluation (e.g. every
-    /// keystroke).
-    private var exportShareLink: some View {
-        let export = MarkdownDocumentExport(
-            documentTitle: viewModel.document.title,
-            items: viewModel.items,
-            textContents: viewModel.textContents,
-            marksByItemId: viewModel.marksByItemId
-        )
-        return ShareLink(
-            item: export,
-            preview: SharePreview(
-                MarkdownDocumentExport.fileName(forDocumentTitle: viewModel.document.title)
-            )
-        ) {
-            Image(systemName: "square.and.arrow.up")
-                .foregroundStyle(AppTheme.Colors.accent)
-        }
     }
 
     // MARK: - Title area
@@ -381,6 +355,7 @@ struct DetailScreen: View {
             ChecklistBlockView.chrome(
                 item: item,
                 content: content,
+                depth: viewModel.depth(forItemId: item.id),
                 focusedBlockId: $focusedBlockId,
                 cursorOffsetToApply: $cursorOffsetToApply,
                 onTextChange: { text in viewModel.updateBlockText(item.id, text: text) },
@@ -388,32 +363,40 @@ struct DetailScreen: View {
                     viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                 },
                 onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
-                onToggleChecklist: { viewModel.toggleChecklistItem(blockId: item.id) }
+                onToggleChecklist: { viewModel.toggleChecklistItem(blockId: item.id) },
+                onIndent: { viewModel.indentBlock(item.id) },
+                onOutdent: { viewModel.outdentBlock(item.id) }
             )
         case TextItemKind.bulletedListItem:
             BulletedListBlockView.chrome(
                 item: item,
                 content: content,
+                depth: viewModel.depth(forItemId: item.id),
                 focusedBlockId: $focusedBlockId,
                 cursorOffsetToApply: $cursorOffsetToApply,
                 onTextChange: { text in viewModel.updateBlockText(item.id, text: text) },
                 onEnter: { text, cursorOffset in
                     viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                 },
-                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
+                onIndent: { viewModel.indentBlock(item.id) },
+                onOutdent: { viewModel.outdentBlock(item.id) }
             )
         case TextItemKind.numberedListItem:
             NumberedListBlockView.chrome(
                 item: item,
                 content: content,
                 numberedListNumber: viewModel.numberedListNumber(forItemId: item.id),
+                depth: viewModel.depth(forItemId: item.id),
                 focusedBlockId: $focusedBlockId,
                 cursorOffsetToApply: $cursorOffsetToApply,
                 onTextChange: { text in viewModel.updateBlockText(item.id, text: text) },
                 onEnter: { text, cursorOffset in
                     viewModel.insertBlock(after: item.id, currentText: text, cursorOffset: cursorOffset)
                 },
-                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
+                onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) },
+                onIndent: { viewModel.indentBlock(item.id) },
+                onOutdent: { viewModel.outdentBlock(item.id) }
             )
         case TextItemKind.codeBlock:
             CodeBlockView.chrome(
@@ -452,6 +435,65 @@ struct DetailScreen: View {
                 onBackspaceAtStart: { text in viewModel.mergeOrDeleteBlock(item.id, currentText: text) }
             )
         }
+    }
+
+    // MARK: - On-screen keyboard toolbar
+
+    /// Everything that decides what the on-screen keyboard toolbar should
+    /// show, bundled into one `Equatable` value: which block is focused,
+    /// plus that block's own list-nesting info (`DetailViewModel
+    /// .listNestingInfo(forItemId:)`). `configureAccessoryToolbar` is
+    /// driven off *this*, not off `focusedBlockId` alone — reading
+    /// `viewModel.listNestingInfo(forItemId:)` here (inside the view
+    /// body, where `@Observable` property access is tracked) means
+    /// `toolbarTrigger` itself changes, and the `onChange` below re-fires,
+    /// whenever *either* the focused block changes *or* that same block's
+    /// own data changes for any reason (indent/outdent, typing "- " to
+    /// become a list item, Enter/Backspace exiting an empty list item back
+    /// to a paragraph, …) — one derived value to watch instead of a
+    /// growing list of "and also refresh when X happens" call sites, each
+    /// one a chance to forget a case (as `exitEmptyListItem` was, before
+    /// this).
+    private struct ToolbarTrigger: Equatable {
+        let blockId: String?
+        let nestingInfo: DetailViewModel.ListNestingInfo?
+    }
+
+    private var toolbarTrigger: ToolbarTrigger {
+        ToolbarTrigger(
+            blockId: focusedBlockId,
+            nestingInfo: focusedBlockId.flatMap { viewModel.listNestingInfo(forItemId: $0) }
+        )
+    }
+
+    /// The single point that configures `AccessoryToolbarCoordinator
+    /// .shared` — driven entirely by the `toolbarTrigger` `onChange`
+    /// above, independent of the other `onChange` handlers that move
+    /// focus. Neither this method nor the coordinator it configures know
+    /// anything about *why* focus or block state changed, or how the
+    /// keyboard gets shown — see `AccessoryToolbarCoordinator`'s doc
+    /// comment (`Views/Components/Shared/ParagraphTextField.swift`).
+    ///
+    /// This screen has no opinion on what makes a block "list-kind" or
+    /// able to indent/outdent — that's `DetailViewModel.listNestingInfo
+    /// (forItemId:)`'s call entirely, so nesting can be represented however
+    /// the data layer likes without this view ever changing.
+    private func configureAccessoryToolbar(forBlockId blockId: String?) {
+        guard let blockId else {
+            AccessoryToolbarCoordinator.shared.configure(
+                canIndent: false, canOutdent: false, onIndent: nil, onOutdent: nil, onDismissKeyboard: nil
+            )
+            return
+        }
+
+        let nestingInfo = viewModel.listNestingInfo(forItemId: blockId)
+        AccessoryToolbarCoordinator.shared.configure(
+            canIndent: nestingInfo?.canIndent ?? false,
+            canOutdent: nestingInfo?.canOutdent ?? false,
+            onIndent: nestingInfo != nil ? { viewModel.indentBlock(blockId) } : nil,
+            onOutdent: nestingInfo != nil ? { viewModel.outdentBlock(blockId) } : nil,
+            onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: blockId) }
+        )
     }
 }
 

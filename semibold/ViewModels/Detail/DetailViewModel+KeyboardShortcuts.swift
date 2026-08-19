@@ -3,11 +3,21 @@ import Foundation
 /// macOS keyboard-shortcut actions (`tasks/NO-001.md` §13.2) applied to the
 /// currently-focused block in the editor:
 ///
-/// - Cmd+Option+1/2/3 → convert the focused block to Heading 1/2/3.
 /// - Cmd+B / Cmd+I    → toggle a `**bold**`/`*italic*` Markdown wrapper
 ///   around the focused block's whole text.
 /// - Cmd+K            → wrap the focused block's whole text as a
 ///   `[text](url)` Markdown link (or unwrap it back to plain text).
+///
+/// §13.2 also lists Cmd+Option+1/2/3 for heading conversion/re-leveling —
+/// deliberately not implemented. Typing `"# "`/`"## "`/`"### "` already
+/// creates a heading (`DetailViewModel+MarkdownConversion.swift`), and
+/// Backspace at the very start of an existing heading now reverts it to a
+/// plain paragraph in place (`DetailViewModel.exitHeading`'s doc comment)
+/// so retyping a `"#"` prefix re-levels it — both are typing-native, so a
+/// shortcut on top of them is redundant rather than a convenience. It
+/// would also have had to duplicate list-block exit handling
+/// (`exitEmptyListItem`'s doc comment) to convert a list item safely, for
+/// no real gain.
 ///
 /// **Scoping deviation from §13.2**: §13.2 describes these as acting on
 /// the current text *selection*. `ParagraphTextField` (a thin
@@ -29,24 +39,6 @@ import Foundation
 /// create/edit/split/merge/reorder logic in one file and all
 /// keyboard-shortcut-driven formatting in this one.
 extension DetailViewModel {
-    /// Converts the block identified by `blockId` to a heading at `level`
-    /// (1-3), keeping its current text (Cmd+Option+1/2/3, §13.2).
-    ///
-    /// Applies to any block type — a paragraph, list item, etc. all become
-    /// a heading at `level` holding their current display text. Does
-    /// nothing if `blockId` doesn't exist. This is a structural change, so
-    /// it's persisted immediately (PLANNING §11.2 "블록 생성/삭제/순서 변경:
-    /// 즉시 저장"), like AC1's typed `# `/`## `/`### ` conversion.
-    func convertBlockToHeading(_ blockId: String, level: Int) {
-        guard items.contains(where: { $0.id == blockId }) else { return }
-        let text = textContent(forItemId: blockId).plainText
-
-        textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.heading, plainText: text, headingLevel: level)
-
-        cancelPendingSave(blockId)
-        persistBlock(blockId)
-    }
-
     /// Toggles a `**bold**` wrapper around the focused block's whole text
     /// (Cmd+B, §13.2). If the text is already fully wrapped in `**…**`,
     /// removes the wrapper instead — so the shortcut acts as an on/off

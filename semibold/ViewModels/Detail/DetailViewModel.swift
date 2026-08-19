@@ -21,6 +21,13 @@ enum TextItemKind {
     /// safety net for content a newer app version wrote that this build
     /// doesn't know how to render.
     static let unknown = "unknown"
+
+    /// The kinds that can be nested/indented (`tasks/NO-009.md` §2.1) —
+    /// one shared definition rather than re-typing the same three cases
+    /// at every call site that needs to ask "is this a list item?" (list
+    /// membership is exactly the kind of internal policy a typo could
+    /// silently fragment across call sites).
+    static let listKinds: Set<String> = [bulletedListItem, numberedListItem, checklist]
 }
 
 /// Drives `DetailScreen` — the document editor screen.
@@ -40,9 +47,12 @@ enum TextItemKind {
 /// paragraph/heading/list item/etc. row. Internally it's backed by a
 /// `DocumentItem` (position/hierarchy — `items`) plus that item's
 /// `TextContent` (the actual text — `textContents`), per
-/// `STORAGE_ARCHITECTURE.md` §5.5's "구조와 콘텐츠 분리" assembly. Only
-/// top-level items (`parentItemId == nil`) are loaded/edited here —
-/// nesting is out of this editor's scope.
+/// `STORAGE_ARCHITECTURE.md` §5.5's "구조와 콘텐츠 분리" assembly. Every live
+/// item is loaded/edited here, at any nesting depth, flattened into
+/// display order (`DocumentItemRepository.allItems(documentId:)`) — but
+/// only list-kind items can actually become nested in the first place
+/// (`tasks/NO-009.md` §2.1); indenting/outdenting itself is a later
+/// editor feature.
 @Observable
 @MainActor
 final class DetailViewModel {
@@ -59,9 +69,9 @@ final class DetailViewModel {
     /// filed inside a folder.
     private(set) var backButtonLabel = FolderBackButtonLabel.root
 
-    /// The document's top-level content items, in display order, excluding
-    /// soft-deleted ones — the structural half of each "block"
-    /// (`STORAGE_ARCHITECTURE.md` §5.5 steps 1/5).
+    /// The document's content items at every nesting depth, flattened into
+    /// display order, excluding soft-deleted ones — the structural half of
+    /// each "block" (`STORAGE_ARCHITECTURE.md` §5.5 steps 1/5).
     ///
     /// The setter isn't `private` (unlike most other `private(set)`
     /// properties here) because `DetailViewModel+KeyboardShortcuts.swift`
@@ -169,6 +179,7 @@ final class DetailViewModel {
     private let textItemRepository: TextItemRepository
     private let textMarkRepository: TextMarkRepository
     private let mediaItemRepository: MediaItemRepository
+    private let listGroupRepository: ListGroupRepository
 
     /// Looked up once in `load()` to resolve `backButtonLabel` when the
     /// document is filed inside a folder.
@@ -196,6 +207,7 @@ final class DetailViewModel {
         textItemRepository: TextItemRepository = TextItemRepository(),
         textMarkRepository: TextMarkRepository = TextMarkRepository(),
         mediaItemRepository: MediaItemRepository = MediaItemRepository(),
+        listGroupRepository: ListGroupRepository = ListGroupRepository(),
         folderRepository: FolderRepository = FolderRepository(),
         autosaveDebounceInterval: Duration = .milliseconds(500)
     ) {
@@ -204,15 +216,17 @@ final class DetailViewModel {
         self.textItemRepository = textItemRepository
         self.textMarkRepository = textMarkRepository
         self.mediaItemRepository = mediaItemRepository
+        self.listGroupRepository = listGroupRepository
         self.folderRepository = folderRepository
         self.autosaveDebounceInterval = autosaveDebounceInterval
     }
 
-    /// Reloads this document's top-level content items and resolves the
-    /// back-button label for the folder it's filed in. If the document has
-    /// no items yet (a brand-new document), creates a single empty
-    /// paragraph item so there's always something to type into
-    /// (PLANNING §6.2 "기본 paragraph block 1개 생성", §5.4 step A).
+    /// Reloads this document's content items (every nesting depth,
+    /// flattened into display order) and resolves the back-button label
+    /// for the folder it's filed in. If the document has no items yet (a
+    /// brand-new document), creates a single empty paragraph item so
+    /// there's always something to type into (PLANNING §6.2 "기본
+    /// paragraph block 1개 생성", §5.4 step A).
     ///
     /// Assembly follows `STORAGE_ARCHITECTURE.md` §5.5: fetch this
     /// document's items, classify their ids by `contentType`, batch-fetch
@@ -220,7 +234,7 @@ final class DetailViewModel {
     /// querying once per item, then hand the result to the view.
     func load() {
         do {
-            var loadedItems = try documentItemRepository.children(documentId: document.id, parentItemId: nil)
+            var loadedItems = try documentItemRepository.allItems(documentId: document.id)
             if loadedItems.isEmpty {
                 let created = try createFirstItem()
                 loadedItems = [created]
@@ -309,13 +323,66 @@ final class DetailViewModel {
     /// guarantee).
     func numberedListNumber(forItemId itemId: String) -> Int {
         guard let index = items.firstIndex(where: { $0.id == itemId }) else { return 1 }
+        let depth = items[index].depth
         var number = 1
         var cursor = index - 1
-        while cursor >= 0, textContents[items[cursor].id]?.textKind == TextItemKind.numberedListItem {
+        // Only count backwards through items at the same depth —
+        // otherwise two unrelated numbered lists sitting next to each
+        // other (or a numbered list nested under a list item) would
+        // number as one continuous run instead of each starting fresh
+        // at 1. Stops (doesn't skip past) a differently-nested run
+        // partway through, same as before this depth-based rewrite —
+        // not fixed here, out of this pass's scope.
+        while cursor >= 0,
+              items[cursor].depth == depth,
+              textContents[items[cursor].id]?.textKind == TextItemKind.numberedListItem {
             number += 1
             cursor -= 1
         }
         return number
+    }
+
+    /// This item's nesting depth (0 for a top-level item, 1 for a
+    /// directly nested item, etc.) — a plain lookup of the stored
+    /// `DocumentItem.depth` field (`tasks/NO-009.md` §3.1: nesting is
+    /// `depth` + `listGroupId`, not a parent reference). Returns 0 for
+    /// an unknown `itemId`.
+    func depth(forItemId itemId: String) -> Int {
+        items.first(where: { $0.id == itemId })?.depth ?? 0
+    }
+
+    /// Everything `DetailScreen`'s on-screen keyboard toolbar needs to
+    /// know about `itemId`'s list-nesting state, or `nil` if it isn't a
+    /// list-kind block at all — bundled into one call so the View never
+    /// re-derives "is this a list item?" itself, nor reads
+    /// `DocumentItem.depth` directly to work out whether it can outdent.
+    /// Nesting is currently represented via `depth`/`listGroupId`
+    /// (`tasks/NO-009.md` §3.1); if that representation ever changes
+    /// again, only this method's body needs to change — `DetailScreen`
+    /// only ever sees `ListNestingInfo`.
+    struct ListNestingInfo: Equatable {
+        let canIndent: Bool
+        let canOutdent: Bool
+    }
+
+    func listNestingInfo(forItemId itemId: String) -> ListNestingInfo? {
+        guard TextItemKind.listKinds.contains(textContent(forItemId: itemId).textKind) else { return nil }
+        let canOutdent = (items.first(where: { $0.id == itemId })?.depth ?? 0) > 0
+        return ListNestingInfo(canIndent: canIndentBlock(itemId), canOutdent: canOutdent)
+    }
+
+    /// `indentBlock(_:)`'s own eligibility check, factored out so both it
+    /// and `listNestingInfo(forItemId:)` (the toolbar's "should the indent
+    /// button be enabled?" answer) share one source of truth instead of
+    /// two copies that could drift apart.
+    private func canIndentBlock(_ blockId: String) -> Bool {
+        guard let index = items.firstIndex(where: { $0.id == blockId }) else { return false }
+        let item = items[index]
+        let kind = textContent(forItemId: blockId).textKind
+        guard TextItemKind.listKinds.contains(kind), index > 0 else { return false }
+
+        let previousItem = items[index - 1]
+        return previousItem.depth == item.depth && textContent(forItemId: previousItem.id).textKind == kind
     }
 
     /// Updates the in-memory text for `blockId` immediately (so the editor
@@ -355,6 +422,14 @@ final class DetailViewModel {
             cancelPendingSave(blockId)
             persistBlock(blockId)
             slashCommandBlockId = blockId
+            // Drop keyboard focus the same way the divider-conversion
+            // branch below does (`blockIdToDefocus`) — without this, the
+            // block's `UITextView` stays first responder underneath the
+            // sheet, so the on-screen keyboard stays up while the sheet is
+            // presented, visually overlapping/squeezing the "Turn into"
+            // list instead of the sheet getting the full space below the
+            // nav bar.
+            blockIdToDefocus = blockId
             return
         }
 
@@ -371,6 +446,7 @@ final class DetailViewModel {
             textContents[blockId] = TextContent(
                 itemId: blockId, textKind: TextItemKind.checklist, plainText: checklist.text, isChecked: checklist.checked
             )
+            assignFreshListGroup(forBlockId: blockId, listType: TextItemKind.checklist)
             cancelPendingSave(blockId)
             persistBlock(blockId)
             return
@@ -378,6 +454,7 @@ final class DetailViewModel {
 
         if currentKind == TextItemKind.paragraph, let list = Self.listConversion(forTypedText: text) {
             textContents[blockId] = TextContent(itemId: blockId, textKind: list.textKind, plainText: list.text)
+            assignFreshListGroup(forBlockId: blockId, listType: list.textKind)
             cancelPendingSave(blockId)
             persistBlock(blockId)
             return
@@ -395,8 +472,17 @@ final class DetailViewModel {
             textContents[blockId] = TextContent(
                 itemId: blockId, textKind: TextItemKind.checklist, plainText: checklist.text, isChecked: checklist.checked
             )
+            // A different list kind can't stay in its old group (README
+            // "공통 불변조건" 3 — one kind per group), so re-run A2's
+            // join-or-create under the new kind (README A3-b) and clean up
+            // the old group if that left it empty (A3-c).
+            let formerListGroupId = items.first(where: { $0.id == blockId })?.listGroupId
+            assignFreshListGroup(forBlockId: blockId, listType: TextItemKind.checklist)
             cancelPendingSave(blockId)
             persistBlock(blockId)
+            if let formerListGroupId {
+                cleanUpListGroupIfOrphaned(formerListGroupId)
+            }
             return
         }
 
@@ -622,21 +708,32 @@ final class DetailViewModel {
         let newOrderKey = OrderKey.between(items[index].orderKey, nextOrderKey)
 
         // Continuing a list on Enter keeps the current item's textKind (a
-        // new checklist item always starts unchecked); every other type
-        // resets to a plain paragraph, as before.
+        // new checklist item always starts unchecked) and, since it's the
+        // same list run continuing, the current item's `depth`/
+        // `listGroupId` too; every other type resets to a plain
+        // paragraph, as before, at `depth: 0`/no group.
+        let currentItem = items[index]
         let currentKind = textContent(forItemId: blockId).textKind
         let newTextKind: String
         let newIsChecked: Bool?
+        let newDepth: Int
+        let newListGroupId: String?
         switch currentKind {
         case TextItemKind.bulletedListItem, TextItemKind.numberedListItem:
             newTextKind = currentKind
             newIsChecked = nil
+            newDepth = currentItem.depth
+            newListGroupId = currentItem.listGroupId
         case TextItemKind.checklist:
             newTextKind = currentKind
             newIsChecked = false
+            newDepth = currentItem.depth
+            newListGroupId = currentItem.listGroupId
         default:
             newTextKind = TextItemKind.paragraph
             newIsChecked = nil
+            newDepth = 0
+            newListGroupId = nil
         }
 
         do {
@@ -646,7 +743,11 @@ final class DetailViewModel {
             // separate commits is unsafe.
             try documentItemRepository.context.withTransaction {
                 let createdItem = try documentItemRepository.create(
-                    DocumentItem(documentId: document.id, contentType: "text", orderKey: newOrderKey), save: false
+                    DocumentItem(
+                        documentId: document.id, depth: newDepth, listGroupId: newListGroupId,
+                        contentType: "text", orderKey: newOrderKey
+                    ),
+                    save: false
                 )
                 let createdContent = try textItemRepository.create(
                     TextContent(itemId: createdItem.id, textKind: newTextKind, plainText: afterText, isChecked: newIsChecked),
@@ -678,6 +779,18 @@ final class DetailViewModel {
         blockIdToDefocus = nil
     }
 
+    /// Clears keyboard focus from `blockId` — the on-screen keyboard
+    /// toolbar's dismiss button calls this for the list item it belongs to
+    /// (`05-onscreen-keyboard-indent-toolbar` brief). Reuses the exact
+    /// same `blockIdToDefocus` signal `updateBlockText`'s
+    /// divider-conversion branch already sets, so `DetailScreen`'s
+    /// existing `.onChange(of: viewModel.blockIdToDefocus)` handler clears
+    /// `@FocusState` the same way — one focus-clearing path, not a second
+    /// one bolted on just for this button.
+    func dismissKeyboard(forBlockId blockId: String) {
+        blockIdToDefocus = blockId
+    }
+
     /// Closes the Slash Command bottom sheet without converting the block —
     /// either the user picked an option (handled by
     /// `convertBlock(_:toSlashCommandOption:)`, which also calls this) or
@@ -699,14 +812,227 @@ final class DetailViewModel {
     /// their own normal handling (`false`) or stop here (`true`).
     private func exitEmptyListItem(_ blockId: String, currentText: String) -> Bool {
         let currentKind = textContent(forItemId: blockId).textKind
-        let isListKind = [TextItemKind.bulletedListItem, TextItemKind.numberedListItem, TextItemKind.checklist]
-            .contains(currentKind)
-        guard isListKind, currentText.isEmpty else { return false }
+        guard TextItemKind.listKinds.contains(currentKind), currentText.isEmpty else { return false }
+        guard let index = items.firstIndex(where: { $0.id == blockId }) else { return false }
 
+        // `blockId` is leaving the list in place (still sitting at `index`,
+        // just no longer a list item), so its own descendants lose their
+        // parent without moving anywhere themselves — shift them all up by
+        // exactly 1 depth level so the shallowest one (always `depth + 1`
+        // by invariant 6) lands on `blockId`'s own original `depth`,
+        // keeping every invariant intact (README B2-b/C1).
+        let descendantsEnd = subtreeRange(startingAt: index).upperBound
+        let descendantRange = (index + 1)..<descendantsEnd
+        if !descendantRange.isEmpty {
+            shiftDepth(of: descendantRange, by: -1)
+        }
+
+        let formerListGroupId = items[index].listGroupId
+        items[index].depth = 0
+        items[index].listGroupId = nil
         textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.paragraph, plainText: "")
         cancelPendingSave(blockId)
         persistBlock(blockId)
+        if let formerListGroupId {
+            cleanUpListGroupIfOrphaned(formerListGroupId)
+        }
         return true
+    }
+
+    /// Converts `blockId`'s heading back to a plain paragraph in place,
+    /// keeping its text — the shared "exit a heading" behavior for
+    /// Backspace-at-start (`mergeOrDeleteBlock`). This is how a heading
+    /// gets re-leveled now that there's no keyboard shortcut for it
+    /// (`DetailViewModel+KeyboardShortcuts.swift`'s doc comment): Backspace
+    /// at the very start reverts it to a plain paragraph, then retyping
+    /// `"# "`/`"## "`/`"### "` picks a new level through the same
+    /// Markdown-prefix conversion `updateBlockText` already applies to a
+    /// fresh paragraph — no separate re-leveling logic needed.
+    ///
+    /// Unlike `exitEmptyListItem`, this doesn't require empty text — a
+    /// heading has no "keep typing vs. leave" ambiguity for emptiness to
+    /// resolve, so Backspace-at-start always exits it, text and all.
+    ///
+    /// Returns whether it did so, matching `exitEmptyListItem`'s contract.
+    private func exitHeading(_ blockId: String) -> Bool {
+        let content = textContent(forItemId: blockId)
+        guard content.textKind == TextItemKind.heading else { return false }
+        textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.paragraph, plainText: content.plainText)
+        cancelPendingSave(blockId)
+        persistBlock(blockId)
+        return true
+    }
+
+    /// Removes `listGroupId`'s `ListGroup` row if `blockId` leaving it
+    /// (converted away, or soft-deleted) left it with no live members —
+    /// group rows carry no content of their own (`Models/ListGroup.swift`),
+    /// so once nothing points at one anymore it has no reason to exist.
+    /// Failing to clean this up isn't user-visible (an orphaned row shows
+    /// up nowhere), so unlike a content save/delete failure this doesn't
+    /// set `errorMessage`.
+    private func cleanUpListGroupIfOrphaned(_ listGroupId: String) {
+        guard let liveMemberCount = try? listGroupRepository.liveMemberCount(listGroupId: listGroupId),
+              liveMemberCount == 0 else { return }
+        try? listGroupRepository.hardDelete(id: listGroupId)
+    }
+
+    /// Assigns `blockId` a `ListGroup` appropriate for turning it into a
+    /// fresh `listType` list item at `depth: 0` — reusing the immediately
+    /// preceding live item's group if it's already the same list kind at
+    /// depth 0 (so typing "- a" then "- b" back to back reads as one
+    /// list, matching how `indentBlock` already treats array-adjacent
+    /// same-depth items as siblings), or creating a new `ListGroup`
+    /// otherwise (README A2-b/c). Called by every place a block newly
+    /// becomes (or switches to) a list item (`updateBlockText`'s
+    /// Markdown-prefix conversions and bulleted→checklist upgrade,
+    /// `DetailViewModel+SlashCommand.swift`'s `convertBlock(_:
+    /// toSlashCommandOption:)`).
+    ///
+    /// Also reconciles `blockId` with whatever now sits right after it
+    /// (README A2-d) via `reconcileAdjacentListBlocks` — typing/picking a
+    /// list conversion can just as easily land *above* an existing
+    /// same-kind list as below one (e.g. a block sandwiched between two
+    /// list groups), and that side needs the same group-merge/depth-fix
+    /// treatment.
+    ///
+    /// Mutates `items[blockId]` in place — callers still persist `blockId`
+    /// itself via `persistBlock`, same as every other structural
+    /// conversion in this file; the below-neighbor reconciliation (if any)
+    /// persists its own affected range immediately, same as
+    /// `indentBlock`/`outdentBlock`.
+    /// Not `private` for the same cross-file-access reason as
+    /// `persistBlock` — `+SlashCommand.swift`'s `convertBlock(_:
+    /// toSlashCommandOption:)` calls this too.
+    func assignFreshListGroup(forBlockId blockId: String, listType: String) {
+        guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
+
+        if index > 0 {
+            let previousItem = items[index - 1]
+            if previousItem.depth == 0, let previousGroupId = previousItem.listGroupId,
+               textContent(forItemId: previousItem.id).textKind == listType {
+                items[index].depth = 0
+                items[index].listGroupId = previousGroupId
+                reconcileWithNextBlock(afterIndex: index)
+                return
+            }
+        }
+
+        do {
+            let group = try listGroupRepository.create(ListGroup(documentId: document.id, listType: listType))
+            items[index].depth = 0
+            items[index].listGroupId = group.id
+        } catch {
+            // §15.2 "저장 실패" — the item still converts to `listType`
+            // text-wise (the caller's own `persistBlock` handles that
+            // separately); it's just left without group membership until
+            // the next successful edit or a reload reconciles it.
+            errorMessage = AppErrorMessages.saveFailed
+        }
+        reconcileWithNextBlock(afterIndex: index)
+    }
+
+    /// Shifts every item in `range`'s `depth` by `delta` (positive or
+    /// negative) and persists the whole range as one transaction — the
+    /// depth-cascade primitive shared by `exitEmptyListItem`,
+    /// `reconcileAdjacentListBlocks`, and (inline, for their own single
+    /// moved subtree) `indentBlock`/`outdentBlock`.
+    private func shiftDepth(of range: Range<Int>, by delta: Int) {
+        guard !range.isEmpty else { return }
+        var updatedMembers = Array(items[range])
+        for i in updatedMembers.indices {
+            updatedMembers[i].depth += delta
+        }
+        do {
+            try documentItemRepository.context.withTransaction {
+                for member in updatedMembers {
+                    _ = try documentItemRepository.update(member, save: false)
+                }
+            }
+            items.replaceSubrange(range, with: updatedMembers)
+        } catch {
+            // §15.2 "저장 실패" — the edit stays local-only; the next
+            // successful save (or a reload) reconciles it.
+            errorMessage = AppErrorMessages.saveFailed
+        }
+    }
+
+    /// Calls `reconcileAdjacentListBlocks` for `items[afterIndex]` and
+    /// whatever immediately follows it, if anything does — the "check the
+    /// block below" half of README A2-d/A3-b, shared by every
+    /// `assignFreshListGroup` exit path.
+    private func reconcileWithNextBlock(afterIndex index: Int) {
+        guard items.indices.contains(index), items.indices.contains(index + 1) else { return }
+        reconcileAdjacentListBlocks(upperItemId: items[index].id, lowerItemId: items[index + 1].id)
+    }
+
+    /// Reconciles two list blocks that just became array-adjacent —
+    /// `upperItemId` immediately followed by `lowerItemId` in `items` —
+    /// so the document's list invariants (`ListBlock/README.md`'s "공통
+    /// 불변조건") keep holding after whatever structural change made them
+    /// neighbors. Shared by every place the README says "그룹을
+    /// 병합합니다": A2/A3/D1 (via `assignFreshListGroup`), C3, F2.
+    ///
+    /// No-ops unless both are list items of the *same* kind (README
+    /// C3-e) — a different kind, or either one not a list, never merges
+    /// or adjusts depth.
+    ///
+    /// Otherwise (README C3-b/c/d):
+    /// 1. If they're not already in the same group, merges `lowerItemId`'s
+    ///    group into `upperItemId`'s (the earlier-in-the-array group wins
+    ///    — `mergeListGroups`).
+    /// 2. If `lowerItemId`'s depth now exceeds `upperItemId`'s depth by
+    ///    more than 1, clamps `lowerItemId` and its own descendants down
+    ///    so `lowerItemId` lands at exactly `upperItemId`'s depth + 1 —
+    ///    otherwise leaves depth untouched.
+    private func reconcileAdjacentListBlocks(upperItemId: String, lowerItemId: String) {
+        guard let upperIndex = items.firstIndex(where: { $0.id == upperItemId }),
+              let lowerIndex = items.firstIndex(where: { $0.id == lowerItemId }) else { return }
+
+        let upperKind = textContent(forItemId: upperItemId).textKind
+        let lowerKind = textContent(forItemId: lowerItemId).textKind
+        guard TextItemKind.listKinds.contains(upperKind), upperKind == lowerKind else { return }
+
+        let upperGroupId = items[upperIndex].listGroupId
+        let lowerGroupId = items[lowerIndex].listGroupId
+        if let upperGroupId, let lowerGroupId, upperGroupId != lowerGroupId {
+            mergeListGroups(keeping: upperGroupId, removing: lowerGroupId, fromIndex: lowerIndex)
+        }
+
+        let upperDepth = items[upperIndex].depth
+        let lowerDepth = items[lowerIndex].depth
+        guard lowerDepth > upperDepth + 1 else { return }
+
+        let range = subtreeRange(startingAt: lowerIndex)
+        shiftDepth(of: range, by: -(lowerDepth - (upperDepth + 1)))
+    }
+
+    /// Reassigns every live member of `removingGroupId` (a contiguous run
+    /// starting at `startIndex` — README's "그룹" invariant guarantees
+    /// this) to `keepingGroupId`, then removes the now-empty
+    /// `removingGroupId` row — the "그룹 병합" glossary entry
+    /// (`ListBlock/README.md`), keeping the earlier-in-the-array group's
+    /// id so nothing referencing it (none currently, but this is the
+    /// stable identity going forward) needs to change.
+    private func mergeListGroups(keeping keepingGroupId: String, removing removingGroupId: String, fromIndex startIndex: Int) {
+        var end = startIndex
+        while end < items.count, items[end].listGroupId == removingGroupId {
+            items[end].listGroupId = keepingGroupId
+            end += 1
+        }
+        guard end > startIndex else { return }
+
+        do {
+            try documentItemRepository.context.withTransaction {
+                for member in items[startIndex..<end] {
+                    _ = try documentItemRepository.update(member, save: false)
+                }
+            }
+        } catch {
+            // §15.2 "저장 실패" — the edit stays local-only; the next
+            // successful save (or a reload) reconciles it.
+            errorMessage = AppErrorMessages.saveFailed
+        }
+        try? listGroupRepository.hardDelete(id: removingGroupId)
     }
 
     /// Handles pressing Backspace with the caret at the very start of
@@ -720,6 +1046,11 @@ final class DetailViewModel {
     ///   behavior, symmetric with `insertBlock`'s Enter handling. This
     ///   takes precedence even for the document's first block, unlike the
     ///   merge/delete path below.
+    /// - If `blockId` is a heading (any text), `exitHeading` converts it to
+    ///   a plain paragraph in place instead, same precedence as the list
+    ///   case above — this is how a heading's level gets changed now that
+    ///   there's no dedicated shortcut for it (`exitHeading`'s doc
+    ///   comment).
     /// - If `blockId` is the document's first block, there's nothing to
     ///   merge/delete into — every document keeps at least one block
     ///   (`load()`'s bootstrap invariant), so this does nothing.
@@ -740,6 +1071,7 @@ final class DetailViewModel {
     func mergeOrDeleteBlock(_ blockId: String, currentText: String) {
         guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
         guard !exitEmptyListItem(blockId, currentText: currentText) else { return }
+        guard !exitHeading(blockId) else { return }
         guard index > 0 else {
             // First block in the document — Backspace at its start does
             // nothing, matching AC2's "every document has ≥1 block".
@@ -748,6 +1080,7 @@ final class DetailViewModel {
 
         let previousItem = items[index - 1]
         let previousText = textContent(forItemId: previousItem.id).plainText
+        let formerListGroupId = items[index].listGroupId
 
         // Cancel any pending debounced save for the block being removed —
         // its content is either discarded (empty block) or already folded
@@ -769,12 +1102,182 @@ final class DetailViewModel {
 
             focusedBlockId = previousItem.id
             focusedBlockCursorOffset = cursorOffset
+            if let formerListGroupId {
+                cleanUpListGroupIfOrphaned(formerListGroupId)
+            }
+            // Removing `blockId` may have put `previousItem` and whatever
+            // now sits at its old `index` newly adjacent to each other —
+            // reconcile them the same way any other newly-adjacent list
+            // pair is (README C3-a through C3-d).
+            if items.indices.contains(index) {
+                reconcileAdjacentListBlocks(upperItemId: previousItem.id, lowerItemId: items[index].id)
+            }
         } catch {
             // §15.2 "삭제 실패" — the block stays in the database
             // un-deleted; reloading the document reconciles the in-memory
             // list with it.
             errorMessage = AppErrorMessages.deleteFailed
         }
+    }
+
+    /// Nests `blockId` under its immediately preceding sibling — "바로 위
+    /// 형제를 새 부모로" (`tasks/NO-009.md` §2.1/§3.1) — one level per call,
+    /// with no artificial depth ceiling: calling this repeatedly (each
+    /// time pairing a block with whatever now sits directly above it at
+    /// its own level) can nest arbitrarily deep, matching a Word-style
+    /// outline.
+    ///
+    /// No-ops unless every one of these (`canIndentBlock(_:)`) holds
+    /// (`02-indent-outdent-viewmodel` brief's Decisions — a deliberately
+    /// literal reading, not a full tree-aware "find my true previous
+    /// sibling" walk) — the on-screen toolbar's indent button reflects
+    /// this same check via `listNestingInfo(forItemId:).canIndent`, so it's
+    /// disabled exactly when this would no-op:
+    /// - `blockId` is itself a list-kind item (bulleted/numbered/
+    ///   checklist, `tasks/NO-009.md` §2.1) — indenting a paragraph/
+    ///   heading/etc. under another block isn't this feature's scope
+    ///   (§2.2).
+    /// - It has an immediately preceding item in `items`' flat display
+    ///   order.
+    /// - That preceding item is at the *same* `depth` as `blockId` (i.e.
+    ///   is genuinely its sibling, not one of a sibling's own
+    ///   descendants — which, given `items`' depth-first order, can only
+    ///   sit array-adjacent to `blockId` when that sibling itself has no
+    ///   children yet, `tasks/NO-009.md` §3.1).
+    /// - That preceding sibling is the *same* list `textKind` as
+    ///   `blockId`.
+    ///
+    /// On success, `blockId`'s own `depth` increases by 1 — `orderKey`
+    /// and `listGroupId` are untouched, since `blockId` doesn't move
+    /// anywhere in `items`: it's already sitting exactly where it needs
+    /// to (right after the sibling it's nesting under). Any of
+    /// `blockId`'s own descendants (`subtreeRange`) get their `depth`
+    /// bumped too, so their nesting level moves with it — unlike a
+    /// parent-reference model, `depth` is a stored value here, not
+    /// derived, so this has to be done explicitly rather than following
+    /// "for free."
+    func indentBlock(_ blockId: String) {
+        guard canIndentBlock(blockId), let index = items.firstIndex(where: { $0.id == blockId }) else { return }
+
+        let subtree = subtreeRange(startingAt: index)
+        var updatedSubtree = Array(items[subtree])
+        for i in updatedSubtree.indices {
+            updatedSubtree[i].depth += 1
+        }
+
+        cancelPendingSave(blockId)
+        do {
+            try documentItemRepository.context.withTransaction {
+                for member in updatedSubtree {
+                    _ = try documentItemRepository.update(member, save: false)
+                }
+            }
+            items.replaceSubrange(subtree, with: updatedSubtree)
+        } catch {
+            // §15.2 "저장 실패" — the edit stays local-only; the next
+            // successful save (or a reload) reconciles it.
+            errorMessage = AppErrorMessages.saveFailed
+        }
+    }
+
+    /// Promotes `blockId` one level up — "부모의 부모 밑으로 승격"
+    /// (`tasks/NO-009.md` §2.1/§3.1) — positioned right after its former
+    /// parent's entire (remaining) subtree, i.e. as that former parent's
+    /// own next sibling. No artificial depth ceiling: this is the same
+    /// single-level promotion regardless of how deep `blockId` currently
+    /// sits, so repeated calls walk back up one level at a time.
+    ///
+    /// No-ops if `blockId` is already top-level (`depth == 0`).
+    ///
+    /// This always requires physically relocating `blockId` (and any of
+    /// its own descendants, carried along with it) within `items`:
+    /// promoting out of the former parent's subtree moves it to a
+    /// different point in the flat display order. `orderKey` is a single
+    /// total order across the whole document now (`tasks/NO-009.md`
+    /// §3.1 — `DocumentItemRepository.allItems` no longer does a
+    /// separate tree-assembly pass, `orderKey` order *is* display
+    /// order), so `blockId`'s new `orderKey` has to be picked to
+    /// literally sort right after everything currently in its former
+    /// parent's subtree, not just "some value between the former parent
+    /// and its own next sibling" the way a parent-scoped order would
+    /// have allowed.
+    func outdentBlock(_ blockId: String) {
+        guard let index = items.firstIndex(where: { $0.id == blockId }) else { return }
+        let item = items[index]
+        guard item.depth > 0 else { return }
+
+        // Everything from `index` onward still at `item`'s depth or
+        // deeper is part of the same former-parent subtree `item`
+        // currently sits in — its own descendants, plus any later
+        // same-depth siblings (and theirs) that stay behind under the
+        // former parent. `item` (+ its own descendants) moves to right
+        // after this whole range.
+        var formerParentSubtreeEnd = index
+        while formerParentSubtreeEnd < items.count, items[formerParentSubtreeEnd].depth >= item.depth {
+            formerParentSubtreeEnd += 1
+        }
+
+        let boundaryOrderKey = items[formerParentSubtreeEnd - 1].orderKey
+        let nextOrderKey = items.indices.contains(formerParentSubtreeEnd) ? items[formerParentSubtreeEnd].orderKey : nil
+        let newOrderKey = OrderKey.between(boundaryOrderKey, nextOrderKey)
+
+        // Measured against `items` before any mutation — `item`'s own
+        // subtree only (its descendants), not the later siblings
+        // `formerParentSubtreeEnd` above also walked past.
+        let movedSubtreeRange = subtreeRange(startingAt: index)
+        var movedSubtree = Array(items[movedSubtreeRange])
+        movedSubtree[0].depth -= 1
+        movedSubtree[0].orderKey = newOrderKey
+        for i in movedSubtree.indices.dropFirst() {
+            movedSubtree[i].depth -= 1
+        }
+
+        cancelPendingSave(blockId)
+        do {
+            try documentItemRepository.context.withTransaction {
+                for member in movedSubtree {
+                    _ = try documentItemRepository.update(member, save: false)
+                }
+            }
+            // Removing `blockId`'s own subtree from within the former
+            // parent's subtree shifts everything after it left by the
+            // removed count — including `formerParentSubtreeEnd` itself —
+            // so the insertion point right after the former parent's
+            // remaining subtree is that boundary minus what was removed.
+            items.removeSubrange(movedSubtreeRange)
+            let insertionIndex = formerParentSubtreeEnd - movedSubtreeRange.count
+            items.insert(contentsOf: movedSubtree, at: insertionIndex)
+
+            // Whatever now sits right after the moved subtree's new
+            // position may be a different same-kind list group — reconcile
+            // them (README F2-c, same procedure as C3-b~d).
+            let afterMovedSubtree = insertionIndex + movedSubtree.count
+            if items.indices.contains(afterMovedSubtree) {
+                reconcileAdjacentListBlocks(upperItemId: blockId, lowerItemId: items[afterMovedSubtree].id)
+            }
+        } catch {
+            // §15.2 "저장 실패" — the edit stays local-only; the next
+            // successful save (or a reload) reconciles it.
+            errorMessage = AppErrorMessages.saveFailed
+        }
+    }
+
+    /// The index range `items[startIndex]` (a subtree's root) and every
+    /// one of its descendants occupy — contiguous because `items` is
+    /// always kept as a depth-first flatten (a node immediately followed
+    /// by its own children, recursively, before its next sibling): a
+    /// node's descendants can only ever sit directly after it and before
+    /// its next sibling, never interleaved with an unrelated branch. Just
+    /// a `depth` threshold walk — the root's own descendants are exactly
+    /// the contiguous run right after it whose `depth` is greater than
+    /// its own.
+    private func subtreeRange(startingAt startIndex: Int) -> Range<Int> {
+        let rootDepth = items[startIndex].depth
+        var end = startIndex + 1
+        while end < items.count, items[end].depth > rootDepth {
+            end += 1
+        }
+        return startIndex..<end
     }
 
 }

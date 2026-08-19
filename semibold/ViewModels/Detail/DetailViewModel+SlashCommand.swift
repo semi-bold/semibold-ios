@@ -84,12 +84,15 @@ extension DetailViewModel {
             )
         case .bulletedList:
             textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.bulletedListItem, plainText: "")
+            assignFreshListGroup(forBlockId: blockId, listType: TextItemKind.bulletedListItem)
         case .numberedList:
             textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.numberedListItem, plainText: "")
+            assignFreshListGroup(forBlockId: blockId, listType: TextItemKind.numberedListItem)
         case .checklist:
             textContents[blockId] = TextContent(
                 itemId: blockId, textKind: TextItemKind.checklist, plainText: "", isChecked: false
             )
+            assignFreshListGroup(forBlockId: blockId, listType: TextItemKind.checklist)
         case .blockquote:
             textContents[blockId] = TextContent(itemId: blockId, textKind: TextItemKind.quote, plainText: "")
         case .codeBlock:

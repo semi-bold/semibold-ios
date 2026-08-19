@@ -76,10 +76,36 @@ struct BlockRowChrome: View {
     /// `dividerRuleOverlay` for what this switches on. Every other kind
     /// leaves this at the default `false`.
     var isDividerRow: Bool = false
+    /// This row's nesting depth (0 for a top-level item), from
+    /// `DetailViewModel.depth(forItemId:)` — only the three list-kind
+    /// factories (`BulletedListBlockView`/`NumberedListBlockView`/
+    /// `ChecklistBlockView`) ever pass a nonzero value; every other kind
+    /// leaves this at the default `0`, since non-list blocks never nest
+    /// (`tasks/NO-009.md` §2.2). Adds `depth * AppTheme.Spacing.lg` of
+    /// leading padding on top of the row's existing horizontal padding —
+    /// see `body`'s `.padding(.leading, ...)` — so a depth-0 row is
+    /// pixel-identical to before this parameter existed.
+    var depth: Int = 0
 
     let onTextChange: (String) -> Void
     let onEnter: (String, Int) -> Void
     let onBackspaceAtStart: (String) -> Void
+
+    /// Called on a hardware Tab press (`tasks/NO-009.md` §2.1/§3.3) — only
+    /// the three list-kind factories (`BulletedListBlockView`/
+    /// `NumberedListBlockView`/`ChecklistBlockView`) ever pass a non-`nil`
+    /// closure here; every other kind leaves this at the default `nil`, so
+    /// Tab keeps its plain `UITextView` default behavior on those rows.
+    /// Hardware-key-only — the on-screen keyboard toolbar's indent/outdent
+    /// buttons are wired independently by `DetailScreen` configuring
+    /// `AccessoryToolbarCoordinator` off `focusedBlockId`, not through this
+    /// row-level parameter (see that coordinator's doc comment for why:
+    /// changing which block is focused, the OS bringing up the keyboard,
+    /// and the toolbar's content are three separate concerns now).
+    var onIndent: (() -> Void)? = nil
+
+    /// Called on a hardware Shift+Tab press — see `onIndent`.
+    var onOutdent: (() -> Void)? = nil
 
     /// Reads straight from `content.plainText` (the view model's source
     /// of truth) rather than mirroring it into a separate local `@State`
@@ -127,6 +153,18 @@ struct BlockRowChrome: View {
         return showsDividerRule ? AppTheme.Spacing.lg : AppTheme.Spacing.sm
     }
 
+    /// One `AppTheme.Spacing.lg` step per nesting level — matches the
+    /// `AppTheme.Spacing.lg` `minWidth` `leadingColumnView` already gives
+    /// each list kind's marker/checkbox column, so a nested item's marker
+    /// lines up one full marker-column-width in from its parent's rather
+    /// than an arbitrary new spacing value (`03-depth-padding-rendering`
+    /// brief's Decisions). Additive to the row's existing horizontal
+    /// padding, not a replacement — `depth == 0` adds zero, keeping today's
+    /// layout pixel-identical.
+    private var indentPadding: CGFloat {
+        CGFloat(depth) * AppTheme.Spacing.lg
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
             // No spacing beyond the leading column's own `minWidth`
@@ -148,6 +186,8 @@ struct BlockRowChrome: View {
                     onBackspaceAtStart: {
                         onBackspaceAtStart(content.plainText)
                     },
+                    onIndent: onIndent,
+                    onOutdent: onOutdent,
                     cursorOffsetToApply: focusedBlockId.wrappedValue == item.id ? $cursorOffsetToApply : .constant(nil)
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -155,6 +195,7 @@ struct BlockRowChrome: View {
                 .overlay(alignment: .leading) { dividerRuleOverlay }
             }
         }
+        .padding(.leading, indentPadding)
         .padding(.horizontal, AppTheme.Spacing.md)
         .padding(.vertical, resolvedVerticalPadding)
         .background(isCodeBlock ? AppTheme.Colors.Neutral.n700 : AppTheme.Colors.Neutral.n900)

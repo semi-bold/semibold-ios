@@ -151,7 +151,7 @@ struct DocumentRepository {
         guard let documentId = entity.id else { return }
         let request = DocumentItemEntity.fetchRequest()
         let documentPredicate = NSPredicate(format: "documentId == %@", documentId)
-        let topLevelPredicate = NSPredicate(format: "parentItemId == nil")
+        let topLevelPredicate = NSPredicate(format: "depth == 0")
         request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [documentPredicate, topLevelPredicate])
         let itemRepository = DocumentItemRepository(context: context)
         for item in try context.fetch(request) {
