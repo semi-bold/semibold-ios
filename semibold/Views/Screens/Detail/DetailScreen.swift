@@ -23,6 +23,11 @@ struct DetailScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
+    /// Drives the custom cross-block drag-selection overlay
+    /// (`01-cross-block-selection-core` brief, A2/A3) — one instance per
+    /// open document, read by `crossBlockSelectionOverlay` below.
+    @State private var crossBlockSelectionTracker = CrossBlockSelectionTracker()
+
     /// Whether the navigation drawer (`icon_menu` in
     /// `Planning_Nav_1_TopBarFlow`) is showing — presented via
     /// `SidebarDrawerView`, `03-sidebar-drawer`'s search-first drawer
@@ -282,6 +287,27 @@ struct DetailScreen: View {
                 emptyContentPlaceholder
             }
         }
+        .overlay {
+            crossBlockSelectionOverlay
+        }
+    }
+
+    /// The custom drag-selection surface (A2/A3) laid directly over the
+    /// block list's own frame — see `CrossBlockSelectionOverlay`'s doc
+    /// comment for why it has to coexist with, not replace, every block's
+    /// native tap-to-focus/long-press-to-caret gesture underneath it.
+    /// `onSelectionBegan` clears `focusedBlockId` the moment a drag
+    /// actually starts, satisfying `CrossBlockSelection/README.md` common
+    /// invariant 2 ("편집 모드와 선택 모드는 동시에 성립하지 않는다") —
+    /// the reverse direction (A6: tapping elsewhere cancels an active
+    /// selection) is a separate, later acceptance criterion in this same
+    /// brief and isn't wired up here.
+    private var crossBlockSelectionOverlay: some View {
+        CrossBlockSelectionOverlay(
+            tracker: crossBlockSelectionTracker,
+            blockOrder: BlockOrder(blockIds: viewModel.items.map(\.id)),
+            onSelectionBegan: { focusedBlockId = nil }
+        )
     }
 
     /// Empty-state hint shown over the document's single empty paragraph
