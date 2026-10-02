@@ -5,18 +5,16 @@ import Foundation
 /// sense ("common invariant 1"), regardless of which direction the user
 /// actually dragged.
 ///
-/// This type's own `make(anchor:current:order:)` already orders its two
-/// inputs by document position every time it's called, which happens to
-/// cover the *basic* re-ordering A4 describes ("시작점보다 위로 드래그해도
-/// … 재배정된다") as a natural side effect of always computing `start`/
-/// `end` fresh from the live anchor/current pair, rather than trying to
-/// mutate a previously-fixed `start`/`end` in place. This brief doesn't
-/// treat A4 as done, though — only A2/A3 are in scope here
-/// (`.claude/features/01-cross-block-selection-core.md`), and A4's own
-/// acceptance criterion may call for more than this (e.g. confirming
-/// behavior around drag direction reversing mid-gesture, or handle-drag
-/// adjustment after the fact) — its implementer should verify this
-/// ordering already satisfies what A4 needs rather than assuming it does.
+/// This type's own `make(anchor:current:order:)` orders its two inputs by
+/// document position every time it's called, by always computing `start`/
+/// `end` fresh from the live anchor/current pair rather than mutating a
+/// previously-fixed `start`/`end` in place. That's what makes A4
+/// ("시작점보다 위로 드래그해도 … 재배정된다") hold continuously as a drag
+/// moves — including reversing back past the anchor more than once in the
+/// same gesture — with no extra logic beyond this normalization; see
+/// `CrossBlockSelectionRangeTests`'s "A4" tests and
+/// `CrossBlockSelectionDragTests`'s "A4" tests (dynamic reversal, within a
+/// single block and across blocks) for the coverage confirming this.
 struct CrossBlockSelectionRange: Equatable {
     let start: DocumentTextLocation
     let end: DocumentTextLocation

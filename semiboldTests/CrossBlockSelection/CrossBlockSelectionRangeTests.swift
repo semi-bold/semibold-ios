@@ -85,6 +85,24 @@ struct CrossBlockSelectionRangeTests {
         #expect(range.end.offset == 8)
     }
 
+    // MARK: - A4 (시작점보다 문서상 앞으로 드래그 → 자동 정규화) — dedicated coverage
+
+    @Test("A4: dragging from the anchor's block backward into an earlier block normalizes start/end by document order, not drag direction")
+    func a4NormalizesWhenCurrentMovesToAnEarlierBlock() throws {
+        let order = BlockOrder(blockIds: ["block1", "block2", "block3"])
+        // Anchor sits in the *later* block (block2); the drag then moves
+        // backward (toward the document start) into block1 — an entirely
+        // earlier block, not just "the other end of the same pair" already
+        // covered by `makeSwapsWhenCurrentIsBeforeAnchor` above.
+        let anchor = DocumentTextLocation(blockId: "block2", offset: 5)
+        let current = DocumentTextLocation(blockId: "block1", offset: 2)
+
+        let range = try #require(CrossBlockSelectionRange.make(anchor: anchor, current: current, order: order))
+
+        #expect(range.start == DocumentTextLocation(blockId: "block1", offset: 2))
+        #expect(range.end == DocumentTextLocation(blockId: "block2", offset: 5))
+    }
+
     @Test("make(anchor:current:order:) returns nil if either location's block fell out of the order")
     func makeReturnsNilForUnknownBlock() {
         let order = BlockOrder(blockIds: ["a", "b"])

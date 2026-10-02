@@ -124,10 +124,12 @@ struct CrossBlockSelectionDragTests {
     func rangeNormalizesRegardlessOfDirection() throws {
         let tracker = CrossBlockSelectionTracker()
         let order = BlockOrder(blockIds: ["a", "b", "c"])
-        // Anchor in "c", dragged backward into "a" — A4's basic ordering,
-        // exercised here only as a consequence of A3's same-mechanism
-        // requirement, not claimed as A4 itself (see
-        // `CrossBlockSelectionRange.make`'s doc comment).
+        // Anchor in "c", dragged backward into "a" — basic cross-block
+        // normalization through the tracker's own `range(order:)`. See the
+        // dedicated "A4" tests below for the scenario this brief's A4
+        // acceptance criterion specifically asks for (normalizing into an
+        // entirely earlier block, and staying dynamic across repeated
+        // reversals mid-drag).
         tracker.beginSelection(at: DocumentTextLocation(blockId: "c", offset: 4))
         tracker.extendSelection(to: DocumentTextLocation(blockId: "a", offset: 1))
 
@@ -135,6 +137,63 @@ struct CrossBlockSelectionDragTests {
 
         #expect(range.start == DocumentTextLocation(blockId: "a", offset: 1))
         #expect(range.end == DocumentTextLocation(blockId: "c", offset: 4))
+    }
+
+    // MARK: - A4 (시작점보다 문서상 앞으로 드래그 → 자동 정규화) — dedicated coverage
+
+    @Test("A4: reversing a drag past the anchor into an earlier block, then forward past it again, re-normalizes start/end every time (not just once)")
+    func a4DynamicReversalAcrossBlocksRepeatedly() throws {
+        let tracker = CrossBlockSelectionTracker()
+        let order = BlockOrder(blockIds: ["a", "b", "c"])
+        let anchor = DocumentTextLocation(blockId: "b", offset: 5)
+        tracker.beginSelection(at: anchor)
+
+        // 1) Drag forward (toward the document end) — anchor stays the start.
+        tracker.extendSelection(to: DocumentTextLocation(blockId: "c", offset: 2))
+        var range = try #require(tracker.range(order: order))
+        #expect(range.start == anchor)
+        #expect(range.end == DocumentTextLocation(blockId: "c", offset: 2))
+
+        // 2) Reverse past the anchor into an earlier block — start/end swap.
+        tracker.extendSelection(to: DocumentTextLocation(blockId: "a", offset: 3))
+        range = try #require(tracker.range(order: order))
+        #expect(range.start == DocumentTextLocation(blockId: "a", offset: 3))
+        #expect(range.end == anchor)
+
+        // 3) Reverse again, back past the anchor toward the document end —
+        // confirms the re-normalization isn't "stuck" after the first
+        // reversal; it keeps tracking the live anchor/current pair on every
+        // subsequent `extendSelection` call.
+        tracker.extendSelection(to: DocumentTextLocation(blockId: "c", offset: 7))
+        range = try #require(tracker.range(order: order))
+        #expect(range.start == anchor)
+        #expect(range.end == DocumentTextLocation(blockId: "c", offset: 7))
+    }
+
+    @Test("A4: the same repeated-reversal normalization holds for a drag that never leaves the anchor's own block")
+    func a4DynamicReversalWithinSameBlockRepeatedly() throws {
+        let tracker = CrossBlockSelectionTracker()
+        let order = BlockOrder(blockIds: ["a"])
+        let anchor = DocumentTextLocation(blockId: "a", offset: 5)
+        tracker.beginSelection(at: anchor)
+
+        // 1) Forward within the same block.
+        tracker.extendSelection(to: DocumentTextLocation(blockId: "a", offset: 9))
+        var range = try #require(tracker.range(order: order))
+        #expect(range.start == anchor)
+        #expect(range.end.offset == 9)
+
+        // 2) Reverse past the anchor's own offset.
+        tracker.extendSelection(to: DocumentTextLocation(blockId: "a", offset: 1))
+        range = try #require(tracker.range(order: order))
+        #expect(range.start.offset == 1)
+        #expect(range.end == anchor)
+
+        // 3) Forward past the anchor again.
+        tracker.extendSelection(to: DocumentTextLocation(blockId: "a", offset: 8))
+        range = try #require(tracker.range(order: order))
+        #expect(range.start == anchor)
+        #expect(range.end.offset == 8)
     }
 
     // MARK: - End-to-end: hit-test → tracker → highlight geometry, across a block boundary (A3)
