@@ -285,7 +285,10 @@ struct CrossBlockSelectionOverlay: UIViewRepresentable {
         /// tick, so there's nothing here that needs "re-targeting" as the
         /// point moves further into/out of the same edge.
         private func updateAutoScroll(at point: CGPoint, in hostView: HostView) {
-            let zone = CrossBlockSelectionAutoScrollZone.resolve(touchY: point.y, viewportHeight: hostView.bounds.height)
+            let zone = CrossBlockSelectionAutoScrollZone.resolve(
+                touchY: point.y,
+                viewportHeight: hostView.bounds.height
+            )
             guard zone.isActive else {
                 autoScroller.stop()
                 return
@@ -312,7 +315,10 @@ struct CrossBlockSelectionOverlay: UIViewRepresentable {
             else { return false }
 
             let point = recognizer.location(in: hostView)
-            let zone = CrossBlockSelectionAutoScrollZone.resolve(touchY: point.y, viewportHeight: hostView.bounds.height)
+            let zone = CrossBlockSelectionAutoScrollZone.resolve(
+                touchY: point.y,
+                viewportHeight: hostView.bounds.height
+            )
             guard zone.isActive else { return false }
 
             if let scrollView = hostView.findEnclosingOrSiblingScrollView() {

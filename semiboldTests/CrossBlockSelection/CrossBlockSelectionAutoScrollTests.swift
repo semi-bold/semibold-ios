@@ -85,6 +85,7 @@ struct CrossBlockSelectionAutoScrollTests {
         #expect(zone == .top(speed: 14))
     }
 
+    // swiftlint:disable:next line_length
     @Test("A touch that has drifted below the viewport's own bottom edge still resolves to the bottom zone at max speed")
     func touchBelowViewportClampsToBottomMaxSpeed() {
         let zone = CrossBlockSelectionAutoScrollZone.resolve(
@@ -248,6 +249,7 @@ struct CrossBlockSelectionAutoScrollTests {
         #expect(child.findEnclosingOrSiblingScrollView() === scrollView)
     }
 
+    // swiftlint:disable:next line_length
     @Test("Finds a UIScrollView that's a sibling's descendant, not a direct ancestor — the shape this overlay actually expects")
     func findsSiblingDescendantScrollView() {
         let root = UIView()
