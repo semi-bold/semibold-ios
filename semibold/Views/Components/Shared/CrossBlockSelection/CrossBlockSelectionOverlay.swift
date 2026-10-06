@@ -42,6 +42,15 @@ import UIKit
 /// `CrossBlockSelectionA1RegressionTests`'s doc comment already describes
 /// for A1). It needs manual/device verification — flagged here rather
 /// than claimed as proven.
+///
+/// **A5 (auto-scroll near the viewport edge, selection keeps extending)**
+/// lives in `Coordinator`'s "A5" section below, built on
+/// `CrossBlockSelectionAutoScroller`/`CrossBlockSelectionAutoScrollZone` —
+/// see those types' doc comments for the scroll-loop and edge-zone math,
+/// and `findEnclosingOrSiblingScrollView()`'s doc comment for the one part
+/// of A5 that reaches into `DetailScreen.blockList`'s SwiftUI `ScrollView`
+/// through its UIKit backing view, the same "drop to UIKit where SwiftUI
+/// can't do the job" pattern this overlay already uses for `UITextView`.
 struct CrossBlockSelectionOverlay: UIViewRepresentable {
     var tracker: CrossBlockSelectionTracker
     var blockOrder: BlockOrder
@@ -70,6 +79,7 @@ struct CrossBlockSelectionOverlay: UIViewRepresentable {
         recognizer.delegate = context.coordinator
         view.addGestureRecognizer(recognizer)
         context.coordinator.hostView = view
+        context.coordinator.recognizer = recognizer
         return view
     }
 
@@ -149,6 +159,21 @@ struct CrossBlockSelectionOverlay: UIViewRepresentable {
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var parent: CrossBlockSelectionOverlay
         weak var hostView: HostView?
+        /// The overlay's own long-press recognizer — held so an in-flight
+        /// auto-scroll tick (A5) can read the drag's *live* touch point
+        /// directly off it (`UIGestureRecognizer.location(in:)` reflects
+        /// the current touch at any time it's called, not just inside a
+        /// delivered `.changed` action). That matters here because the
+        /// user's finger can sit completely still at the viewport's edge
+        /// for the whole auto-scroll — no further `.changed` events fire
+        /// at all while it doesn't move, so a stored "last point" captured
+        /// only from `.changed` would go stale the moment scrolling starts.
+        weak var recognizer: UILongPressGestureRecognizer?
+
+        /// Drives A5's "auto-scroll near the viewport edge, selection keeps
+        /// extending while it does" behavior — see
+        /// `CrossBlockSelectionAutoScroller`'s doc comment.
+        private let autoScroller = CrossBlockSelectionAutoScroller()
 
         /// The touch-down point, recorded on `.began`, so `.changed` can
         /// measure total movement against `dragThreshold` before treating
@@ -206,6 +231,7 @@ struct CrossBlockSelectionOverlay: UIViewRepresentable {
                 guard let currentLocation = resolveLocation(at: point, in: hostView) else { return }
                 parent.tracker.extendSelection(to: currentLocation)
                 refreshHighlights(in: hostView)
+                updateAutoScroll(at: point, in: hostView)
 
             case .ended, .cancelled, .failed:
                 if hasStartedDragging {
@@ -213,6 +239,7 @@ struct CrossBlockSelectionOverlay: UIViewRepresentable {
                 }
                 pressDownPoint = nil
                 hasStartedDragging = false
+                autoScroller.stop()
 
             default:
                 break
@@ -246,6 +273,61 @@ struct CrossBlockSelectionOverlay: UIViewRepresentable {
                 return (blockId, textView)
             }
             return CrossBlockSelectionHitTester.location(forPoint: point, in: coordinateSpace, candidates: candidates)
+        }
+
+        // MARK: - A5: auto-scroll near the viewport edge
+
+        /// Starts the auto-scroll loop the moment `point` enters an edge
+        /// zone, stops it the moment `point` leaves one — called on every
+        /// `.changed` event, after that event's own selection update above.
+        /// A no-op if the loop is already running for an active zone;
+        /// `performAutoScrollTick()` re-resolves the zone itself on every
+        /// tick, so there's nothing here that needs "re-targeting" as the
+        /// point moves further into/out of the same edge.
+        private func updateAutoScroll(at point: CGPoint, in hostView: HostView) {
+            let zone = CrossBlockSelectionAutoScrollZone.resolve(touchY: point.y, viewportHeight: hostView.bounds.height)
+            guard zone.isActive else {
+                autoScroller.stop()
+                return
+            }
+            guard !autoScroller.isRunning else { return }
+            autoScroller.start { [weak self] in
+                self?.performAutoScrollTick() ?? false
+            }
+        }
+
+        /// One auto-scroll tick (`CrossBlockSelectionAutoScroller`'s
+        /// `onTick`). Re-reads the drag's live touch point straight from
+        /// `recognizer` (not a point captured back when `.changed` last
+        /// fired) since the finger can sit still at the edge for the whole
+        /// scroll — see `recognizer`'s own doc comment for why that matters.
+        /// Returns `false` (stop ticking) the instant the drag has ended or
+        /// the touch has left the edge zone, `true` to keep going.
+        private func performAutoScrollTick() -> Bool {
+            guard
+                hasStartedDragging,
+                let hostView,
+                let recognizer,
+                recognizer.state == .began || recognizer.state == .changed
+            else { return false }
+
+            let point = recognizer.location(in: hostView)
+            let zone = CrossBlockSelectionAutoScrollZone.resolve(touchY: point.y, viewportHeight: hostView.bounds.height)
+            guard zone.isActive else { return false }
+
+            if let scrollView = hostView.findEnclosingOrSiblingScrollView() {
+                scrollView.applyCrossBlockSelectionAutoScrollDelta(zone.contentOffsetDelta)
+            }
+
+            // Re-resolve the selection now that new rows may have scrolled
+            // into view and registered with `BlockTextViewRegistry` since
+            // the last tick — this is what keeps the selection "계속
+            // 연장" (A5) as the document moves under a stationary finger.
+            if let location = resolveLocation(at: point, in: hostView) {
+                parent.tracker.extendSelection(to: location)
+                refreshHighlights(in: hostView)
+            }
+            return true
         }
     }
 }
