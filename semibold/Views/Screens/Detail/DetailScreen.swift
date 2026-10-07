@@ -51,21 +51,7 @@ struct DetailScreen: View {
         }
         .background(AppTheme.Colors.Neutral.n900)
         .background(keyboardShortcuts)
-        .overlay {
-            // Must be an `.overlay{}` sitting ABOVE this screen's full
-            // content (nav bar + title area + block list), not a
-            // `.background()` behind it — see `crossBlockSelectionCancelCatcher`'s
-            // doc comment for why a `.background()` here previously risked
-            // never seeing taps that land on the block list at all
-            // (UIKit only delivers touches along the hit-tested view's
-            // ancestor chain; a background branch can end up a sibling of
-            // that chain rather than an ancestor of it, depending on how
-            // SwiftUI composes the two). This is the same proven
-            // "ancestor-or-self overlay, `cancelsTouchesInView = false`,
-            // always-simultaneous delegate" pattern `crossBlockSelectionOverlay`
-            // already uses successfully for the block list alone.
-            crossBlockSelectionCancelCatcher
-        }
+        .background(crossBlockSelectionCancelCatcher)
         .overlay {
             // This screen is itself a pushed `Document.self` destination
             // registered once at `HomeScreen`'s `NavigationStack` root — the
@@ -341,15 +327,23 @@ struct DetailScreen: View {
     /// this is a separate, screen-wide touch observer rather than widening
     /// `crossBlockSelectionOverlay`'s own (block-list-scoped) reach.
     ///
-    /// Mounted as a top-level `.overlay{}` on this screen's full `VStack`
-    /// (nav bar + title area + block list), not a `.background()` — an
-    /// `.overlay{}` is architecturally an ancestor of everything it's
-    /// drawn over, so its tap recognizer sits along the same hit-testing
-    /// chain as every tap underneath it (the block list included). A
-    /// `.background()` risked ending up on a sibling branch of that chain
-    /// instead, which could have silently dropped taps that land on the
-    /// block list — the primary A6-a scenario — without the recognizer
-    /// ever seeing them.
+    /// Mounted via `.background()` on this screen's outer `VStack` purely
+    /// as a stable place to live in the view hierarchy — *where* it sits
+    /// in SwiftUI's `.background()`/`.overlay()` composition no longer
+    /// matters, because (unlike `crossBlockSelectionOverlay` above) it
+    /// doesn't hit-test or draw over anything itself — see
+    /// `CrossBlockSelectionCancelCatcher`'s doc comment for why. Once
+    /// mounted, it reaches up to the `UIWindow` hosting this whole screen
+    /// — the one UIKit-guaranteed ancestor of every view hit-tested
+    /// anywhere in it, nav bar/title area/block list included — and
+    /// attaches its tap recognizer there instead. An earlier version of
+    /// this mounted it as a visible, screen-covering `.overlay{}` instead,
+    /// reasoning that `.overlay{}`'s paint order made it an "ancestor" of
+    /// everything underneath — that reasoning was wrong (`.overlay{}` vs.
+    /// `.background{}` only changes paint order, not UIKit view-tree
+    /// ancestry) and risked that covering view winning every touch's
+    /// `hitTest(_:with:)` outright, intercepting the nav bar and every
+    /// block's native tap-to-focus along with it.
     private var crossBlockSelectionCancelCatcher: some View {
         CrossBlockSelectionCancelCatcher(tracker: crossBlockSelectionTracker)
     }

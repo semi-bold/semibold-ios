@@ -6,38 +6,44 @@ import UIKit
 /// Tests for A6 ("선택 도중 다른 화면 요소를 탭함") and the "tapping
 /// elsewhere cancels an active selection" half of common invariant 2
 /// ("편집 모드와 선택 모드는 동시에 성립하지 않는다") —
-/// `CrossBlockSelectionCancelCatcher`'s `Coordinator.handleTap()`.
+/// `CrossBlockSelectionCancelCatcher`'s `Coordinator.handleTap()`, plus the
+/// `Coordinator.attach(to:)`/`detach()` pair that puts the real
+/// `UITapGestureRecognizer` on the `UIWindow` hosting `DetailScreen`.
 ///
 /// **Why this doesn't simulate an actual tap landing on the nav bar, a
 /// block, or anywhere else.** Same limitation every other file in this
-/// directory documents (no XCUITest target, no live window/responder chain
-/// to deliver a real touch through). `handleTap()` itself takes no
+/// directory documents (no XCUITest target, no live app/responder chain to
+/// deliver a real touch through). `handleTap()` itself takes no
 /// gesture-recognizer argument at all — unlike `CrossBlockSelectionOverlay
 /// .Coordinator.handleLongPress(_:)`, it never reads a touch location or
 /// gesture state — so it's directly callable here exactly the way UIKit
 /// would call it once a `UITapGestureRecognizer` actually recognizes a tap.
-/// What these tests can't cover: whether that recognizer actually *fires*
-/// for a tap on the nav bar/title area/a block without blocking the native
-/// behavior underneath it (back button, menu button, tap-to-focus) — that
-/// coexistence question still needs manual/device verification, the same
-/// carve-out `CrossBlockSelectionOverlay`'s own doc comment already makes
-/// for its long-press recognizer.
+/// What these tests can't cover: whether a live, finger-driven tap on the
+/// nav bar/title area/a block actually gets delivered to a recognizer
+/// attached to the window, end to end, inside this app's actual compiled
+/// view hierarchy — that still needs manual/device verification.
 ///
-/// **Higher confidence than before, by construction.** `DetailScreen` used
-/// to mount `CrossBlockSelectionCancelCatcher` via `.background()` on its
-/// outer `VStack` — an ancestor of the `ScrollView` that hosts the block
-/// list, but a sibling (not necessarily an ancestor) of the actual UIKit
-/// view that ends up hit-tested inside it, depending on how SwiftUI
-/// composes `.background()` vs `.overlay()` into backing views. That risked
-/// the tap recognizer never seeing touches landing on the block list at
-/// all — the primary A6-a scenario. It's now mounted as a top-level
-/// `.overlay{}` on that same `VStack`, the same proven "ancestor-or-self
-/// overlay, `cancelsTouchesInView = false`, always-simultaneous delegate"
-/// pattern `CrossBlockSelectionOverlay` already uses successfully for the
-/// block list alone — so the recognizer firing for a block-list tap is no
-/// longer an open architectural question, just the inherent "needs a live
-/// touch to be 100% sure" limitation every UIKit gesture recognizer in this
-/// app shares.
+/// **What *is* now provable without a live touch, by construction.**
+/// `attach(to:)`/`detach()` only depend on `UIWindow`/`UIView.window`,
+/// which — unlike SwiftUI's `.background()`/`.overlay()` composition — are
+/// plain, documented UIKit mechanics: `addSubview(_:)` sets a view's
+/// `window` to its new ancestor window synchronously, with no running app
+/// or key/visible window required, and a `UIGestureRecognizer` attached to
+/// a `UIView` (including a `UIWindow`) fires for a touch that hit-tests to
+/// that view *or any descendant of it*, regardless of nesting depth. The
+/// tests below construct exactly that kind of synthetic
+/// `UIWindow` → … → marker-view hierarchy (mirroring how
+/// `CrossBlockSelectionAutoScrollTests`' `findEnclosingOrSiblingScrollView`
+/// tests build a synthetic `UIView` tree) and confirm: the window is the
+/// one place the recognizer ends up regardless of how deep the marker is
+/// nested under it, attaching never leaves more than one live recognizer
+/// behind, and detaching (or moving to a `nil`/different window) actually
+/// removes it. That closes the specific architectural gap the two earlier
+/// attempts at this got wrong (`.background()` risking a sibling branch,
+/// `.overlay{}` risking this view winning `hitTest(_:with:)` outright) —
+/// what's left unverified is purely "does UIKit deliver a live finger
+/// touch the way its own documented rules say it will," not "is this
+/// screen-wide reach architecturally sound."
 @MainActor
 struct CrossBlockSelectionCancelTests {
     // MARK: - A6: a tap cancels an active selection
@@ -107,6 +113,146 @@ struct CrossBlockSelectionCancelTests {
         tracker.beginSelection(at: DocumentTextLocation(blockId: "c", offset: 1))
         #expect(tracker.anchor == DocumentTextLocation(blockId: "c", offset: 1))
         #expect(tracker.current == DocumentTextLocation(blockId: "c", offset: 1))
+    }
+
+    // MARK: - Window-ancestor attachment (`Coordinator.attach(to:)`/`detach()`)
+
+    /// A bare `UIWindow()` already carries its own system gesture
+    /// recognizers (including, in this test environment, at least one
+    /// `UITapGestureRecognizer` of its own) even before this type ever
+    /// touches it — so these tests check whether `window.gestureRecognizers`
+    /// contains *this specific recognizer instance* (by identity), rather
+    /// than counting recognizers by type or assuming the array starts
+    /// empty.
+    private func isAttached(_ recognizer: UITapGestureRecognizer?, to window: UIWindow) -> Bool {
+        guard let recognizer else { return false }
+        return window.gestureRecognizers?.contains { $0 === recognizer } ?? false
+    }
+
+    @Test("attach(to:) puts this coordinator's own recognizer on the given window")
+    func attachAddsOneRecognizerToWindow() {
+        let window = UIWindow()
+        let coordinator = CrossBlockSelectionCancelCatcher.Coordinator(tracker: CrossBlockSelectionTracker())
+
+        coordinator.attach(to: window)
+
+        #expect(coordinator.recognizer != nil)
+        #expect(isAttached(coordinator.recognizer, to: window))
+        #expect(coordinator.attachedWindow === window)
+    }
+
+    @Test("attach(to:) replaces its own previous recognizer rather than leaving stale ones behind")
+    func attachIsIdempotentForTheSameWindow() {
+        let window = UIWindow()
+        let coordinator = CrossBlockSelectionCancelCatcher.Coordinator(tracker: CrossBlockSelectionTracker())
+
+        coordinator.attach(to: window)
+        let firstRecognizer = coordinator.recognizer
+
+        coordinator.attach(to: window)
+        coordinator.attach(to: window)
+        let finalRecognizer = coordinator.recognizer
+
+        #expect(firstRecognizer !== finalRecognizer)
+        #expect(!isAttached(firstRecognizer, to: window))
+        #expect(isAttached(finalRecognizer, to: window))
+    }
+
+    @Test("attach(to:) moves the recognizer off a previous window when the marker reaches a new one")
+    func attachMovesRecognizerToNewWindow() {
+        let firstWindow = UIWindow()
+        let secondWindow = UIWindow()
+        let coordinator = CrossBlockSelectionCancelCatcher.Coordinator(tracker: CrossBlockSelectionTracker())
+
+        coordinator.attach(to: firstWindow)
+        let firstRecognizer = coordinator.recognizer
+        #expect(isAttached(firstRecognizer, to: firstWindow))
+
+        coordinator.attach(to: secondWindow)
+
+        #expect(!isAttached(firstRecognizer, to: firstWindow))
+        #expect(isAttached(coordinator.recognizer, to: secondWindow))
+        #expect(coordinator.attachedWindow === secondWindow)
+    }
+
+    @Test("attach(to: nil) — the marker left every window — leaves no recognizer attached anywhere")
+    func attachToNilWindowLeavesNothingAttached() {
+        let window = UIWindow()
+        let coordinator = CrossBlockSelectionCancelCatcher.Coordinator(tracker: CrossBlockSelectionTracker())
+        coordinator.attach(to: window)
+        let previousRecognizer = coordinator.recognizer
+
+        coordinator.attach(to: nil)
+
+        #expect(!isAttached(previousRecognizer, to: window))
+        #expect(coordinator.recognizer == nil)
+        #expect(coordinator.attachedWindow == nil)
+    }
+
+    @Test("detach() removes the recognizer from its window and clears attachedWindow")
+    func detachRemovesRecognizerFromWindow() {
+        let window = UIWindow()
+        let coordinator = CrossBlockSelectionCancelCatcher.Coordinator(tracker: CrossBlockSelectionTracker())
+        coordinator.attach(to: window)
+        let previousRecognizer = coordinator.recognizer
+
+        coordinator.detach()
+
+        #expect(!isAttached(previousRecognizer, to: window))
+        #expect(coordinator.recognizer == nil)
+        #expect(coordinator.attachedWindow == nil)
+    }
+
+    @Test("detach() with nothing attached is a harmless no-op")
+    func detachWithNothingAttachedIsNoOp() {
+        let coordinator = CrossBlockSelectionCancelCatcher.Coordinator(tracker: CrossBlockSelectionTracker())
+
+        coordinator.detach()
+
+        #expect(coordinator.attachedWindow == nil)
+    }
+
+    // swiftlint:disable:next line_length
+    @Test("A marker view nested several levels deep under a UIWindow still resolves `.window` to that same window — the ancestor relationship `AnchorView.didMoveToWindow()` relies on")
+    func deeplyNestedMarkerResolvesToTopWindow() {
+        let window = UIWindow()
+        let navBarContainer = UIView()
+        let titleContainer = UIView()
+        let marker = CrossBlockSelectionCancelCatcher.AnchorView()
+
+        window.addSubview(navBarContainer)
+        navBarContainer.addSubview(titleContainer)
+        titleContainer.addSubview(marker)
+
+        #expect(marker.window === window)
+    }
+
+    @Test("A marker view with no window anywhere above it resolves `.window` to nil")
+    func unmountedMarkerHasNoWindow() {
+        let container = UIView()
+        let marker = CrossBlockSelectionCancelCatcher.AnchorView()
+        container.addSubview(marker)
+
+        #expect(marker.window == nil)
+    }
+
+    // swiftlint:disable:next line_length
+    @Test("End-to-end wiring: adding a coordinator-linked marker to a window attaches the recognizer there; removing it detaches")
+    func markerAndCoordinatorWireUpOnWindowChanges() {
+        let window = UIWindow()
+        let coordinator = CrossBlockSelectionCancelCatcher.Coordinator(tracker: CrossBlockSelectionTracker())
+        let marker = CrossBlockSelectionCancelCatcher.AnchorView()
+        marker.coordinator = coordinator
+
+        window.addSubview(marker)
+        #expect(isAttached(coordinator.recognizer, to: window))
+        #expect(coordinator.attachedWindow === window)
+        let attachedRecognizer = coordinator.recognizer
+
+        marker.removeFromSuperview()
+        #expect(!isAttached(attachedRecognizer, to: window))
+        #expect(coordinator.recognizer == nil)
+        #expect(coordinator.attachedWindow == nil)
     }
 
     // MARK: - Invariant 2, both directions together
