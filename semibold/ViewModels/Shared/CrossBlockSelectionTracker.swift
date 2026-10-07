@@ -65,8 +65,8 @@ final class CrossBlockSelectionTracker {
 
     /// The finger lifted — the selection itself stays visible (handles
     /// included) until `cancel()` is called. A6 (tapping elsewhere cancels
-    /// the selection) is a separate, later acceptance criterion in this
-    /// same brief — not wired up from here.
+    /// the selection) is wired from `CrossBlockSelectionCancelCatcher`, not
+    /// from here.
     func endSelection() {
         isDragging = false
     }

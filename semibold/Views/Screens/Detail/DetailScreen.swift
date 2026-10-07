@@ -51,6 +51,7 @@ struct DetailScreen: View {
         }
         .background(AppTheme.Colors.Neutral.n900)
         .background(keyboardShortcuts)
+        .background(crossBlockSelectionCancelCatcher)
         .overlay {
             // This screen is itself a pushed `Document.self` destination
             // registered once at `HomeScreen`'s `NavigationStack` root — the
@@ -298,16 +299,35 @@ struct DetailScreen: View {
     /// native tap-to-focus/long-press-to-caret gesture underneath it.
     /// `onSelectionBegan` clears `focusedBlockId` the moment a drag
     /// actually starts, satisfying `CrossBlockSelection/README.md` common
-    /// invariant 2 ("편집 모드와 선택 모드는 동시에 성립하지 않는다") —
-    /// the reverse direction (A6: tapping elsewhere cancels an active
-    /// selection) is a separate, later acceptance criterion in this same
-    /// brief and isn't wired up here.
+    /// invariant 2 ("편집 모드와 선택 모드는 동시에 성립하지 않는다") in
+    /// the "selection begins → editing stops" direction — the reverse
+    /// direction (A6: tapping elsewhere cancels an active selection) is
+    /// `crossBlockSelectionCancelCatcher` below.
     private var crossBlockSelectionOverlay: some View {
         CrossBlockSelectionOverlay(
             tracker: crossBlockSelectionTracker,
             blockOrder: BlockOrder(blockIds: viewModel.items.map(\.id)),
             onSelectionBegan: { focusedBlockId = nil }
         )
+    }
+
+    /// Cancels an active cross-block selection the moment any other tap
+    /// lands anywhere on this screen — nav bar, title area, blank space, or
+    /// a different block — satisfying A6/invariant 2's reverse direction
+    /// (starting a drag already clears `focusedBlockId` via
+    /// `crossBlockSelectionOverlay.onSelectionBegan` above; this closes the
+    /// loop by clearing the selection once editing — or any other tap —
+    /// takes over again). Tapping a different block also moves typing
+    /// focus there via plain native `UITextView` tap-to-focus (A6-a) — this
+    /// catcher doesn't do that part, and doesn't need to: it only ever
+    /// clears `crossBlockSelectionTracker`, never touches `focusedBlockId`
+    /// itself, so the two effects of the same tap (focus moves, selection
+    /// clears) land independently without this screen having to sequence
+    /// them. See `CrossBlockSelectionCancelCatcher`'s doc comment for why
+    /// this is a separate, screen-wide touch observer rather than widening
+    /// `crossBlockSelectionOverlay`'s own (block-list-scoped) reach.
+    private var crossBlockSelectionCancelCatcher: some View {
+        CrossBlockSelectionCancelCatcher(tracker: crossBlockSelectionTracker)
     }
 
     /// Empty-state hint shown over the document's single empty paragraph

@@ -59,8 +59,8 @@ struct CrossBlockSelectionOverlay: UIViewRepresentable {
     /// `DetailScreen` uses this to clear `focusedBlockId`, satisfying
     /// `CrossBlockSelection/README.md` common invariant 2 ("편집 모드와
     /// 선택 모드는 동시에 성립하지 않는다"). The reverse direction —
-    /// tapping elsewhere cancels an active selection (A6) — is a separate,
-    /// later acceptance criterion in this same brief and isn't wired here.
+    /// tapping elsewhere cancels an active selection (A6) — is
+    /// `CrossBlockSelectionCancelCatcher`'s job, not this type's.
     var onSelectionBegan: () -> Void
 
     func makeUIView(context: Context) -> HostView {
