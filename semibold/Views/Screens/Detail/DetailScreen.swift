@@ -23,6 +23,11 @@ struct DetailScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
+    /// Drives the custom cross-block drag-selection overlay
+    /// (`01-cross-block-selection-core` brief, A2/A3) — one instance per
+    /// open document, read by `crossBlockSelectionOverlay` below.
+    @State private var crossBlockSelectionTracker = CrossBlockSelectionTracker()
+
     /// Whether the navigation drawer (`icon_menu` in
     /// `Planning_Nav_1_TopBarFlow`) is showing — presented via
     /// `SidebarDrawerView`, `03-sidebar-drawer`'s search-first drawer
@@ -46,6 +51,7 @@ struct DetailScreen: View {
         }
         .background(AppTheme.Colors.Neutral.n900)
         .background(keyboardShortcuts)
+        .background(crossBlockSelectionCancelCatcher)
         .overlay {
             // This screen is itself a pushed `Document.self` destination
             // registered once at `HomeScreen`'s `NavigationStack` root — the
@@ -282,6 +288,64 @@ struct DetailScreen: View {
                 emptyContentPlaceholder
             }
         }
+        .overlay {
+            crossBlockSelectionOverlay
+        }
+    }
+
+    /// The custom drag-selection surface (A2/A3) laid directly over the
+    /// block list's own frame — see `CrossBlockSelectionOverlay`'s doc
+    /// comment for why it has to coexist with, not replace, every block's
+    /// native tap-to-focus/long-press-to-caret gesture underneath it.
+    /// `onSelectionBegan` clears `focusedBlockId` the moment a drag
+    /// actually starts, satisfying `CrossBlockSelection/README.md` common
+    /// invariant 2 ("편집 모드와 선택 모드는 동시에 성립하지 않는다") in
+    /// the "selection begins → editing stops" direction — the reverse
+    /// direction (A6: tapping elsewhere cancels an active selection) is
+    /// `crossBlockSelectionCancelCatcher` below.
+    private var crossBlockSelectionOverlay: some View {
+        CrossBlockSelectionOverlay(
+            tracker: crossBlockSelectionTracker,
+            blockOrder: BlockOrder(blockIds: viewModel.items.map(\.id)),
+            onSelectionBegan: { focusedBlockId = nil }
+        )
+    }
+
+    /// Cancels an active cross-block selection the moment any other tap
+    /// lands anywhere on this screen — nav bar, title area, blank space, or
+    /// a different block — satisfying A6/invariant 2's reverse direction
+    /// (starting a drag already clears `focusedBlockId` via
+    /// `crossBlockSelectionOverlay.onSelectionBegan` above; this closes the
+    /// loop by clearing the selection once editing — or any other tap —
+    /// takes over again). Tapping a different block also moves typing
+    /// focus there via plain native `UITextView` tap-to-focus (A6-a) — this
+    /// catcher doesn't do that part, and doesn't need to: it only ever
+    /// clears `crossBlockSelectionTracker`, never touches `focusedBlockId`
+    /// itself, so the two effects of the same tap (focus moves, selection
+    /// clears) land independently without this screen having to sequence
+    /// them. See `CrossBlockSelectionCancelCatcher`'s doc comment for why
+    /// this is a separate, screen-wide touch observer rather than widening
+    /// `crossBlockSelectionOverlay`'s own (block-list-scoped) reach.
+    ///
+    /// Mounted via `.background()` on this screen's outer `VStack` purely
+    /// as a stable place to live in the view hierarchy — *where* it sits
+    /// in SwiftUI's `.background()`/`.overlay()` composition no longer
+    /// matters, because (unlike `crossBlockSelectionOverlay` above) it
+    /// doesn't hit-test or draw over anything itself — see
+    /// `CrossBlockSelectionCancelCatcher`'s doc comment for why. Once
+    /// mounted, it reaches up to the `UIWindow` hosting this whole screen
+    /// — the one UIKit-guaranteed ancestor of every view hit-tested
+    /// anywhere in it, nav bar/title area/block list included — and
+    /// attaches its tap recognizer there instead. An earlier version of
+    /// this mounted it as a visible, screen-covering `.overlay{}` instead,
+    /// reasoning that `.overlay{}`'s paint order made it an "ancestor" of
+    /// everything underneath — that reasoning was wrong (`.overlay{}` vs.
+    /// `.background{}` only changes paint order, not UIKit view-tree
+    /// ancestry) and risked that covering view winning every touch's
+    /// `hitTest(_:with:)` outright, intercepting the nav bar and every
+    /// block's native tap-to-focus along with it.
+    private var crossBlockSelectionCancelCatcher: some View {
+        CrossBlockSelectionCancelCatcher(tracker: crossBlockSelectionTracker)
     }
 
     /// Empty-state hint shown over the document's single empty paragraph
@@ -492,7 +556,18 @@ struct DetailScreen: View {
             canOutdent: nestingInfo?.canOutdent ?? false,
             onIndent: nestingInfo != nil ? { viewModel.indentBlock(blockId) } : nil,
             onOutdent: nestingInfo != nil ? { viewModel.outdentBlock(blockId) } : nil,
-            onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: blockId) }
+            onDismissKeyboard: {
+                viewModel.dismissKeyboard(forBlockId: blockId)
+                // The accessory toolbar's "내리기" button lives in the
+                // system keyboard's own UIWindow (inputAccessoryView),
+                // not DetailScreen's content window — CrossBlockSelection
+                // CancelCatcher's window-anchored tap recognizer can never
+                // see a touch there (different window entirely), so A6's
+                // "no exception for the dismiss button" rule is enforced
+                // directly here instead of relying on touch observation
+                // crossing a window boundary it fundamentally can't cross.
+                crossBlockSelectionTracker.cancel()
+            }
         )
     }
 }
