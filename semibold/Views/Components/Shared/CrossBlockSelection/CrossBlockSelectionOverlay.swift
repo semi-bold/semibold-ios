@@ -140,7 +140,11 @@ struct CrossBlockSelectionOverlay: UIViewRepresentable {
 
             for rect in allRects {
                 let highlightView = UIView(frame: rect)
-                highlightView.backgroundColor = UIColor(AppTheme.Colors.accent).withAlphaComponent(0.25)
+                // Opacity 0.28 and 3pt corner radius are read directly off
+                // the `selection_highlight_*` rectangles in the
+                // `iOS_Editor_MultiBlockSelection` Figma frame.
+                highlightView.backgroundColor = UIColor(AppTheme.Colors.accent).withAlphaComponent(0.28)
+                highlightView.layer.cornerRadius = 3
                 highlightView.isUserInteractionEnabled = false
                 insertSubview(highlightView, belowSubview: startHandle)
                 highlightViews.append(highlightView)
@@ -340,22 +344,37 @@ struct CrossBlockSelectionOverlay: UIViewRepresentable {
 
 /// One of the two drag handles shown at a cross-block selection's start/end
 /// corners, matching the `iOS_Editor_MultiBlockSelection` Figma frame's
-/// handle style.
+/// `drag_handle_start`/`drag_handle_end` handle style.
 ///
-/// **Visual design gap, flagged rather than guessed at silently
-/// (CLAUDE.md §0's "말하지 않고 임의로 개선하지 않는다" rule)** — this
-/// implementation session had no working Figma MCP connection, so this
-/// handle's exact size/shape/color couldn't be read from
-/// `iOS_Editor_MultiBlockSelection` directly. It uses `AppTheme.Colors
-/// .accent` (not a hardcoded hex value, per CLAUDE.md §3) as a reasonable
-/// placeholder matching iOS's own native selection-handle color
-/// convention, sized to `AppTheme.Spacing.sm` (8pt) as its diameter. This
-/// needs a design pass against the actual Figma frame before this AC item
-/// ("선택 하이라이트/드래그 핸들의 시각적 배치가 … 디자인과 일치한다")
-/// can be marked done.
+/// **Matched against the real Figma frame** (`iOS_Editor_MultiBlockSelection`,
+/// Screens page, node `230:2`) — a prior pass through this file had no
+/// working Figma MCP connection and left placeholder sizing/opacity here;
+/// this pass read the frame directly. The handle is a 14pt-diameter circle
+/// (Figma's exact `drag_handle_*` ellipse size — no `AppTheme.Spacing` token
+/// lands on 14, so this is a literal design measurement, the same treatment
+/// `dragThreshold`/`CrossBlockSelectionAutoScroller`'s tuning constants
+/// already get elsewhere in this feature), fully opaque.
+///
+/// **Color: `AppTheme.Colors.accent`, left as-is.** Figma's
+/// `drag_handle_*`/`selection_highlight_*` fill reads as RGB(0.0392,
+/// 0.5176, 1.0) ≈ `#0A84FF` — iOS's *dark-mode* system blue, because the
+/// `iOS_Editor_MultiBlockSelection` mockups are dark-mode screens.
+/// `AppTheme.Colors.accent` is `Color(hex: "#007AFF")` (light-mode system
+/// blue), a fixed literal rather than an adaptive/dynamic color, so the two
+/// values are genuinely ~3pt-of-hex apart, not the same dynamic color
+/// viewed in different appearance modes. Per CLAUDE.md §3 ("centralize
+/// colors... in one AppTheme type" — don't introduce a one-off hardcoded
+/// hex for a single feature), this stays on the existing `accent` token
+/// rather than gaining a parallel `#0A84FF` literal just for this overlay;
+/// the app has no per-appearance-mode or per-feature color tokens
+/// elsewhere, and `accent` is close enough to read as "the same blue" at
+/// this element's size. If `AppTheme` ever grows true light/dark variants,
+/// this is the spot to revisit.
 private final class SelectionHandleView: UIView {
     init() {
-        let diameter = AppTheme.Spacing.sm
+        // 14pt is `drag_handle_start`/`drag_handle_end`'s exact diameter in
+        // `iOS_Editor_MultiBlockSelection` — see this type's doc comment.
+        let diameter: CGFloat = 14
         super.init(frame: CGRect(x: 0, y: 0, width: diameter, height: diameter))
         backgroundColor = UIColor(AppTheme.Colors.accent)
         layer.cornerRadius = diameter / 2
