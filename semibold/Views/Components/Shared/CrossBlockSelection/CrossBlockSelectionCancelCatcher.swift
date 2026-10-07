@@ -10,11 +10,26 @@ import UIKit
 /// **One rule, no exceptions** (2026-10-02 decision folding A6-a's "다른
 /// 블록을 탭" and A6-b/c's "그 외 화면 요소를 탭" into the same outcome):
 /// every tap this type sees — on a different block, on the nav bar, on
-/// blank space below the last block, anywhere within `DetailScreen` — ends
-/// the active selection the same way, via the same `handleTap()`. There is
-/// no special case in here for the keyboard toolbar's "키보드 내리기"
-/// button or any other specific control; this type doesn't know any of
-/// them exist, on purpose. A6-a's other half — the tapped block also
+/// blank space below the last block, anywhere within `DetailScreen`'s own
+/// content window — ends the active selection the same way, via the same
+/// `handleTap()`. There is no special case in here for any specific
+/// control; this type doesn't know any of them exist, on purpose.
+///
+/// **Exception this type genuinely cannot cover — the keyboard toolbar's
+/// "키보드 내리기" button.** `AccessoryToolbarCoordinator`'s toolbar is
+/// `IndentableTextView.inputAccessoryView`, which iOS hosts in the system
+/// keyboard's own `UIWindow`, not `DetailScreen`'s content window. This
+/// type's recognizer is attached to the content window
+/// (`Coordinator.attach(to:)`) specifically so it's a genuine UIKit
+/// ancestor of everything hit-tested *in that window* — but a tap on the
+/// dismiss button is hit-tested in a different window entirely, so no
+/// window-anchored recognizer here can ever see it, regardless of how
+/// this type is wired. The "no exception" rule for that one button is
+/// instead enforced directly at its own tap handler
+/// (`DetailScreen.configureAccessoryToolbar(forBlockId:)`'s
+/// `onDismissKeyboard` closure calls `crossBlockSelectionTracker.cancel()`
+/// explicitly) rather than by this type observing it, because observing
+/// it from here is not architecturally possible. A6-a's other half — the tapped block also
 /// becoming the new typing-focus location, caret placed where the finger
 /// landed — needs no code here at all: that's plain native `UITextView`
 /// tap-to-focus, already happening underneath this view, completely

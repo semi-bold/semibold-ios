@@ -556,7 +556,18 @@ struct DetailScreen: View {
             canOutdent: nestingInfo?.canOutdent ?? false,
             onIndent: nestingInfo != nil ? { viewModel.indentBlock(blockId) } : nil,
             onOutdent: nestingInfo != nil ? { viewModel.outdentBlock(blockId) } : nil,
-            onDismissKeyboard: { viewModel.dismissKeyboard(forBlockId: blockId) }
+            onDismissKeyboard: {
+                viewModel.dismissKeyboard(forBlockId: blockId)
+                // The accessory toolbar's "내리기" button lives in the
+                // system keyboard's own UIWindow (inputAccessoryView),
+                // not DetailScreen's content window — CrossBlockSelection
+                // CancelCatcher's window-anchored tap recognizer can never
+                // see a touch there (different window entirely), so A6's
+                // "no exception for the dismiss button" rule is enforced
+                // directly here instead of relying on touch observation
+                // crossing a window boundary it fundamentally can't cross.
+                crossBlockSelectionTracker.cancel()
+            }
         )
     }
 }
