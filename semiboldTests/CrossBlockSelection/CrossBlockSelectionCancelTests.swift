@@ -19,9 +19,25 @@ import UIKit
 /// What these tests can't cover: whether that recognizer actually *fires*
 /// for a tap on the nav bar/title area/a block without blocking the native
 /// behavior underneath it (back button, menu button, tap-to-focus) — that
-/// coexistence question needs manual/device verification, the same
+/// coexistence question still needs manual/device verification, the same
 /// carve-out `CrossBlockSelectionOverlay`'s own doc comment already makes
 /// for its long-press recognizer.
+///
+/// **Higher confidence than before, by construction.** `DetailScreen` used
+/// to mount `CrossBlockSelectionCancelCatcher` via `.background()` on its
+/// outer `VStack` — an ancestor of the `ScrollView` that hosts the block
+/// list, but a sibling (not necessarily an ancestor) of the actual UIKit
+/// view that ends up hit-tested inside it, depending on how SwiftUI
+/// composes `.background()` vs `.overlay()` into backing views. That risked
+/// the tap recognizer never seeing touches landing on the block list at
+/// all — the primary A6-a scenario. It's now mounted as a top-level
+/// `.overlay{}` on that same `VStack`, the same proven "ancestor-or-self
+/// overlay, `cancelsTouchesInView = false`, always-simultaneous delegate"
+/// pattern `CrossBlockSelectionOverlay` already uses successfully for the
+/// block list alone — so the recognizer firing for a block-list tap is no
+/// longer an open architectural question, just the inherent "needs a live
+/// touch to be 100% sure" limitation every UIKit gesture recognizer in this
+/// app shares.
 @MainActor
 struct CrossBlockSelectionCancelTests {
     // MARK: - A6: a tap cancels an active selection
@@ -72,6 +88,7 @@ struct CrossBlockSelectionCancelTests {
         #expect(tracker.isDragging == true)
     }
 
+    // swiftlint:disable:next line_length
     @Test("A6-a: canceling a selection (a tap on a different block) leaves the tracker ready for a brand-new drag right away")
     func cancelThenNewSelectionStartsCleanly() {
         let tracker = CrossBlockSelectionTracker()
@@ -155,6 +172,7 @@ struct CrossBlockSelectionCancelTests {
         #expect(stub.bothModesActiveAtOnce == false)
     }
 
+    // swiftlint:disable:next line_length
     @Test("Invariant 2: tapping a different block while a selection is active cancels the selection as focus moves (A6-a)")
     func tappingAnotherBlockCancelsSelectionAsFocusMoves() {
         let stub = EditingFocusStub()
@@ -172,6 +190,7 @@ struct CrossBlockSelectionCancelTests {
         #expect(stub.bothModesActiveAtOnce == false)
     }
 
+    // swiftlint:disable:next line_length
     @Test("Invariant 2: tapping outside any block (nav bar, title area, blank space) cancels the selection without creating new focus (A6-b/c)")
     func tappingOutsideAnyBlockCancelsSelectionWithNoNewFocus() {
         let stub = EditingFocusStub()
@@ -187,6 +206,7 @@ struct CrossBlockSelectionCancelTests {
         #expect(stub.bothModesActiveAtOnce == false)
     }
 
+    // swiftlint:disable:next line_length
     @Test("Invariant 2: repeating begin-selection → cancel-by-tap → begin-selection again never lets both modes hold at once")
     func repeatedCycleNeverOverlapsBothModes() {
         let stub = EditingFocusStub()

@@ -51,7 +51,21 @@ struct DetailScreen: View {
         }
         .background(AppTheme.Colors.Neutral.n900)
         .background(keyboardShortcuts)
-        .background(crossBlockSelectionCancelCatcher)
+        .overlay {
+            // Must be an `.overlay{}` sitting ABOVE this screen's full
+            // content (nav bar + title area + block list), not a
+            // `.background()` behind it — see `crossBlockSelectionCancelCatcher`'s
+            // doc comment for why a `.background()` here previously risked
+            // never seeing taps that land on the block list at all
+            // (UIKit only delivers touches along the hit-tested view's
+            // ancestor chain; a background branch can end up a sibling of
+            // that chain rather than an ancestor of it, depending on how
+            // SwiftUI composes the two). This is the same proven
+            // "ancestor-or-self overlay, `cancelsTouchesInView = false`,
+            // always-simultaneous delegate" pattern `crossBlockSelectionOverlay`
+            // already uses successfully for the block list alone.
+            crossBlockSelectionCancelCatcher
+        }
         .overlay {
             // This screen is itself a pushed `Document.self` destination
             // registered once at `HomeScreen`'s `NavigationStack` root — the
@@ -326,6 +340,16 @@ struct DetailScreen: View {
     /// them. See `CrossBlockSelectionCancelCatcher`'s doc comment for why
     /// this is a separate, screen-wide touch observer rather than widening
     /// `crossBlockSelectionOverlay`'s own (block-list-scoped) reach.
+    ///
+    /// Mounted as a top-level `.overlay{}` on this screen's full `VStack`
+    /// (nav bar + title area + block list), not a `.background()` — an
+    /// `.overlay{}` is architecturally an ancestor of everything it's
+    /// drawn over, so its tap recognizer sits along the same hit-testing
+    /// chain as every tap underneath it (the block list included). A
+    /// `.background()` risked ending up on a sibling branch of that chain
+    /// instead, which could have silently dropped taps that land on the
+    /// block list — the primary A6-a scenario — without the recognizer
+    /// ever seeing them.
     private var crossBlockSelectionCancelCatcher: some View {
         CrossBlockSelectionCancelCatcher(tracker: crossBlockSelectionTracker)
     }
