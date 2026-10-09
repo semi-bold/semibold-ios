@@ -206,4 +206,29 @@ extension DetailViewModel {
         mutable.removeSubrange(range)
         return mutable
     }
+
+    /// "전체 선택" (Select All) — sets `tracker`'s anchor/current so the
+    /// resulting `CrossBlockSelectionRange` spans the whole document: the
+    /// very first character of the first block through the very last
+    /// character of the last block (document order, `items` — already the
+    /// same flattened order `BlockOrder`/`copySelectionToClipboard` use).
+    ///
+    /// `CrossBlockSelectionTracker` is owned by `DetailScreen` (one
+    /// instance per open document, per that type's own doc comment), not by
+    /// this view model — `tracker` is passed in the same way `pasteboard`
+    /// is for copy/cut, rather than this view model holding a reference of
+    /// its own.
+    ///
+    /// A no-op on an empty document (no `anchor` to set — `tracker.isActive`
+    /// stays `false`, matching "nothing to select"). A single-block document
+    /// still produces a valid whole-document selection: `anchor`/`current`
+    /// both resolve to that one block, with `current` at its text's end.
+    func selectAllBlocks(in tracker: CrossBlockSelectionTracker) {
+        guard let first = items.first, let last = items.last else { return }
+        let lastLength = textContents[last.id]?.plainText.utf16.count ?? 0
+
+        tracker.beginSelection(at: DocumentTextLocation(blockId: first.id, offset: 0))
+        tracker.extendSelection(to: DocumentTextLocation(blockId: last.id, offset: lastLength))
+        tracker.endSelection()
+    }
 }
