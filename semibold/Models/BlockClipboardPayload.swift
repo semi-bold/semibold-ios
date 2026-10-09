@@ -63,7 +63,7 @@ extension BlockClipboardPayload {
     /// The custom UTType clipboard writes/reads use to recognize this
     /// app's own lossless block representation ahead of the Markdown
     /// fallback (`project.yml`'s `UTExportedTypeDeclarations`).
-    static let utType = UTType("com.semibold.blocks-payload")!
+    static let utType = UTType(exportedAs: "com.semibold.blocks-payload")
 
     /// Packages a selected block range's already-split-out model arrays
     /// into one encodable payload. Callers (the copy flow) decide which
@@ -83,17 +83,13 @@ extension BlockClipboardPayload {
         return try JSONEncoder().encode(payload)
     }
 
-    /// Restores the four model arrays a clipboard payload's JSON data
-    /// was built from (the paste flow's counterpart to `encode`).
-    static func decode(
-        _ data: Data
-    ) throws -> (
-        items: [DocumentItem],
-        textContents: [TextContent],
-        listGroups: [ListGroup],
-        textMarks: [TextMark]
-    ) {
-        let payload = try JSONDecoder().decode(BlockClipboardPayload.self, from: data)
-        return (payload.items, payload.textContents, payload.listGroups, payload.textMarks)
+    /// Restores the payload a clipboard write's JSON data was built from
+    /// (the paste flow's counterpart to `encode`) — `items`/`textContents`/
+    /// `listGroups`/`textMarks` are the four model arrays. Returns
+    /// `BlockClipboardPayload` itself rather than a tuple: it already *is*
+    /// exactly those four arrays, and a 4-member tuple return trips
+    /// SwiftLint's `large_tuple` rule.
+    static func decode(_ data: Data) throws -> BlockClipboardPayload {
+        try JSONDecoder().decode(BlockClipboardPayload.self, from: data)
     }
 }
