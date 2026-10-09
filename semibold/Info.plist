@@ -33,5 +33,18 @@
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>semi:bold block clipboard payload</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.semibold.blocks-payload</string>
+		</dict>
+	</array>
 </dict>
 </plist>
