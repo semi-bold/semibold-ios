@@ -870,10 +870,47 @@ final class DetailViewModel {
     /// Failing to clean this up isn't user-visible (an orphaned row shows
     /// up nowhere), so unlike a content save/delete failure this doesn't
     /// set `errorMessage`.
-    private func cleanUpListGroupIfOrphaned(_ listGroupId: String) {
+    ///
+    /// Not `private` for the same cross-file-access reason as
+    /// `persistBlock`/`assignFreshListGroup` above —
+    /// `DetailViewModel+CrossBlockSelectionActions.swift`'s cut action
+    /// calls this too, once per list group a multi-block cut might have
+    /// emptied out.
+    func cleanUpListGroupIfOrphaned(_ listGroupId: String) {
         guard let liveMemberCount = try? listGroupRepository.liveMemberCount(listGroupId: listGroupId),
               liveMemberCount == 0 else { return }
         try? listGroupRepository.hardDelete(id: listGroupId)
+    }
+
+    /// Looks up a `ListGroup` row by id — a thin pass-through so
+    /// `DetailViewModel+CrossBlockSelectionActions.swift`'s copy action
+    /// can resolve the groups a selection's items reference without this
+    /// view model exposing its whole `listGroupRepository` (kept
+    /// `private`) across files.
+    func findListGroup(id: String) throws -> ListGroup? {
+        try listGroupRepository.find(id: id)
+    }
+
+    /// Soft-deletes `blockId` entirely and removes it from in-memory
+    /// state — the same per-block removal `mergeOrDeleteBlock` performs
+    /// for an everyday single-block delete, factored out here so
+    /// `DetailViewModel+CrossBlockSelectionActions.swift`'s cut action can
+    /// apply it to several blocks in one multi-block cut without this view
+    /// model exposing its whole `documentItemRepository` (kept `private`)
+    /// across files.
+    func softDeleteBlockEntirely(_ blockId: String) {
+        cancelPendingSave(blockId)
+        do {
+            try documentItemRepository.softDelete(id: blockId)
+            items.removeAll { $0.id == blockId }
+            textContents[blockId] = nil
+            marksByItemId[blockId] = nil
+        } catch {
+            // §15.2 "삭제 실패" — same fallback `mergeOrDeleteBlock` uses:
+            // the block stays in the database un-deleted, reconciled the
+            // next time the document loads.
+            errorMessage = AppErrorMessages.deleteFailed
+        }
     }
 
     /// Assigns `blockId` a `ListGroup` appropriate for turning it into a
