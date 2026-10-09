@@ -1021,7 +1021,13 @@ final class DetailViewModel {
     ///    more than 1, clamps `lowerItemId` and its own descendants down
     ///    so `lowerItemId` lands at exactly `upperItemId`'s depth + 1 —
     ///    otherwise leaves depth untouched.
-    private func reconcileAdjacentListBlocks(upperItemId: String, lowerItemId: String) {
+    ///
+    /// Not `private` for the same cross-file-access reason as
+    /// `persistBlock`/`softDeleteBlockEntirely`/`cleanUpListGroupIfOrphaned`
+    /// above — `DetailViewModel+CrossBlockSelectionActions.swift`'s cut
+    /// action calls this too, for whichever pair of blocks a multi-block
+    /// deletion leaves newly array-adjacent.
+    func reconcileAdjacentListBlocks(upperItemId: String, lowerItemId: String) {
         guard let upperIndex = items.firstIndex(where: { $0.id == upperItemId }),
               let lowerIndex = items.firstIndex(where: { $0.id == lowerItemId }) else { return }
 

@@ -119,16 +119,19 @@ extension DetailViewModel {
     /// still counts as fully selected vs. boundary partway through the
     /// loop.
     ///
-    /// **Known gap**: unlike `mergeOrDeleteBlock`, this doesn't re-run
-    /// `reconcileAdjacentListBlocks` for whatever ends up newly adjacent
-    /// once a whole run of fully-selected blocks is removed — a multi-block
-    /// cut that straddles two different list groups (or leaves a
-    /// depth-mismatched pair newly array-adjacent) can leave the "adjacent
-    /// items differ by at most one depth level" invariant
-    /// (`semiboldTests/ListBlock/README.md` common invariant 6) unchecked.
-    /// Flagged for `swift-reviewer`/follow-up rather than guessed at here,
-    /// since the brief's AC6 only specifies per-block delete/truncate
-    /// behavior, not cross-block list reconciliation.
+    /// Once every fully selected block in between is gone, `range`'s own
+    /// two boundary blocks (`start.blockId`/`end.blockId` — truncated, not
+    /// removed, so they're always still around afterward) are exactly the
+    /// pair left newly array-adjacent by this deletion: everything that
+    /// used to sit between them in document order was, by definition,
+    /// fully selected and just got removed above. Reconciling that pair
+    /// via `reconcileAdjacentListBlocks` is the same "두 블록이 새로
+    /// 인접해졌을 때" treatment `mergeOrDeleteBlock` already applies after
+    /// an everyday single-block delete (README C3-a through C3-d) — this
+    /// closes the gap where a multi-block cut across nested list items
+    /// could otherwise leave the "adjacent items differ by at most one
+    /// depth level" invariant (`semiboldTests/ListBlock/README.md` common
+    /// invariant 6) broken.
     private func deleteSelectedRange(_ range: CrossBlockSelectionRange) {
         let order = BlockOrder(blockIds: items.map(\.id))
         let touchedItemIds = items
@@ -149,6 +152,11 @@ extension DetailViewModel {
                 }
                 softDeleteBlockEntirely(itemId)
             } else {
+                // A boundary block whose own selected sub-range happens to
+                // be zero-length (e.g. the selection starts/ends exactly at
+                // this block's edge) has nothing to actually change — skip
+                // the save instead of persisting a no-op edit.
+                guard selected.length > 0 else { continue }
                 var updated = content
                 updated.plainText = Self.removingSubstring(at: selected, from: content.plainText)
                 textContents[itemId] = updated
@@ -160,6 +168,33 @@ extension DetailViewModel {
         for listGroupId in orphanedListGroupCandidates {
             cleanUpListGroupIfOrphaned(listGroupId)
         }
+
+        reconcileBoundaryBlocksAfterDeletion(range)
+    }
+
+    /// The "두 블록이 새로 인접해졌을 때" half of `deleteSelectedRange`,
+    /// above — called once the whole selected range has already been
+    /// removed/truncated. No-ops for a single-block selection
+    /// (`range.start.blockId == range.end.blockId`): truncating one
+    /// boundary block's own text never creates a new adjacency between two
+    /// *different* blocks, so there's nothing to reconcile.
+    ///
+    /// Otherwise, re-resolves both boundary blocks' current positions
+    /// (rather than assuming they're exactly where they used to be) and
+    /// only reconciles them if they actually ended up array-adjacent —
+    /// which they will have, by construction, unless a mid-loop deletion
+    /// failure (`softDeleteBlockEntirely`'s own §15.2 fallback) left a
+    /// fully-selected block stranded in `items`. This same check also
+    /// covers the "selected range sits at the very start/end of the
+    /// document" edge case for free: whichever boundary block has no
+    /// neighbor on that side simply isn't involved, since the other
+    /// boundary block is still the one found adjacent to it.
+    private func reconcileBoundaryBlocksAfterDeletion(_ range: CrossBlockSelectionRange) {
+        guard range.start.blockId != range.end.blockId else { return }
+        guard let upperIndex = items.firstIndex(where: { $0.id == range.start.blockId }),
+              let lowerIndex = items.firstIndex(where: { $0.id == range.end.blockId }),
+              lowerIndex == upperIndex + 1 else { return }
+        reconcileAdjacentListBlocks(upperItemId: range.start.blockId, lowerItemId: range.end.blockId)
     }
 
     /// `text` with the substring at `nsRange` (UTF-16 offsets) removed —
