@@ -248,4 +248,66 @@ struct CrossBlockPasteActionTests {
         #expect(pasted.isEmpty)
         #expect(viewModel.items.map(\.id) == [anchor.id])
     }
+
+    // MARK: - TextMark round-trip onto the new pasted item's id
+
+    @Test("Pasting a block with a TextMark rewrites the mark onto the new pasted item's id, offsets/type unchanged")
+    func pasteRewritesTextMarkOntoNewPastedItemId() throws {
+        let store = try makeStore()
+        let documentRepository = DocumentRepository(context: store.context)
+        let documentItemRepository = DocumentItemRepository(context: store.context)
+        let textItemRepository = TextItemRepository(context: store.context)
+        let textMarkRepository = TextMarkRepository(context: store.context)
+
+        let document = try documentRepository.create(Document(title: "Notes"))
+        let anchor = try createItem(
+            documentId: document.id, orderKey: OrderKey.between(nil, nil), textKind: TextItemKind.paragraph,
+            plainText: "Anchor", documentItemRepository: documentItemRepository, textItemRepository: textItemRepository
+        )
+
+        let viewModel = makeViewModel(document: document, store: store)
+        viewModel.load()
+
+        // The clipboard payload's mark references the ORIGINAL item id
+        // ("src-1") — the same shape `CrossBlockSelectionClipboardSerializer`
+        // produces when copying a block that carries marks (see
+        // `CrossBlockCutListReconciliationTests.copyClipsBoundaryBlockTextMarksToSelectedRange`).
+        let payload = BlockClipboardPayload(
+            items: [DocumentItem(id: "src-1", documentId: "other-doc", contentType: "text", orderKey: "01")],
+            textContents: [TextContent(itemId: "src-1", textKind: TextItemKind.paragraph, plainText: "Hello world")],
+            listGroups: [],
+            textMarks: [TextMark(itemId: "src-1", startOffset: 0, endOffset: 5, markType: "bold")]
+        )
+        let pasteboard = makeTestPasteboard(name: "CrossBlockPasteActionTests.textMarkRewrite")
+        defer { UIPasteboard.remove(withName: .init("CrossBlockPasteActionTests.textMarkRewrite")) }
+        try seedPasteboard(pasteboard, with: payload)
+
+        let pasted = try viewModel.pasteFromClipboard(
+            at: DocumentTextLocation(blockId: anchor.id, offset: 6), pasteboard: pasteboard
+        )
+
+        #expect(pasted.count == 1)
+        let newItemId = pasted[0].id
+        #expect(newItemId != "src-1")
+
+        // In-memory: `marksByItemId` (populated by `recordPastedMarks`)
+        // points at the NEW pasted item's id, not the original.
+        let inMemoryMarks = viewModel.marksByItemId[newItemId] ?? []
+        #expect(inMemoryMarks.count == 1)
+        let inMemoryMark = try #require(inMemoryMarks.first)
+        #expect(inMemoryMark.itemId == newItemId)
+        #expect(inMemoryMark.startOffset == 0)
+        #expect(inMemoryMark.endOffset == 5)
+        #expect(inMemoryMark.markType == "bold")
+        #expect(viewModel.marksByItemId["src-1"] == nil)
+
+        // Persisted, not just in-memory.
+        let persistedMarks = try textMarkRepository.marks(itemId: newItemId)
+        #expect(persistedMarks.count == 1)
+        let persistedMark = try #require(persistedMarks.first)
+        #expect(persistedMark.itemId == newItemId)
+        #expect(persistedMark.startOffset == 0)
+        #expect(persistedMark.endOffset == 5)
+        #expect(persistedMark.markType == "bold")
+    }
 }

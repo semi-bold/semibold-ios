@@ -17,7 +17,12 @@ import UniformTypeIdentifiers
 ///   difference from that first block.
 /// - `semiboldTests/ListBlock/README.md` common invariant 6 — adjacent
 ///   blocks never differ by more than one depth level after the paste,
-///   including at the two edges the inserted range creates.
+///   including at the two edges the inserted range creates (the group-
+///   merge half of that edge check; the numeric depth-clamp branch of
+///   `reconcileAdjacentListBlocks` specifically firing on a paste's
+///   TRAILING edge is covered separately in
+///   `CrossBlockPasteDepthClampTests` — split out once more to stay
+///   under SwiftLint's `file_length`/`type_body_length` limits).
 @MainActor
 struct CrossBlockPasteListReconciliationTests {
     private func makeStore() throws -> CoreDataTestStore {
