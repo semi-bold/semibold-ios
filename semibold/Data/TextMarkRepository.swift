@@ -13,12 +13,14 @@ struct TextMarkRepository {
         self.context = context
     }
 
-    /// Inserts a new formatting mark.
+    /// Inserts a new formatting mark. Pass `save: false` to fold this
+    /// into a caller's `context.withTransaction { ... }` alongside other
+    /// repository mutations instead of committing on its own.
     @discardableResult
-    func create(_ mark: TextMark) throws -> TextMark {
+    func create(_ mark: TextMark, save: Bool = true) throws -> TextMark {
         let entity = TextMarkEntity(context: context)
         apply(mark, to: entity)
-        try context.save()
+        if save { try context.save() }
         return mark
     }
 

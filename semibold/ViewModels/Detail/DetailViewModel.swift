@@ -891,6 +891,51 @@ final class DetailViewModel {
         try listGroupRepository.find(id: id)
     }
 
+    /// Persists a batch of brand-new blocks (plus any new `ListGroup`s
+    /// they reference and any `TextMark`s carried over with them) as one
+    /// transaction — the paste action's
+    /// (`DetailViewModel+CrossBlockSelectionPaste.swift`) only point of
+    /// contact with `documentItemRepository`/`textItemRepository`/
+    /// `listGroupRepository`/`textMarkRepository` (each kept `private`
+    /// here), matching `findListGroup`/`softDeleteBlockEntirely`'s
+    /// cross-file-access precedent above. Groups are created first so
+    /// every item's `listGroupId` already resolves to a live row by the
+    /// time it's inserted.
+    func persistPastedBlocks(
+        items newItems: [DocumentItem],
+        textContents newTextContents: [TextContent],
+        listGroups newListGroups: [ListGroup],
+        textMarks newTextMarks: [TextMark]
+    ) throws {
+        try documentItemRepository.context.withTransaction {
+            for group in newListGroups {
+                try listGroupRepository.create(group, save: false)
+            }
+            for item in newItems {
+                try documentItemRepository.create(item, save: false)
+            }
+            for content in newTextContents {
+                try textItemRepository.create(content, save: false)
+            }
+            for mark in newTextMarks {
+                try textMarkRepository.create(mark, save: false)
+            }
+        }
+    }
+
+    /// Adds freshly pasted marks into `marksByItemId`, grouped by their
+    /// (already-rewritten) owning item id — the one way
+    /// `DetailViewModel+CrossBlockSelectionPaste.swift` updates this
+    /// `private(set)` property from outside this file, same
+    /// cross-file-access reason as `persistPastedBlocks` above. Every
+    /// pasted item is brand new, so there's never an existing entry to
+    /// merge with — this always sets a fresh array rather than appending.
+    func recordPastedMarks(_ marks: [TextMark]) {
+        for (itemId, itemMarks) in Dictionary(grouping: marks, by: \.itemId) {
+            marksByItemId[itemId] = itemMarks
+        }
+    }
+
     /// Soft-deletes `blockId` entirely and removes it from in-memory
     /// state — the same per-block removal `mergeOrDeleteBlock` performs
     /// for an everyday single-block delete, factored out here so
