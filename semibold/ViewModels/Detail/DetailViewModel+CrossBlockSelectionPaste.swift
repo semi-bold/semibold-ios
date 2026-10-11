@@ -106,7 +106,12 @@ extension DetailViewModel {
     /// the same gap" use `OrderKey.between`'s own doc comment already
     /// designs for, so pasting several blocks at once still leaves each
     /// one spaced for future inserts rather than only the first.
-    private static func sequentialOrderKeys(count: Int, lowerBound: String?, upperBound: String?) -> [String] {
+    ///
+    /// Not `private` for the same cross-file-access reason as
+    /// `reconcilePasteEdges` below — `DetailViewModel+ExternalTextPaste
+    /// .swift`'s external-text paste path generates its own `orderKey`s
+    /// the exact same way.
+    static func sequentialOrderKeys(count: Int, lowerBound: String?, upperBound: String?) -> [String] {
         guard count > 0 else { return [] }
         var keys: [String] = []
         var lower = lowerBound
@@ -129,7 +134,15 @@ extension DetailViewModel {
     /// action already applies to the single gap a deletion leaves behind
     /// — a paste just has two edges to check instead of one, since it
     /// inserts rather than removes.
-    private func reconcilePasteEdges(insertIndex: Int, pastedCount: Int) {
+    ///
+    /// Not `private` — `DetailViewModel+ExternalTextPaste.swift`'s
+    /// external-text paste path calls this too, reconciling its own
+    /// newly-inserted range's two edges against whatever existing
+    /// document content sits right outside them (`05-external-text-paste`
+    /// brief's own list-grouping scope stays limited to the pasted lines
+    /// themselves — this is what still connects that range to the
+    /// surrounding document afterward).
+    func reconcilePasteEdges(insertIndex: Int, pastedCount: Int) {
         guard pastedCount > 0 else { return }
 
         if insertIndex > 0, items.indices.contains(insertIndex) {
