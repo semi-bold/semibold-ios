@@ -175,6 +175,7 @@ struct BlockRowChrome: View {
                 leadingColumnView
 
                 ParagraphTextField(
+                    blockId: item.id,
                     text: text,
                     textStyle: textStyle,
                     textColor: resolvedTextColor,

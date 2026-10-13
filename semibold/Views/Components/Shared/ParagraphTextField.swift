@@ -10,6 +10,15 @@ import UIKit
 /// 생성"). This wraps a `UITextView` to provide that, while still
 /// reporting plain text back to SwiftUI via a binding.
 struct ParagraphTextField: UIViewRepresentable {
+    /// This block's id — only used to register this field's underlying
+    /// `UITextView` with `BlockTextViewRegistry`, so the cross-block
+    /// selection overlay (`01-cross-block-selection-core` brief) can find
+    /// this exact live text view when hit-testing a drag point delivered
+    /// to it from a gesture recognizer above the whole block list, not to
+    /// this specific row. Doesn't affect any editing behavior this type
+    /// already had.
+    let blockId: String
+
     @Binding var text: String
 
     /// The typography this block's text is shown in — `AppTheme.Typography
@@ -93,6 +102,7 @@ struct ParagraphTextField: UIViewRepresentable {
         textView.text = text
         textView.onIndent = onIndent
         textView.onOutdent = onOutdent
+        BlockTextViewRegistry.shared.register(blockId: blockId, textView: textView)
         return textView
     }
 
@@ -107,6 +117,12 @@ struct ParagraphTextField: UIViewRepresentable {
         // .plainText` from that first (often-empty) render would silently
         // stand in for the text actually on screen.
         context.coordinator.parent = self
+
+        // Re-register on every update too (idempotent — same rationale as
+        // `context.coordinator.parent` above) so the registry always holds
+        // this exact `uiView` instance for `blockId`, not a stale one from
+        // an earlier render.
+        BlockTextViewRegistry.shared.register(blockId: blockId, textView: uiView)
 
         // Same rationale as `context.coordinator.parent` above — refresh
         // these on every update so a hardware Tab/Shift+Tab press always
@@ -143,6 +159,17 @@ struct ParagraphTextField: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
+    }
+
+    /// Unregisters this block's text view from `BlockTextViewRegistry` the
+    /// moment SwiftUI tears this row down — e.g. it scrolls off the
+    /// `LazyVStack`'s mounted range, or the block itself is deleted. Uses
+    /// `coordinator.parent.blockId` (refreshed on every `updateUIView`
+    /// call above) rather than `self.blockId`, since this static method
+    /// only receives the `Coordinator`, not the specific `ParagraphTextField`
+    /// value that happened to trigger teardown.
+    static func dismantleUIView(_ uiView: UITextView, coordinator: Coordinator) {
+        BlockTextViewRegistry.shared.unregister(blockId: coordinator.parent.blockId)
     }
 
     /// Without this override, SwiftUI falls back to `UITextView`'s own
